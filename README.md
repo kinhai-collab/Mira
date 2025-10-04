@@ -1,0 +1,2 @@
+# Mira
+Stealth AI Company
