@@ -1,7 +1,7 @@
 -- enable extensions if not already (run as superuser once)
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";  -- for gen_random_uuid()
 
-CREATE TABLE app_user (
+CREATE TABLE Mira_db (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
   -- login identity
@@ -25,14 +25,14 @@ CREATE TABLE app_user (
 -- Indexes & constraints
 -- Ensure only one user per provider/provider_user_id
 CREATE UNIQUE INDEX ux_app_user_provider_provider_user_id
-  ON app_user(provider, provider_user_id)
+  ON Mira_db(provider, provider_user_id)
   WHERE provider IS NOT NULL AND provider_user_id IS NOT NULL;
 
 -- Ensure email uniqueness when provided 
-CREATE UNIQUE INDEX ux_app_user_email ON app_user(LOWER(email))
+CREATE UNIQUE INDEX ux_app_user_email ON Mira_db(LOWER(email))
   WHERE email IS NOT NULL;
 
 --ensure local accounts must have password_hash
-ALTER TABLE app_user
+ALTER TABLE Mira_db
   ADD CONSTRAINT chk_local_password_required
     CHECK (provider IS DISTINCT FROM 'local' OR (password_hash IS NOT NULL));
