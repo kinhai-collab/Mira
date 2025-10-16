@@ -11,15 +11,50 @@ export default function SignupPage() {
 	const router = useRouter();
 	const [email, setEmail] = useState("");
 	const [password, setPassword] = useState("");
+    const [loading, setLoading] = useState(false);
 
 	const handleNavigate = (path: string) => {
 		router.push(path);
 	};
 
-	const handleSignup = (e: React.FormEvent) => {
+	const handleSignup = async (e: React.FormEvent) => {
 		e.preventDefault();
-		console.log("Signup attempt:", { email, password });
-		router.push("/onboarding/step1");
+		setLoading(true);
+
+		try {
+			// Prepare form data using URLSearchParams
+			const formData = new URLSearchParams();
+			formData.append("email", email);
+			formData.append("password", password);
+
+			// Send POST request to backend signup endpoint
+			const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/signup`, {
+				method: "POST",
+				headers: { "Content-Type": "application/x-www-form-urlencoded" },
+				body: formData.toString(),
+			});
+            
+			// Handle response if signup failed
+			if (!res.ok) {
+				const errorData = await res.json();
+				console.error("Signup failed:", errorData);
+				alert(errorData.detail?.message || "Signup failed");
+				setLoading(false);
+				return;
+			}
+
+			const data = await res.json();
+			console.log("Signup success:", data);
+			alert("Signup successful!");
+			
+			// Redirect user to onboarding step 1
+			router.push("/onboarding/step1");
+		} catch (err) {
+			console.error("Error during signup:", err);
+			alert("Something went wrong, please try again.");
+		} finally {
+			setLoading(false);
+		}
 	};
 
 	const handleGoogleSignup = () => {

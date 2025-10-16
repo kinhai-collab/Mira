@@ -16,11 +16,32 @@ export default function LoginPage() {
 		router.push(path);
 	};
 
-	const handleLogin = (e: React.FormEvent) => {
+
+	const handleLogin = async (e: React.FormEvent) => {
 		e.preventDefault();
-		// Add login logic here
-		console.log("Login attempt:", { email, password });
-		router.push("/dashboard");
+		try {
+			// Prepare form data with email and password
+			const formData = new FormData();
+			formData.append("email", email);
+			formData.append("password", password);
+            
+			// Send POST request to backend signin endpoint
+			const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/signin`, {
+				method: "POST",
+				body: formData,
+			});
+
+			if (!res.ok) throw new Error("Invalid credentials");
+			const data = await res.json();
+            
+			// Store access token in local storage
+			localStorage.setItem("token", data.access_token);
+			
+			// Redirect user to dashboard page
+			router.push("/dashboard");
+		} catch (err) {
+			alert("Login failed. Please check your credentials.");
+		}
 	};
 
 	const handleGoogleLogin = () => {
