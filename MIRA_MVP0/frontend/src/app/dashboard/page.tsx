@@ -1,24 +1,300 @@
 /** @format */
-export default function DashboardPage() {
+"use client";
+
+import Image from "next/image";
+import { Icon } from "@/components/Icon";
+import { useRouter } from "next/navigation";
+
+export default function Dashboard() {
+	const router = useRouter();
+
 	return (
-		<div className="p-6">
-			<h1 className="text-3xl font-semibold text-[#62445E]">Dashboard</h1>
+		<div className="flex flex-col md:flex-row h-screen bg-[#F8F8FB] text-gray-800">
+			{/* Sidebar - visible on md+ */}
+			<aside className="hidden md:flex w-20 bg-[#F0ECF8] flex-col items-center justify-between py-6 border-r border-gray-200">
+				{/* Top Section */}
+				<div className="flex flex-col items-center space-y-6">
+					{/* Mira orb → Home */}
+					<div
+						onClick={() => router.push("/")}
+						className="w-8 h-8 rounded-full bg-gradient-to-br from-pink-300 to-purple-400 shadow-md cursor-pointer hover:scale-110 hover:shadow-[0_0_15px_4px_rgba(200,150,255,0.4)] transition-transform"
+						title="Go Home"
+					/>
 
-			<div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
-				<div className="p-6 bg-white rounded-2xl shadow hover:shadow-lg transition">
-					<h2 className="text-xl font-medium mb-2">Active Projects</h2>
-					<p className="text-gray-600">3 ongoing</p>
+					{/* Sidebar Icons */}
+					<div className="flex flex-col items-center gap-5 mt-4">
+						{["Dashboard", "Settings", "Reminder"].map((name, i) => (
+							<div
+								key={i}
+								className={`p-3 w-11 h-11 flex items-center justify-center rounded-lg border border-gray-100 shadow-sm transition-all cursor-pointer
+									${name === "Dashboard" ? "bg-[#E6D9FF]" : "bg-white hover:shadow-md"}
+								`}
+								onClick={() => {
+									if (name === "Dashboard") router.push("/dashboard");
+									else router.push(`/dashboard/${name.toLowerCase()}`);
+								}}
+							>
+								<Image
+									src={`/Icons/Property 1=${name}.svg`}
+									alt={name}
+									width={22}
+									height={22}
+								/>
+							</div>
+						))}
+					</div>
 				</div>
 
-				<div className="p-6 bg-white rounded-2xl shadow hover:shadow-lg transition">
-					<h2 className="text-xl font-medium mb-2">Team Members</h2>
-					<p className="text-gray-600">8 contributors</p>
+				{/* Bottom Profile Icon */}
+				<div
+					onClick={() => router.push("/dashboard/profile")}
+					className="p-3 w-11 h-11 flex items-center justify-center rounded-lg bg-white border border-gray-100 shadow-sm hover:shadow-md transition-all cursor-pointer"
+					title="Profile"
+				>
+					<Image
+						src="/Icons/Property 1=Profile.svg"
+						alt="Profile"
+						width={22}
+						height={22}
+					/>
+				</div>
+			</aside>
+
+			{/* Main Content */}
+			<main className="flex-1 px-4 sm:px-8 md:px-12 py-8 md:py-10 overflow-y-auto">
+				{/* Header */}
+				<div className="mb-8 md:mb-10 text-center md:text-left">
+					<h1 className="text-2xl md:text-[28px] font-semibold mb-1">
+						Good Morning, Bob!
+					</h1>
+					<p className="text-gray-500 text-sm md:text-base">
+						You’re feeling good today. Here’s your day at a glance.
+					</p>
 				</div>
 
-				<div className="p-6 bg-white rounded-2xl shadow hover:shadow-lg transition">
-					<h2 className="text-xl font-medium mb-2">Updates</h2>
-					<p className="text-gray-600">5 recent commits</p>
+				{/* Daily Overview */}
+				<section className="bg-white border border-gray-200 rounded-2xl shadow-sm px-4 sm:px-6 md:px-8 py-5 flex flex-col md:flex-row md:justify-between md:items-center mb-8 gap-4 md:gap-0">
+					<div className="flex flex-col sm:flex-row sm:flex-wrap md:flex-nowrap items-start md:items-center gap-4 sm:gap-8 text-sm sm:text-[15px] font-medium text-gray-700">
+						<div className="flex items-center gap-2">
+							<Image
+								src="/Icons/Property 1=Sun.svg"
+								alt="Weather"
+								width={22}
+								height={22}
+							/>
+							<span>Sunny 20°</span>
+						</div>
+
+						<div className="flex items-center gap-2">
+							<Image
+								src="/Icons/Property 1=Car.svg"
+								alt="Commute"
+								width={22}
+								height={22}
+							/>
+							<span>25 min commute</span>
+							<span className="text-gray-400 text-xs md:text-sm">
+								to the office
+							</span>
+						</div>
+
+						<div className="flex items-center gap-2">
+							<Image
+								src="/Icons/Property 1=Calendar.svg"
+								alt="Meeting"
+								width={22}
+								height={22}
+							/>
+							<span>Team Standup</span>
+							<span className="text-gray-400 text-xs md:text-sm">
+								9:00 AM | 15 min
+							</span>
+						</div>
+					</div>
+
+					<button className="px-4 sm:px-5 py-2 border border-gray-400 rounded-full hover:bg-gray-50 transition text-xs sm:text-sm font-medium self-center md:self-auto">
+						View Full Brief
+					</button>
+				</section>
+
+				{/* Dashboard Cards */}
+				<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+					{/* Emails */}
+					<div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-5 sm:p-6 flex flex-col justify-between hover:shadow-md transition">
+						<div>
+							<h3 className="text-base font-semibold mb-3 flex items-center gap-2">
+								<Image
+									src="/Icons/Property 1=Email.svg"
+									alt="Email"
+									width={20}
+									height={20}
+								/>
+								Emails
+							</h3>
+
+							<p className="text-sm text-gray-700 mb-1">12 important emails</p>
+							<p className="text-xs text-gray-400 mb-3">
+								from the last 24 hours
+							</p>
+
+							<p className="text-sm font-medium mb-1">Priority Distribution</p>
+							<div className="flex flex-wrap gap-2 mb-4">
+								<span className="bg-red-100 text-red-600 text-xs px-2 py-1 rounded-full">
+									High: 3
+								</span>
+								<span className="bg-yellow-100 text-yellow-700 text-xs px-2 py-1 rounded-full">
+									Medium: 5
+								</span>
+								<span className="bg-green-100 text-green-700 text-xs px-2 py-1 rounded-full">
+									Low: 4
+								</span>
+							</div>
+
+							<div className="text-xs sm:text-[13px] text-gray-600 space-y-1 mb-2">
+								<p>
+									Unread <span className="font-medium text-gray-800">8</span>
+								</p>
+								<p>
+									Trend <span className="text-red-500 font-medium">▼ 15%</span>
+								</p>
+							</div>
+
+							<p className="text-xs sm:text-[13px] text-gray-500">
+								Top Sender:{" "}
+								<span className="font-medium text-gray-800">John Mayer</span>
+							</p>
+						</div>
+
+						<button className="mt-6 w-full border border-gray-300 rounded-full py-2 text-xs sm:text-sm hover:bg-gray-50 transition">
+							View All
+						</button>
+					</div>
+
+					{/* Calendar */}
+					<div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-5 sm:p-6 flex flex-col justify-between hover:shadow-md transition">
+						<div>
+							<h3 className="text-base font-semibold mb-3 flex items-center gap-2">
+								<Image
+									src="/Icons/Property 1=Calendar.svg"
+									alt="Calendar"
+									width={20}
+									height={20}
+								/>
+								Calendar{" "}
+								<span className="text-gray-400 text-xs">(3 RSVPs)</span>
+							</h3>
+
+							<p className="text-sm text-red-500 mb-2 font-medium">Busy Day</p>
+							<p className="text-sm text-gray-600 mb-3">6.5h across 4 events</p>
+
+							<p className="text-sm font-medium mb-1">Next Event</p>
+							<p className="text-gray-800 font-medium text-[15px] mb-1">
+								Team Standup
+							</p>
+							<p className="text-xs sm:text-[13px] text-gray-500">
+								9:00 AM | Zoom
+							</p>
+
+							<div className="flex flex-wrap gap-2 mt-3">
+								<span className="bg-green-100 text-green-700 text-xs px-2 py-1 rounded-full">
+									2 deep work blocks
+								</span>
+								<span className="bg-red-100 text-red-600 text-xs px-2 py-1 rounded-full">
+									1 at-risk task
+								</span>
+							</div>
+						</div>
+
+						<button className="mt-6 w-full border border-gray-300 rounded-full py-2 text-xs sm:text-sm hover:bg-gray-50 transition">
+							View Calendar
+						</button>
+					</div>
+
+					{/* Tasks */}
+					<div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-5 sm:p-6 flex flex-col justify-between hover:shadow-md transition">
+						<div>
+							<h3 className="text-base font-semibold mb-3 flex items-center gap-2">
+								<Image
+									src="/Icons/Property 1=Brief.svg"
+									alt="Tasks"
+									width={20}
+									height={20}
+								/>
+								Tasks <span className="text-gray-400 text-xs">(8)</span>
+							</h3>
+
+							{[
+								"Task 1 name is here",
+								"Task 2 name is here",
+								"Task 3 name is here",
+							].map((task, i) => (
+								<div
+									key={i}
+									className="bg-gray-50 border border-gray-100 rounded-lg px-3 py-2 mb-2"
+								>
+									<p className="text-sm text-gray-700 font-medium">{task}</p>
+									<p className="text-xs text-gray-400">Due: Today, 2:00 PM</p>
+								</div>
+							))}
+						</div>
+
+						<button className="mt-4 w-full border border-gray-300 rounded-full py-2 text-xs sm:text-sm hover:bg-gray-50 transition">
+							View All
+						</button>
+					</div>
+
+					{/* Reminders */}
+					<div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-5 sm:p-6 flex flex-col justify-between hover:shadow-md transition">
+						<div>
+							<h3 className="text-base font-semibold mb-3 flex items-center gap-2">
+								<Image
+									src="/Icons/Property 1=Reminder.svg"
+									alt="Reminders"
+									width={20}
+									height={20}
+								/>
+								Reminders <span className="text-gray-400 text-xs">(4)</span>
+							</h3>
+
+							{[
+								"Reminder 1 is here",
+								"Reminder 2 is here",
+								"Reminder 3 is here",
+							].map((reminder, i) => (
+								<div
+									key={i}
+									className="bg-gray-50 border border-gray-100 rounded-lg px-3 py-2 mb-2"
+								>
+									<p className="text-sm text-gray-700 font-medium">
+										{reminder}
+									</p>
+									<p className="text-xs text-gray-400">Due: Today, 2:00 PM</p>
+								</div>
+							))}
+						</div>
+
+						<button className="mt-4 w-full border border-gray-300 rounded-full py-2 text-xs sm:text-sm hover:bg-gray-50 transition">
+							View All
+						</button>
+					</div>
 				</div>
+			</main>
+
+			{/* Bottom Nav - visible on mobile */}
+			<div className="md:hidden fixed bottom-0 left-0 right-0 bg-[#F0ECF8] border-t border-gray-200 flex justify-around py-3">
+				{["Dashboard", "Settings", "Reminder", "Profile"].map((name, i) => (
+					<div
+						key={i}
+						onClick={() => {
+							if (name === "Dashboard") router.push("/dashboard");
+							else if (name === "Profile") router.push("/dashboard/profile");
+							else router.push(`/dashboard/${name.toLowerCase()}`);
+						}}
+						className="flex flex-col items-center text-gray-700"
+					>
+						<Icon name={name} size={20} />
+					</div>
+				))}
 			</div>
 		</div>
 	);

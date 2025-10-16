@@ -1,10 +1,10 @@
 /** @format */
 "use client";
 
-export default function ProfilePage() {
+export default function ReminderPage() {
 	return (
 		<div className="flex items-center justify-center h-screen text-gray-700 text-lg font-medium">
-			Profile Page (Coming soon)
+			Reminder Page (Coming soon)
 		</div>
 	);
 }
