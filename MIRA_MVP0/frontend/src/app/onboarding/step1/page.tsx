@@ -1,165 +1,212 @@
 /** @format */
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Icon } from "@/components/Icon";
+import { OnboardingHeader } from "@/components/OnboardingHeader";
 
 export default function OnboardingStep1() {
 	const router = useRouter();
+	const [consents, setConsents] = useState({
+		selectAll: false,
+		manageEmails: false,
+		readComposeEmails: false,
+		contactInfo: false,
+		downloadContacts: false,
+	});
+
+	const handleNavigate = (path: string) => {
+		router.push(path);
+	};
+
+	const handleBack = () => {
+		router.push("/signup");
+	};
+
+	const handleContinue = () => {
+		console.log("Consents:", consents);
+		router.push("/onboarding/step2");
+	};
+
+	const toggleConsent = (key: keyof typeof consents) => {
+		setConsents(prev => ({
+			...prev,
+			[key]: !prev[key],
+		}));
+	};
+
+	const handleSelectAll = () => {
+		const newValue = !consents.selectAll;
+		setConsents({
+			selectAll: newValue,
+			manageEmails: newValue,
+			readComposeEmails: newValue,
+			contactInfo: newValue,
+			downloadContacts: newValue,
+		});
+	};
 
 	return (
-		<div className="flex flex-col md:flex-row h-screen bg-gradient-to-b from-[#D9B8FF] via-[#E8C9F8] to-[#F6D7F8] text-gray-800">
-			{/* Sidebar - visible only on md+ */}
-			<aside className="hidden md:flex w-20 bg-[#F0ECF8] flex-col items-center justify-between py-6 border-r border-gray-200">
+		<div className="flex h-screen bg-gradient-to-b from-[#d0c7fa] to-[#fbdbed]">
+			{/* Sidebar */}
+			<div className="bg-[rgba(255,255,255,0.5)] border-r border-[rgba(196,199,204,0.5)] flex flex-col items-center justify-between h-full w-20 p-6">
 				{/* Top Section */}
-				<div className="flex flex-col items-center space-y-6">
-					{/* Mira orb → Home */}
-					<div
-						onClick={() => router.push("/")}
-						className="w-8 h-8 rounded-full bg-gradient-to-br from-pink-300 to-purple-400 shadow-md cursor-pointer hover:scale-110 hover:shadow-[0_0_15px_4px_rgba(200,150,255,0.4)] transition-transform"
-						title="Go Home"
-					/>
-					{/* Icons */}
-					<div className="flex flex-col items-center gap-5 mt-4">
-						{["Dashboard", "Settings", "Reminder"].map((name, i) => (
-							<div
-								key={i}
-								onClick={() => {
-									if (name === "Dashboard") router.push("/dashboard");
-									else router.push(`/dashboard/${name.toLowerCase()}`);
-								}}
-								className="p-3 w-11 h-11 flex items-center justify-center rounded-lg bg-white border border-gray-100 shadow-sm hover:shadow-md transition-all cursor-pointer"
+				<div className="flex flex-col items-center gap-6">
+					<div className="relative w-10 h-10 shrink-0">
+						<div className="absolute inset-0 bg-gradient-to-br from-purple-400 to-pink-300 rounded-full shadow-[0px_0px_10px_0px_#bab2da]"></div>
+						<div className="absolute inset-1 bg-gradient-to-br from-purple-300 to-pink-200 rounded-full"></div>
+					</div>
+				</div>
+			</div>
+
+			{/* Main content */}
+			<div className="flex-1 flex justify-center items-start px-4 overflow-y-auto pt-8">
+				<div className="w-full max-w-[664px]">
+					{/* Header with progress bar */}
+					<div className="bg-[#f7f8fa] rounded-t-lg px-8 py-4 mb-0">
+						<div className="flex items-center justify-between mb-6">
+							<button
+								onClick={handleBack}
+								className="flex items-center gap-3 text-[#454547] text-[14px] font-['Outfit',_sans-serif] hover:text-[#272829] transition-colors"
 							>
-								<Icon name={name} size={22} />
-							</div>
-						))}
-					</div>
-				</div>
-
-				{/* Profile */}
-				<div
-					onClick={() => router.push("/dashboard/profile")}
-					className="p-3 w-11 h-11 flex items-center justify-center rounded-lg bg-white border border-gray-100 shadow-sm hover:shadow-md transition-all cursor-pointer"
-					title="Profile"
-				>
-					<Icon name="Profile" size={22} />
-				</div>
-			</aside>
-
-			{/* Main Section */}
-			<main className="flex-1 flex justify-center items-center px-4 md:px-10 overflow-y-auto py-10 md:py-0">
-				<div className="bg-white rounded-lg shadow-xl p-6 sm:p-8 md:p-10 w-full max-w-md sm:max-w-lg md:max-w-2xl">
-					{/* Progress + Header */}
-					<div className="flex justify-between items-center mb-4">
-						<button
-							onClick={() => router.back()}
-							className="text-gray-600 text-sm font-medium flex items-center gap-1 hover:text-gray-800"
-						>
-							<Icon name="ChevronLeft" size={18} /> Back
-						</button>
-						<p className="text-xs sm:text-sm text-gray-500">Step 1 of 5</p>
-					</div>
-
-					{/* Progress Bar */}
-					<div className="w-full bg-gray-200 h-2 rounded-full mb-8">
-						<div className="bg-purple-500 h-2 rounded-full w-1/5 transition-all"></div>
-					</div>
-
-					{/* Title */}
-					<h1 className="text-xl sm:text-2xl font-semibold text-gray-900 mb-3 text-center md:text-left">
-						Consent & Data Use Disclosure
-					</h1>
-					<p className="text-gray-600 mb-6 text-[14px] sm:text-[15px] leading-relaxed text-center md:text-left">
-						Select what Mira can access to provide you with the best experience
-					</p>
-
-					{/* Form */}
-					<form className="space-y-4">
-						{/* Select All */}
-						<div className="flex items-start gap-3">
-							<input
-								type="checkbox"
-								className="mt-1 w-4 h-4 text-purple-600 rounded focus:ring-purple-400"
-							/>
-							<p className="text-gray-800 text-[15px] font-medium">
-								Select all
-							</p>
+								<div className="w-3 h-6">
+									<svg width="12" height="24" viewBox="0 0 12 24" fill="none">
+										<path d="M10 2L2 12L10 22" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+									</svg>
+								</div>
+								Back
+							</button>
+							<span className="text-[#454547] text-[14px] font-['Outfit',_sans-serif]">
+								Step 1 of 5
+							</span>
 						</div>
-
-						{/* Indented Options */}
-						<div className="pl-6 space-y-4">
-							{[
-								"Manage drafts and send emails.",
-								"Read, compose, and send emails from your email accounts.",
-								"See and download contact info automatically saved in your “Other contacts.”",
-								"See and download your contacts.",
-							].map((text, i) => (
-								<div key={i} className="flex items-start gap-3">
-									<input
-										type="checkbox"
-										className="mt-1 w-4 h-4 text-purple-600 rounded focus:ring-purple-400"
+						
+						{/* Progress bar */}
+						<div className="flex items-center w-full">
+							{Array.from({ length: 5 }, (_, index) => (
+								<div key={index} className="flex-1 flex items-center">
+									<div
+										className={`h-[10px] w-full ${
+											index < 1
+												? "bg-[#735ff8]"
+												: "bg-[#dde4f6]"
+										} ${
+											index === 0
+												? "rounded-l-lg"
+												: index === 4
+												? "rounded-r-lg"
+												: ""
+										}`}
 									/>
-									<div>
-										<p className="text-gray-800 text-[14px] sm:text-[15px] leading-snug">
-											{text}
-										</p>
-										<a
-											href="#"
-											className="text-purple-500 text-sm underline hover:text-purple-600"
-										>
-											Learn more
-										</a>
-									</div>
 								</div>
 							))}
 						</div>
-
-						{/* Footer Notice */}
-						<p className="text-xs sm:text-sm text-gray-500 mt-6 leading-relaxed">
-							Make sure you trust Mira: Review{" "}
-							<a
-								href="#"
-								className="text-purple-600 underline hover:text-purple-700"
-							>
-								Mira’s Privacy Policy
-							</a>{" "}
-							and{" "}
-							<a
-								href="#"
-								className="text-purple-600 underline hover:text-purple-700"
-							>
-								Terms of Service
-							</a>{" "}
-							to understand how Mira will process and protect your data.
-						</p>
-
-						{/* Continue Button */}
-						<button
-							type="button"
-							onClick={() => router.push("/onboarding/step2")}
-							className="w-full bg-black text-white py-2.5 mt-6 rounded-full font-medium hover:opacity-90 transition text-sm sm:text-base"
-						>
-							Continue
-						</button>
-					</form>
-				</div>
-			</main>
-
-			{/* Bottom Nav (Mobile only) */}
-			<div className="md:hidden fixed bottom-0 left-0 right-0 bg-[#F0ECF8] border-t border-gray-200 flex justify-around py-3">
-				{["Dashboard", "Settings", "Reminder", "Profile"].map((name, i) => (
-					<div
-						key={i}
-						onClick={() => {
-							if (name === "Dashboard") router.push("/dashboard");
-							else if (name === "Profile") router.push("/dashboard/profile");
-							else router.push(`/dashboard/${name.toLowerCase()}`);
-						}}
-						className="flex flex-col items-center text-gray-700"
-					>
-						<Icon name={name} size={20} />
 					</div>
-				))}
+
+					{/* Content */}
+					<div className="bg-[#f7f8fa] rounded-b-lg px-8 py-6">
+						<div className="flex flex-col gap-10">
+							{/* Header */}
+							<div className="flex flex-col gap-4">
+								<h1 className="text-[36px] leading-[40px] font-normal text-[#272829] font-['Outfit',_sans-serif]">
+									Consent & Data Use Disclosure
+								</h1>
+								<p className="text-[18px] leading-[12px] text-[#272829] font-['Outfit',_sans-serif]">
+									Select what Mira can access to provide you with the best experience
+								</p>
+							</div>
+
+							{/* Consent checkboxes */}
+							<div className="flex flex-col gap-4">
+								{/* Select All */}
+								<div className="flex items-center gap-3">
+									<button
+										onClick={handleSelectAll}
+										className="w-5 h-5 flex items-center justify-center border-2 border-[#96989c] rounded hover:border-[#735ff8] transition-colors"
+									>
+										{consents.selectAll && (
+											<svg width="12" height="9" viewBox="0 0 12 9" fill="none">
+												<path d="M1 4.5L4.5 8L11 1" stroke="#735ff8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+											</svg>
+										)}
+									</button>
+									<span className="text-[16px] font-normal text-[#454547] font-['Outfit',_sans-serif]">
+										Select all
+									</span>
+								</div>
+
+								{/* Individual consents */}
+								{[
+									{
+										key: 'manageEmails' as keyof typeof consents,
+										title: 'Manage drafts and send emails.',
+										learnMore: 'Learn more'
+									},
+									{
+										key: 'readComposeEmails' as keyof typeof consents,
+										title: 'Read, compose, and send emails from your email accounts.',
+										learnMore: 'Learn more'
+									},
+									{
+										key: 'contactInfo' as keyof typeof consents,
+										title: 'See and download contact info automatically saved in your "Other contacts."',
+										learnMore: 'Learn more'
+									},
+									{
+										key: 'downloadContacts' as keyof typeof consents,
+										title: 'See and download your contacts.',
+										learnMore: 'Learn more'
+									}
+								].map((item, index) => (
+									<div key={item.key} className="flex items-start gap-3">
+										<button
+											onClick={() => toggleConsent(item.key)}
+											className="w-5 h-5 flex items-center justify-center border-2 border-[#96989c] rounded hover:border-[#735ff8] transition-colors mt-0.5"
+										>
+											{consents[item.key] && (
+												<svg width="12" height="9" viewBox="0 0 12 9" fill="none">
+													<path d="M1 4.5L4.5 8L11 1" stroke="#735ff8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+												</svg>
+											)}
+										</button>
+										<div className="flex flex-col gap-1">
+											<span className="text-[16px] font-normal text-[#454547] font-['Outfit',_sans-serif]">
+												{item.title}
+											</span>
+											<button className="text-[14px] text-[#7a7c7f] underline font-['Outfit',_sans-serif] hover:text-[#454547] transition-colors text-left">
+												{item.learnMore}
+											</button>
+										</div>
+									</div>
+								))}
+							</div>
+
+							{/* Privacy notice and continue button */}
+							<div className="flex flex-col gap-5">
+								<div className="p-2">
+									<p className="text-[18px] leading-normal text-[#272829] font-['Outfit',_sans-serif]">
+										<span className="font-bold">Make sure you trust Mira:</span> Review{' '}
+										<a href="#" className="text-[#735ff8] underline hover:text-[#5a4fd6] transition-colors">
+											Mira's Privacy Policy
+										</a>
+										{' '}and{' '}
+										<a href="#" className="text-[#735ff8] underline hover:text-[#5a4fd6] transition-colors">
+											Terms of Service
+										</a>
+										{' '}to understand how Mira will process and protect your data.
+									</p>
+								</div>
+								
+								<button
+									onClick={handleContinue}
+									className="bg-[#272829] text-[#fbfcfd] h-[54px] rounded-[50px] text-[18px] font-normal font-['Outfit',_sans-serif] hover:bg-[#454547] transition-colors"
+								>
+									Continue
+								</button>
+							</div>
+						</div>
+					</div>
+				</div>
 			</div>
 		</div>
 	);

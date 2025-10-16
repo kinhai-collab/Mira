@@ -1,68 +1,45 @@
-/** @format */
-"use client";
+import { Icon } from "./Icon";
+import { MiraLogo } from "./MiraLogo";
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-import {
-	LayoutDashboard,
-	BookOpen,
-	Notebook,
-	Settings,
-	User,
-} from "lucide-react";
+interface SidebarProps {
+  onNavigate: (path: string) => void;
+}
 
-export const Sidebar = () => {
-	const pathname = usePathname();
+export function Sidebar({ onNavigate }: SidebarProps) {
+  const navItems = [
+    { name: "Dashboard", path: "/dashboard" },
+    { name: "Settings", path: "/dashboard/settings" },
+    { name: "Reminder", path: "/dashboard/remainder" },
+  ];
 
-	const links = [
-		{ name: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
-		{ name: "Onboarding", icon: BookOpen, href: "/onboarding" },
-		{ name: "Notes", icon: Notebook, href: "/notes" },
-		{ name: "Settings", icon: Settings, href: "/settings" },
-	];
+  return (
+    <aside className="bg-[rgba(255,255,255,0.5)] border-r border-[rgba(196,199,204,0.5)] flex flex-col items-center justify-between h-full w-20 p-6">
+      {/* Top Section */}
+      <div className="flex flex-col items-center gap-6">
+        <MiraLogo className="shadow-[0px_0px_10px_0px_#bab2da]" />
+        
+        <div className="flex flex-col gap-4">
+          {navItems.map((item) => (
+            <button
+              key={item.name}
+              onClick={() => onNavigate(item.path)}
+              className="bg-[#f0f3fa] border border-[#c4c7cc] flex items-center justify-center p-2.5 rounded-lg w-11 h-11 hover:bg-[#e6e9f0] transition-colors"
+              title={item.name}
+            >
+              <Icon name={item.name} size={24} />
+            </button>
+          ))}
+        </div>
+      </div>
 
-	return (
-		<aside className="w-64 bg-[#62445E] text-white p-6 flex flex-col justify-between">
-			{/* Top Section */}
-			<div>
-				<h1 className="text-2xl font-bold mb-10 tracking-wide">Mira</h1>
-
-				<nav className="space-y-3">
-					{links.map((link) => {
-						const isActive = pathname === link.href;
-
-						return (
-							<Link
-								key={link.name}
-								href={link.href}
-								className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all ${
-									isActive
-										? "bg-[#b497bd] text-[#2e1c34] font-medium shadow-sm"
-										: "hover:bg-[#b497bd]/70 hover:text-[#2e1c34]"
-								}`}
-							>
-								<link.icon className="w-5 h-5" />
-								<span>{link.name}</span>
-							</Link>
-						);
-					})}
-				</nav>
-			</div>
-
-			{/* Bottom Profile */}
-			<div className="mt-10 border-t border-[#7b5d86] pt-4">
-				<Link
-					href="/dashboard/profile"
-					className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all ${
-						pathname === "/dashboard/profile"
-							? "bg-[#b497bd] text-[#2e1c34] font-medium shadow-sm"
-							: "hover:bg-[#b497bd]/70 hover:text-[#2e1c34]"
-					}`}
-				>
-					<User className="w-5 h-5" />
-					<span>Profile</span>
-				</Link>
-			</div>
-		</aside>
-	);
-};
+      {/* Profile Icon */}
+      <button
+        onClick={() => onNavigate("/dashboard/profile")}
+        className="bg-[#f0f3fa] border border-[#c4c7cc] flex items-center justify-center p-2.5 rounded-lg w-11 h-11 hover:bg-[#e6e9f0] transition-colors"
+        title="Profile"
+      >
+        <Icon name="Profile" size={24} />
+      </button>
+    </aside>
+  );
+}
