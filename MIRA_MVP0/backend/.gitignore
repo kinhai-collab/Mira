@@ -1,3 +1,4 @@
 # Environment files
 .env
-firebase_key.json__pycache__/
+__pycache__/
+*.pyc

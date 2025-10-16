@@ -1,124 +1,141 @@
 /** @format */
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Icon } from "@/components/Icon";
 
 export default function OnboardingStep2() {
 	const router = useRouter();
+	const [formData, setFormData] = useState({
+		firstName: "",
+		middleName: "",
+		lastName: "",
+	});
+
+	const handleNavigate = (path: string) => {
+		router.push(path);
+	};
+
+	const handleBack = () => {
+		router.push("/onboarding/step1");
+	};
+
+	const handleContinue = () => {
+		console.log("Name data:", formData);
+		router.push("/onboarding/step3");
+	};
+
+	const handleInputChange = (field: keyof typeof formData, value: string) => {
+		setFormData(prev => ({
+			...prev,
+			[field]: value,
+		}));
+	};
 
 	return (
-		<div className="flex flex-col md:flex-row h-screen bg-gradient-to-b from-[#D9B8FF] via-[#E8C9F8] to-[#F6D7F8] text-gray-800">
-			{/* Sidebar (hidden on small screens) */}
-			<aside className="hidden md:flex w-20 bg-[#F0ECF8] flex-col items-center justify-between py-6 border-r border-gray-200">
+		<div className="flex h-screen bg-gradient-to-b from-[#d0c7fa] to-[#fbdbed]">
+			{/* Sidebar */}
+			<div className="bg-[rgba(255,255,255,0.5)] border-r border-[rgba(196,199,204,0.5)] flex flex-col items-center justify-between h-full w-20 p-6">
 				{/* Top Section */}
-				<div className="flex flex-col items-center space-y-6">
-					{/* Mira orb → Home */}
-					<div
-						onClick={() => router.push("/")}
-						className="w-8 h-8 rounded-full bg-gradient-to-br from-pink-300 to-purple-400 shadow-md cursor-pointer hover:scale-110 hover:shadow-[0_0_15px_4px_rgba(200,150,255,0.4)] transition-transform"
-						title="Go Home"
-					/>
+				<div className="flex flex-col items-center gap-6">
+					<div className="relative w-10 h-10 shrink-0">
+						<div className="absolute inset-0 bg-gradient-to-br from-purple-400 to-pink-300 rounded-full shadow-[0px_0px_10px_0px_#bab2da]"></div>
+						<div className="absolute inset-1 bg-gradient-to-br from-purple-300 to-pink-200 rounded-full"></div>
+					</div>
+				</div>
+			</div>
 
-					{/* Sidebar icons */}
-					<div className="flex flex-col items-center gap-5 mt-4">
-						{["Dashboard", "Settings", "Reminder"].map((name, i) => (
-							<div
-								key={i}
-								onClick={() => {
-									if (name === "Dashboard") router.push("/dashboard");
-									else router.push(`/dashboard/${name.toLowerCase()}`);
-								}}
-								className="p-3 w-11 h-11 flex items-center justify-center rounded-lg bg-white border border-gray-100 shadow-sm hover:shadow-md transition-all cursor-pointer"
+			{/* Main content */}
+			<div className="flex-1 flex justify-center items-start px-4 overflow-y-auto pt-8">
+				<div className="w-full max-w-[664px]">
+					{/* Header with progress bar */}
+					<div className="bg-[#f7f8fa] rounded-t-lg px-8 py-4 mb-0">
+						<div className="flex items-center justify-between mb-6">
+							<button
+								onClick={handleBack}
+								className="flex items-center gap-3 text-[#454547] text-[14px] font-['Outfit',_sans-serif] hover:text-[#272829] transition-colors"
 							>
-								<Icon
-									name={name}
-									size={22}
-									className="opacity-80 hover:opacity-100 transition"
-								/>
+								<div className="w-3 h-6">
+									<svg width="12" height="24" viewBox="0 0 12 24" fill="none">
+										<path d="M10 2L2 12L10 22" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+									</svg>
+								</div>
+								Back
+							</button>
+							<span className="text-[#454547] text-[14px] font-['Outfit',_sans-serif]">
+								Step 2 of 5
+							</span>
+						</div>
+						
+						{/* Progress bar */}
+						<div className="flex items-center w-full">
+							{Array.from({ length: 5 }, (_, index) => (
+								<div key={index} className="flex-1 flex items-center">
+									<div
+										className={`h-[10px] w-full ${
+											index < 2
+												? "bg-[#735ff8]"
+												: "bg-[#dde4f6]"
+										} ${
+											index === 0
+												? "rounded-l-lg"
+												: index === 4
+												? "rounded-r-lg"
+												: ""
+										}`}
+									/>
+								</div>
+							))}
+						</div>
+					</div>
+
+					{/* Content */}
+					<div className="bg-[#f7f8fa] rounded-b-lg px-8 py-6">
+						<div className="flex flex-col gap-10">
+							{/* Header */}
+							<div className="flex flex-col gap-4">
+								<h1 className="text-[36px] leading-[40px] font-normal text-[#272829] font-['Outfit',_sans-serif]">
+									What's Your Name
+								</h1>
+								<p className="text-[18px] leading-[12px] text-[#272829] font-['Outfit',_sans-serif]">
+									Help us personalize your experience
+								</p>
 							</div>
-						))}
-					</div>
-				</div>
 
-				{/* Profile Icon */}
-				<div
-					onClick={() => router.push("/dashboard/profile")}
-					className="p-3 w-11 h-11 flex items-center justify-center rounded-lg bg-white border border-gray-100 shadow-sm hover:shadow-md transition-all cursor-pointer"
-					title="Profile"
-				>
-					<Icon name="Profile" size={22} />
-				</div>
-			</aside>
-
-			{/* Main Content */}
-			<main className="flex flex-1 justify-center items-center px-4 md:px-10 overflow-y-auto py-10 md:py-0">
-				<div className="bg-white rounded-lg shadow-xl p-6 sm:p-8 md:p-10 w-full max-w-md sm:max-w-lg md:max-w-2xl">
-					{/* Header + Progress */}
-					<div className="flex justify-between items-center mb-4">
-						<button
-							onClick={() => router.back()}
-							className="text-gray-600 text-sm font-medium flex items-center gap-1 hover:text-gray-800"
-						>
-							<Icon name="ChevronLeft" size={18} /> Back
-						</button>
-						<p className="text-xs sm:text-sm text-gray-500">Step 2 of 5</p>
-					</div>
-
-					{/* Progress Bar */}
-					<div className="w-full bg-gray-200 h-2 rounded-full mb-8">
-						<div className="bg-purple-500 h-2 rounded-full w-2/5 transition-all"></div>
-					</div>
-
-					{/* Title */}
-					<h1 className="text-xl sm:text-2xl font-semibold text-gray-900 mb-3 text-center md:text-left">
-						What’s Your Name
-					</h1>
-					<p className="text-gray-600 mb-6 text-[14px] sm:text-[15px] text-center md:text-left">
-						Help us personalize your experience
-					</p>
-
-					{/* Form Fields */}
-					<form className="space-y-4">
-						{["First name", "Middle name", "Last name"].map((label, i) => (
-							<div key={i}>
-								<label className="block text-sm font-medium text-gray-700 mb-1">
-									{label}
-								</label>
-								<input
-									type="text"
-									className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-purple-300"
-								/>
+							{/* Form fields */}
+							<div className="flex flex-col gap-3">
+								{[
+									{ key: 'firstName' as keyof typeof formData, label: 'First name' },
+									{ key: 'middleName' as keyof typeof formData, label: 'Middle name' },
+									{ key: 'lastName' as keyof typeof formData, label: 'Last name' },
+								].map((field) => (
+									<div key={field.key} className="flex flex-col gap-3">
+										<label className="text-[18px] font-normal text-[#454547] font-['Outfit',_sans-serif]">
+											{field.label}
+										</label>
+										<input
+											type="text"
+											value={formData[field.key]}
+											onChange={(e) => handleInputChange(field.key, e.target.value)}
+											className="bg-[#f7f8fa] border border-[#96989c] h-[64px] rounded-lg px-4 text-[18px] font-['Outfit',_sans-serif] focus:outline-none focus:ring-2 focus:ring-[#735ff8] focus:border-[#735ff8] transition-colors"
+											placeholder={`Enter your ${field.label.toLowerCase()}`}
+										/>
+									</div>
+								))}
 							</div>
-						))}
 
-						{/* Continue Button */}
-						<button
-							type="button"
-							onClick={() => router.push("/onboarding/step3")}
-							className="w-full bg-black text-white py-2.5 mt-6 rounded-full font-medium hover:opacity-90 transition text-sm sm:text-base"
-						>
-							Continue
-						</button>
-					</form>
-				</div>
-			</main>
-
-			{/* Bottom Nav (for mobile) */}
-			<div className="md:hidden fixed bottom-0 left-0 right-0 bg-[#F0ECF8] border-t border-gray-200 flex justify-around py-3">
-				{["Dashboard", "Settings", "Reminder", "Profile"].map((name, i) => (
-					<div
-						key={i}
-						onClick={() => {
-							if (name === "Dashboard") router.push("/dashboard");
-							else if (name === "Profile") router.push("/dashboard/profile");
-							else router.push(`/dashboard/${name.toLowerCase()}`);
-						}}
-						className="flex flex-col items-center text-gray-700"
-					>
-						<Icon name={name} size={20} />
+							{/* Continue button */}
+							<div className="flex flex-col gap-5">
+								<button
+									onClick={handleContinue}
+									className="bg-[#272829] text-[#fbfcfd] h-[54px] rounded-[50px] text-[18px] font-normal font-['Outfit',_sans-serif] hover:bg-[#454547] transition-colors"
+								>
+									Continue
+								</button>
+							</div>
+						</div>
 					</div>
-				))}
+				</div>
 			</div>
 		</div>
 	);

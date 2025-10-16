@@ -1,15 +1,46 @@
 @import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
 
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  
+  /* Figma Design Variables */
+  --neutral-100: #272829;
+  --neutral-90: #454547;
+  --neutral-60: #96989c;
+  --neutral-50: #c4c7cc;
+  --neutral-30: #e6e9f0;
+  --neutral-20: #f0f3fa;
+  --neutral-10: #f7f8fa;
+  
+  --pink-30: #f9c9e4;
+  --pink-20: #fbdbed;
+  
+  --purple-40: #b5a6f7;
+  --purple-30: #d0c7fa;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: 'Outfit', sans-serif;
   --font-mono: var(--font-geist-mono);
+  
+  /* Custom color variables */
+  --color-neutral-100: var(--neutral-100);
+  --color-neutral-90: var(--neutral-90);
+  --color-neutral-60: var(--neutral-60);
+  --color-neutral-50: var(--neutral-50);
+  --color-neutral-30: var(--neutral-30);
+  --color-neutral-20: var(--neutral-20);
+  --color-neutral-10: var(--neutral-10);
+  
+  --color-pink-30: var(--pink-30);
+  --color-pink-20: var(--pink-20);
+  
+  --color-purple-40: var(--purple-40);
+  --color-purple-30: var(--purple-30);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -22,5 +53,5 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: 'Outfit', sans-serif;
 }
