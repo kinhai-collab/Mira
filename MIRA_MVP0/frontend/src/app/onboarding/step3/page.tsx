@@ -2,12 +2,25 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { Icon } from "@/components/Icon";
 import { FcGoogle } from "react-icons/fc";
 import { FaMicrosoft } from "react-icons/fa";
 
 export default function OnboardingStep3() {
 	const router = useRouter();
+	const [connectedEmails, setConnectedEmails] = useState([]);
+
+	const handleContinue = () => {
+		try {
+			localStorage.setItem(
+			  "mira_onboarding_step3",
+			  JSON.stringify({ connectedEmails })
+			);
+		  } catch {}
+		console.log("Connected emails:", connectedEmails);
+		router.push("/onboarding/step4");
+	};
 
 	return (
 		<div className="flex flex-col md:flex-row h-screen bg-gradient-to-b from-[#D9B8FF] via-[#E8C9F8] to-[#F6D7F8] text-gray-800">
@@ -112,7 +125,7 @@ export default function OnboardingStep3() {
 
 					{/* Continue Button */}
 					<button
-						onClick={() => router.push("/onboarding/step4")}
+						onClick={handleContinue}
 						className="w-full bg-black text-white py-2.5 mt-6 rounded-full font-medium hover:opacity-90 transition text-sm sm:text-base"
 					>
 						Continue

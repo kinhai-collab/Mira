@@ -8,6 +8,7 @@ import { Icon } from "@/components/Icon";
 export default function Home() {
 	const router = useRouter();
 
+
 	const [input, setInput] = useState("");
 	const [isThinking, setIsThinking] = useState(false);
 	const [steps, setSteps] = useState<string[]>([]);

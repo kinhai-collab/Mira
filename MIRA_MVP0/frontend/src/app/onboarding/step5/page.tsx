@@ -2,11 +2,52 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { Icon } from "@/components/Icon";
 import { FaBell, FaMicrophone, FaBolt } from "react-icons/fa";
 
 export default function OnboardingStep5() {
 	const router = useRouter();
+	const [permissions, setPermissions] = useState([]);
+
+	const handleFinish = async () => {
+		try {
+			const email = (() => { try { return localStorage.getItem("mira_email") || ""; } catch { return ""; } })();
+			if (!email) { alert("Missing email from signup. Please sign up again."); router.push("/signup"); return; }
+			
+			// Collect all onboarding data from localStorage
+			const step1Data = (() => { try { return JSON.parse(localStorage.getItem("mira_onboarding_step1") || "{}"); } catch { return {}; } })();
+			const step2Data = (() => { try { return JSON.parse(localStorage.getItem("mira_onboarding_step2") || "{}"); } catch { return {}; } })();
+			const step3Data = (() => { try { return JSON.parse(localStorage.getItem("mira_onboarding_step3") || "{}"); } catch { return {}; } })();
+			const step4Data = (() => { try { return JSON.parse(localStorage.getItem("mira_onboarding_step4") || "{}"); } catch { return {}; } })();
+			
+			const payload = { 
+				email, 
+				step1: step1Data,
+				step2: step2Data,
+				step3: step3Data,
+				step4: step4Data,
+				step5: { permissions }
+			};
+			
+			const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+			const endpoint = `${apiBase}/onboarding_save`;
+			const res = await fetch(endpoint, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify(payload),
+			});
+			const data = await res.json();
+			if (!res.ok) throw new Error(data?.detail?.message || data?.message || "Failed to save onboarding");
+			// Go to dashboard
+			router.push("/dashboard");
+		} catch (e:any) {
+			alert(e?.message || "Failed to finish onboarding");
+		}
+	};
+	const handleNavigate = (path: string) => {
+		router.push(path);
+	};
 
 	return (
 		<div className="flex flex-col md:flex-row h-screen bg-gradient-to-b from-[#D9B8FF] via-[#E8C9F8] to-[#F6D7F8] text-gray-800">
@@ -118,7 +159,7 @@ export default function OnboardingStep5() {
 
 					{/* Final Button */}
 					<button
-						onClick={() => router.push("/login")}
+						onClick={handleFinish}
 						className="w-full bg-black text-white py-2.5 mt-6 rounded-full font-medium hover:opacity-90 transition text-sm sm:text-base"
 					>
 						Complete sign up

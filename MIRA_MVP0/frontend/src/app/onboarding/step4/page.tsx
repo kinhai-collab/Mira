@@ -2,6 +2,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { Icon } from "@/components/Icon";
 import { FcGoogle } from "react-icons/fc";
 import { FaMicrosoft } from "react-icons/fa";
@@ -9,6 +10,19 @@ import { RiExchangeBoxFill } from "react-icons/ri";
 
 export default function OnboardingStep4() {
 	const router = useRouter();
+	const [connectedCalendars, setConnectedCalendars] = useState([]);
+
+	const handleContinue = () => {
+		try {
+			localStorage.setItem(
+			  "mira_onboarding_step4",
+			  JSON.stringify({ connectedCalendars })
+			);
+		  } catch {}
+
+		console.log("Connected calendars:", connectedCalendars);
+		router.push("/onboarding/step5");
+	};
 
 	return (
 		<div className="flex flex-col md:flex-row h-screen bg-gradient-to-b from-[#D9B8FF] via-[#E8C9F8] to-[#F6D7F8] text-gray-800">
@@ -117,7 +131,7 @@ export default function OnboardingStep4() {
 
 					{/* Continue Button */}
 					<button
-						onClick={() => router.push("/onboarding/step5")}
+						onClick={handleContinue}
 						className="w-full bg-black text-white py-2.5 mt-6 rounded-full font-medium hover:opacity-90 transition text-sm sm:text-base"
 					>
 						Continue

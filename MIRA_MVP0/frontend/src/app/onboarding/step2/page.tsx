@@ -2,10 +2,37 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { Icon } from "@/components/Icon";
 
 export default function OnboardingStep2() {
 	const router = useRouter();
+	const [formData, setFormData] = useState({
+		firstName: "",
+		middleName: "",
+		lastName: "",
+	});
+
+	const handleInputChange = (field: string, value: string) => {
+		setFormData(prev => ({
+			...prev,
+			[field]: value
+		}));
+	};
+
+	const handleContinue = () => {
+		try {
+			localStorage.setItem(
+			  "mira_onboarding_step2",
+			  JSON.stringify({
+				firstName: formData.firstName,
+				middleName: formData.middleName,
+				lastName: formData.lastName,
+			  })
+			);
+		  } catch {}
+		router.push("/onboarding/step3");
+	};
 
 	return (
 		<div className="flex flex-col md:flex-row h-screen bg-gradient-to-b from-[#D9B8FF] via-[#E8C9F8] to-[#F6D7F8] text-gray-800">
@@ -80,13 +107,19 @@ export default function OnboardingStep2() {
 
 					{/* Form Fields */}
 					<form className="space-y-4">
-						{["First name", "Middle name", "Last name"].map((label, i) => (
+						{[
+							{ label: "First name", field: "firstName" },
+							{ label: "Middle name", field: "middleName" },
+							{ label: "Last name", field: "lastName" }
+						].map((item, i) => (
 							<div key={i}>
 								<label className="block text-sm font-medium text-gray-700 mb-1">
-									{label}
+									{item.label}
 								</label>
 								<input
 									type="text"
+									value={formData[item.field as keyof typeof formData]}
+									onChange={(e) => handleInputChange(item.field, e.target.value)}
 									className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-purple-300"
 								/>
 							</div>
@@ -95,7 +128,7 @@ export default function OnboardingStep2() {
 						{/* Continue Button */}
 						<button
 							type="button"
-							onClick={() => router.push("/onboarding/step3")}
+							onClick={handleContinue}
 							className="w-full bg-black text-white py-2.5 mt-6 rounded-full font-medium hover:opacity-90 transition text-sm sm:text-base"
 						>
 							Continue

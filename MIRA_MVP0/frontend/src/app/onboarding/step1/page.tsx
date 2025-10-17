@@ -2,10 +2,47 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { Icon } from "@/components/Icon";
 
 export default function OnboardingStep1() {
 	const router = useRouter();
+	const [consents, setConsents] = useState({
+		selectAll: false,
+		manageDrafts: false,
+		readCompose: false,
+		seeDownloadOther: false,
+		seeDownloadContacts: false,
+	});
+
+	const handleConsentChange = (key: string, value: boolean) => {
+		if (key === "selectAll") {
+			setConsents({
+				selectAll: value,
+				manageDrafts: value,
+				readCompose: value,
+				seeDownloadOther: value,
+				seeDownloadContacts: value,
+			});
+		} else {
+			const newConsents = { ...consents, [key]: value };
+			// Update selectAll based on individual checkboxes
+			newConsents.selectAll = newConsents.manageDrafts && 
+				newConsents.readCompose && 
+				newConsents.seeDownloadOther && 
+				newConsents.seeDownloadContacts;
+			setConsents(newConsents);
+		}
+	};
+
+	const handleContinue = () => {
+		console.log("Consents:", consents);
+		try { 
+			localStorage.setItem("mira_onboarding_step1", JSON.stringify({ consents })); 
+		} catch {};
+		console.log("Consents:", consents);
+		router.push("/onboarding/step2");
+	};
 
 	return (
 		<div className="flex flex-col md:flex-row h-screen bg-gradient-to-b from-[#D9B8FF] via-[#E8C9F8] to-[#F6D7F8] text-gray-800">
@@ -79,6 +116,8 @@ export default function OnboardingStep1() {
 						<div className="flex items-start gap-3">
 							<input
 								type="checkbox"
+								checked={consents.selectAll}
+								onChange={(e) => handleConsentChange("selectAll", e.target.checked)}
 								className="mt-1 w-4 h-4 text-purple-600 rounded focus:ring-purple-400"
 							/>
 							<p className="text-gray-800 text-[15px] font-medium">
@@ -89,19 +128,21 @@ export default function OnboardingStep1() {
 						{/* Indented Options */}
 						<div className="pl-6 space-y-4">
 							{[
-								"Manage drafts and send emails.",
-								"Read, compose, and send emails from your email accounts.",
-								"See and download contact info automatically saved in your “Other contacts.”",
-								"See and download your contacts.",
-							].map((text, i) => (
+								{ text: "Manage drafts and send emails.", key: "manageDrafts" },
+								{ text: "Read, compose, and send emails from your email accounts.", key: "readCompose" },
+								{ text: "See and download contact info automatically saved in your \"Other contacts.\"", key: "seeDownloadOther" },
+								{ text: "See and download your contacts.", key: "seeDownloadContacts" },
+							].map((item, i) => (
 								<div key={i} className="flex items-start gap-3">
 									<input
 										type="checkbox"
+										checked={consents[item.key as keyof typeof consents]}
+										onChange={(e) => handleConsentChange(item.key, e.target.checked)}
 										className="mt-1 w-4 h-4 text-purple-600 rounded focus:ring-purple-400"
 									/>
 									<div>
 										<p className="text-gray-800 text-[14px] sm:text-[15px] leading-snug">
-											{text}
+											{item.text}
 										</p>
 										<a
 											href="#"
@@ -136,7 +177,7 @@ export default function OnboardingStep1() {
 						{/* Continue Button */}
 						<button
 							type="button"
-							onClick={() => router.push("/onboarding/step2")}
+							onClick={handleContinue}
 							className="w-full bg-black text-white py-2.5 mt-6 rounded-full font-medium hover:opacity-90 transition text-sm sm:text-base"
 						>
 							Continue

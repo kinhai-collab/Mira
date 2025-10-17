@@ -46,6 +46,8 @@ export default function SignupPage() {
 
 			const data = await res.json().catch(() => ({}));
 			console.log("Signup success:", data);
+			// Save email for onboarding
+			try { localStorage.setItem("mira_email", email); } catch {}
 			alert("Signup successful!");
 			router.push("/onboarding/step1");
 		} catch (err) {
