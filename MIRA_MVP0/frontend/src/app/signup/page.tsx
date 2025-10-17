@@ -60,7 +60,8 @@ export default function SignupPage() {
 
 	const handleGoogleSignup = () => {
 		console.log("Google signup clicked");
-		window.location.href = `${process.env.NEXT_PUBLIC_API_URL}/auth/google`;
+		const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+		window.location.href = `${apiBase}/auth/google`;
 
 	};
 
