@@ -5,9 +5,51 @@ import { FcGoogle } from "react-icons/fc";
 import { FaApple } from "react-icons/fa";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/components/Icon";
+import { useState } from "react";
 
 export default function LoginPage() {
 	const router = useRouter();
+
+	const [email, setEmail] = useState("");
+	const [password, setPassword] = useState("");
+	const [loading, setLoading] = useState(false);
+
+	const handleNavigate = (path: string) => {
+		router.push(path);
+	};
+
+	const handleLogin = async (e: React.FormEvent) => {
+		e.preventDefault();
+		console.log("Login attempt:", { email, password });
+		setLoading(true);
+		try {
+			const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+			const endpoint = `${apiBase}/signin`;
+			const formData = new FormData();
+			formData.append("email", email);
+			formData.append("password", password);
+
+			const res = await fetch(endpoint, {
+				method: "POST",
+				body: formData,
+			});
+
+			if (!res.ok) throw new Error("Invalid credentials");
+			const data = await res.json();
+
+			localStorage.setItem("token", data.access_token);
+			router.push("/dashboard");
+		} catch (err) {
+			alert("Login failed. Please check your credentials.");
+		} finally {
+			setLoading(false);
+		}
+	};
+
+	const handleGoogleLogin = () => {
+		console.log("Google login clicked");
+		// Example: window.location.href = `${process.env.NEXT_PUBLIC_API_URL}/auth/google`;
+	};
 
 	return (
 		<div className="flex flex-col md:flex-row h-screen bg-gradient-to-b from-[#D9B8FF] via-[#E8C9F8] to-[#F6D7F8] text-gray-800">
@@ -69,7 +111,7 @@ export default function LoginPage() {
 						</a>
 					</p>
 
-					<form className="space-y-4">
+					<form onSubmit={handleLogin} className="space-y-4">
 						<div>
 							<label className="block text-sm font-medium text-gray-600 mb-1">
 								Email
@@ -78,6 +120,8 @@ export default function LoginPage() {
 								type="email"
 								className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-purple-300"
 								placeholder="you@example.com"
+								value={email}
+								onChange={(e) => setEmail(e.target.value)}
 							/>
 						</div>
 						<div>
@@ -88,15 +132,17 @@ export default function LoginPage() {
 								type="password"
 								className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-purple-300"
 								placeholder="•••••••••••••"
+								value={password}
+								onChange={(e) => setPassword(e.target.value)}
 							/>
 						</div>
 
 						<button
-							type="button"
-							onClick={() => router.push("/")}
-							className="w-full bg-black text-white py-2.5 rounded-full font-medium hover:opacity-90 transition text-sm sm:text-base"
+							type="submit"
+							disabled={loading}
+							className="w-full bg-black text-white py-2.5 rounded-full font-medium hover:opacity-90 transition text-sm sm:text-base disabled:opacity-60 disabled:cursor-not-allowed"
 						>
-							Log in
+							{loading ? "Logging in..." : "Log in"}
 						</button>
 					</form>
 
@@ -113,7 +159,7 @@ export default function LoginPage() {
 					</div>
 
 					<div className="space-y-3">
-						<button className="w-full border border-gray-300 flex items-center justify-center gap-3 py-2 rounded-full hover:bg-gray-50 transition text-sm sm:text-base">
+						<button onClick={handleGoogleLogin} className="w-full border border-gray-300 flex items-center justify-center gap-3 py-2 rounded-full hover:bg-gray-50 transition text-sm sm:text-base">
 							<FcGoogle size={20} />
 							<span className="font-medium text-gray-700">
 								Log in with Google

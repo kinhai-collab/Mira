@@ -5,13 +5,61 @@ import { Icon } from "@/components/Icon";
 import { useRouter } from "next/navigation";
 import { FcGoogle } from "react-icons/fc";
 import { FaApple } from "react-icons/fa";
+import { useState } from "react";
 
 export default function SignupPage() {
 	const router = useRouter();
 
-	const handleSignup = (e: React.FormEvent) => {
+	const [email, setEmail] = useState("");
+	const [password, setPassword] = useState("");
+	const [loading, setLoading] = useState(false);
+
+	const handleNavigate = (path: string) => {
+		router.push(path);
+	};
+
+	const handleSignup = async (e: React.FormEvent) => {
 		e.preventDefault();
-		router.push("/onboarding/step1");
+		console.log("Signup attempt:", { email, password });
+		setLoading(true);
+
+		try {
+			const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+			const endpoint = `${apiBase}/signup`;
+			const formData = new URLSearchParams();
+			formData.append("email", email);
+			formData.append("password", password);
+
+			const res = await fetch(endpoint, {
+				method: "POST",
+				headers: { "Content-Type": "application/x-www-form-urlencoded" },
+				body: formData.toString(),
+			});
+
+			if (!res.ok) {
+				const errorData = await res.json().catch(() => ({}));
+				console.error("Signup failed:", errorData);
+				alert((errorData as any)?.detail?.message || "Signup failed");
+				setLoading(false);
+				return;
+			}
+
+			const data = await res.json().catch(() => ({}));
+			console.log("Signup success:", data);
+			alert("Signup successful!");
+			router.push("/onboarding/step1");
+		} catch (err) {
+			console.error("Error during signup:", err);
+			alert("Something went wrong, please try again.");
+		} finally {
+			setLoading(false);
+		}
+	};
+
+	const handleGoogleSignup = () => {
+		console.log("Google signup clicked");
+		// If your backend exposes an OAuth URL, navigate to it here.
+		// Example: window.location.href = `${process.env.NEXT_PUBLIC_API_URL}/auth/google`;
 	};
 
 	return (
@@ -88,8 +136,10 @@ export default function SignupPage() {
 								type="email"
 								id="email"
 								required
-								className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-purple-300"
+						className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-purple-300"
 								placeholder="you@example.com"
+						value={email}
+						onChange={(e) => setEmail(e.target.value)}
 							/>
 						</div>
 
@@ -104,18 +154,21 @@ export default function SignupPage() {
 								type="password"
 								id="password"
 								required
-								className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-purple-300"
+						className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-purple-300"
 								placeholder="•••••••••••••"
+						value={password}
+						onChange={(e) => setPassword(e.target.value)}
 							/>
 						</div>
 
 						{/* Create Account Button */}
-						<button
-							type="submit"
-							className="w-full bg-black text-white py-2.5 rounded-full font-medium hover:opacity-90 transition text-sm sm:text-base"
-						>
-							Create account
-						</button>
+					<button
+						type="submit"
+						disabled={loading}
+						className="w-full bg-black text-white py-2.5 rounded-full font-medium hover:opacity-90 transition text-sm sm:text-base disabled:opacity-60 disabled:cursor-not-allowed"
+					>
+						{loading ? "Creating..." : "Create account"}
+					</button>
 					</form>
 
 					{/* Divider */}
@@ -129,7 +182,7 @@ export default function SignupPage() {
 
 					{/* Social Buttons */}
 					<div className="space-y-3">
-						<button className="w-full border border-gray-300 flex items-center justify-center gap-3 py-2 rounded-full hover:bg-gray-50 transition text-sm sm:text-base">
+					<button onClick={handleGoogleSignup} className="w-full border border-gray-300 flex items-center justify-center gap-3 py-2 rounded-full hover:bg-gray-50 transition text-sm sm:text-base">
 							<FcGoogle size={20} />
 							<span className="font-medium text-gray-700">
 								Sign Up with Google
