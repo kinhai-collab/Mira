@@ -21,6 +21,16 @@ export default function OnboardingStep2() {
 	};
 
 	const handleContinue = () => {
+		try {
+			localStorage.setItem(
+			  "mira_onboarding_step2",
+			  JSON.stringify({
+				firstName: formData.firstName,
+				middleName: formData.middleName,
+				lastName: formData.lastName,
+			  })
+			);
+		  } catch {}
 		console.log("Name data:", formData);
 		router.push("/onboarding/step3");
 	};

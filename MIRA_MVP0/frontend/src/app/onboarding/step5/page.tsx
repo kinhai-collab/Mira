@@ -11,7 +11,24 @@ export default function OnboardingStep5() {
 		microphoneAccess: false,
 		wakeWordDetection: false,
 	});
-
+	const handleFinish = async () => {
+		try {
+			const email = (() => { try { return localStorage.getItem("mira_email") || ""; } catch { return ""; } })();
+			if (!email) { alert("Missing email from signup. Please sign up again."); router.push("/signup"); return; }
+			const payload = { email, permissions };
+			const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/onboarding_save`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify(payload),
+			});
+			const data = await res.json();
+			if (!res.ok) throw new Error(data?.detail?.message || data?.message || "Failed to save onboarding");
+			// Go to dashboard
+			router.push("/dashboard");
+		} catch (e:any) {
+			alert(e?.message || "Failed to finish onboarding");
+		}
+	};
 	const handleNavigate = (path: string) => {
 		router.push(path);
 	};

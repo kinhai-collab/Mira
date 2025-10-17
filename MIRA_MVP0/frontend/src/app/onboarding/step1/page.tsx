@@ -24,7 +24,8 @@ export default function OnboardingStep1() {
 	};
 
 	const handleContinue = () => {
-		console.log("Consents:", consents);
+		try { localStorage.setItem("mira_onboarding_step1", JSON.stringify({ consents })); } catch {};
+console.log("Consents:", consents);
 		router.push("/onboarding/step2");
 	};
 

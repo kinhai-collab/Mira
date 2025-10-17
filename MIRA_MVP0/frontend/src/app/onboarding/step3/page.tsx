@@ -17,6 +17,12 @@ export default function OnboardingStep3() {
 	};
 
 	const handleContinue = () => {
+		try {
+			localStorage.setItem(
+			  "mira_onboarding_step3",
+			  JSON.stringify({ connectedEmails })
+			);
+		  } catch {}
 		console.log("Connected emails:", connectedEmails);
 		router.push("/onboarding/step4");
 	};

@@ -17,6 +17,13 @@ export default function OnboardingStep4() {
 	};
 
 	const handleContinue = () => {
+		try {
+			localStorage.setItem(
+			  "mira_onboarding_step4",
+			  JSON.stringify({ connectedCalendars })
+			);
+		  } catch {}
+	  
 		console.log("Connected calendars:", connectedCalendars);
 		router.push("/onboarding/step5");
 	};
