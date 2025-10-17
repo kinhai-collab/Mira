@@ -4,10 +4,10 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/components/Icon";
+import ProfileMenu from "@/components/ProfileMenu";
 
 export default function Home() {
 	const router = useRouter();
-
 
 	const [input, setInput] = useState("");
 	const [isThinking, setIsThinking] = useState(false);
@@ -79,12 +79,9 @@ export default function Home() {
 					</div>
 				</div>
 
-				{/* Bottom Profile Icon */}
-				<div
-					onClick={() => router.push("/dashboard/profile")}
-					className="p-3 w-11 h-11 flex items-center justify-center rounded-lg bg-white border border-gray-100 shadow-sm hover:shadow-md transition cursor-pointer"
-				>
-					<Icon name="Profile" size={22} />
+				{/* Bottom Profile Dropdown */}
+				<div className="p-3">
+					<ProfileMenu />
 				</div>
 			</aside>
 

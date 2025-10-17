@@ -2,6 +2,8 @@
 "use client";
 
 import Link from "next/link";
+import ProfileMenu from "@/components/ProfileMenu";
+
 import { usePathname } from "next/navigation";
 import {
 	LayoutDashboard,
@@ -51,17 +53,7 @@ export const Sidebar = () => {
 
 			{/* Bottom Profile */}
 			<div className="mt-10 border-t border-[#7b5d86] pt-4">
-				<Link
-					href="/dashboard/profile"
-					className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all ${
-						pathname === "/dashboard/profile"
-							? "bg-[#b497bd] text-[#2e1c34] font-medium shadow-sm"
-							: "hover:bg-[#b497bd]/70 hover:text-[#2e1c34]"
-					}`}
-				>
-					<User className="w-5 h-5" />
-					<span>Profile</span>
-				</Link>
+				<ProfileMenu />
 			</div>
 		</aside>
 	);
