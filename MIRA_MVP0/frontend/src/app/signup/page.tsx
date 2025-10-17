@@ -60,8 +60,8 @@ export default function SignupPage() {
 
 	const handleGoogleSignup = () => {
 		console.log("Google signup clicked");
-		// If your backend exposes an OAuth URL, navigate to it here.
-		// Example: window.location.href = `${process.env.NEXT_PUBLIC_API_URL}/auth/google`;
+		window.location.href = `${process.env.NEXT_PUBLIC_API_URL}/auth/google`;
+
 	};
 
 	return (

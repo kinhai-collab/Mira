@@ -1,5 +1,5 @@
-from fastapi import APIRouter, Form, HTTPException, Body, Header
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Form, HTTPException, Body, Header, Query
+from fastapi.responses import JSONResponse, RedirectResponse
 import requests
 import os
 from dotenv import load_dotenv
@@ -69,6 +69,29 @@ async def sign_in(email: str = Form(...), password: str = Form(...)):
         # Handle unexpected errors
         raise HTTPException(status_code=500, detail={"status": "error", "message": f"Error: {e}"})
 
+# Google signup/in endpoint
+@router.get("/auth/google")
+def google_login():
+    # Redirect the user to Supabase's Google OAuth authorization URL
+    redirect_url = f"{SUPABASE_URL}/auth/v1/authorize?provider=google"
+    return RedirectResponse(url=redirect_url)
+
+@router.get("/auth/callback")
+def google_callback(access_token: str = Query(None)):
+    # This endpoint handles the callback after Google login
+    # It expects an access token returned by Supabase
+    if not access_token:
+        raise HTTPException(status_code=400, detail="Missing access token")
+    
+    # Include the access token and API key in the headers to fetch user info
+    headers = {"Authorization": f"Bearer {access_token}", "apikey": SUPABASE_KEY}
+    res = requests.get(f"{SUPABASE_URL}/auth/v1/user", headers=headers)
+
+    if res.status_code == 200:
+        return {"status": "success", "user": res.json()}
+    else:
+        raise HTTPException(status_code=res.status_code, detail=res.json())
+    
 @router.get("/me")
 def me(authorization: Optional[str] = Header(default=None)):
     if not authorization or not authorization.lower().startswith("bearer "):
