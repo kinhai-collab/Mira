@@ -12,6 +12,8 @@ export default function Home() {
 	const [input, setInput] = useState("");
 	const [isThinking, setIsThinking] = useState(false);
 	const [steps, setSteps] = useState<string[]>([]);
+    const [greeting, setGreeting] = useState<string>("Hey There!");
+	const [firstName, setFirstName] = useState<string>("");
 
 	const reasoningSteps = [
 		"Analyzed your calendar for today",
@@ -19,6 +21,36 @@ export default function Home() {
 		"Suggested optimal meeting time",
 		"Processing daily brief...",
 	];
+
+	// Fetch greeting from backend on mount
+    useEffect(() => {
+        const fetchGreeting = async () => {
+            let token: string | null = null;
+            try {
+                token = localStorage.getItem("access_token") ?? localStorage.getItem("token");
+            } catch {}
+            try {
+                const res = await fetch("/greeting", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/x-www-form-urlencoded",
+                        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                    },
+                    body: new URLSearchParams({
+                        timestamp: new Date().toISOString(),
+                        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                        localTime: new Date().toLocaleString(),
+                    }),
+                });
+                if (!res.ok) return;
+                const data = await res.json().catch(() => ({}));
+                if (data && data.message) {
+                   setGreeting(String(data.message));
+                }
+            } catch {}
+        };
+        fetchGreeting();
+    }, []);
 
 	// Animate steps
 	useEffect(() => {
@@ -140,7 +172,7 @@ export default function Home() {
 				<div className="relative mb-10 sm:mb-12 flex flex-col items-center">
 					<div className="relative w-32 sm:w-40 md:w-48 h-32 sm:h-40 md:h-48 rounded-full bg-gradient-to-br from-[#C4A0FF] via-[#E1B5FF] to-[#F5C5E5] shadow-[0_0_80px_15px_rgba(210,180,255,0.45)] animate-pulse"></div>
 					<div className="absolute top-[15%] right-[-100px] sm:right-[-130px] md:right-[-150px] bg-white/90 px-4 sm:px-6 py-1.5 sm:py-2 rounded-full shadow-[0_4px_25px_rgba(200,150,255,0.45)] text-gray-800 font-medium text-sm sm:text-[15px] leading-tight whitespace-nowrap backdrop-blur-sm border border-white/40">
-						<span className="opacity-70">Good Morning, Bob!</span>
+						<span className="opacity-70">{greeting}</span>
 					</div>
 				</div>
 
@@ -149,7 +181,7 @@ export default function Home() {
 					onSubmit={handleSubmit}
 					className="relative w-full max-w-md sm:max-w-2xl md:max-w-3xl flex flex-col items-center"
 				>
-					<div className="absolute inset-0 rounded-xl bg-gradient-to-r from-[#f4aaff] via-[#d9b8ff] to-[#bfa3ff] opacity-95 blur-[1.5px] shadow-[0_0_25px_rgba(200,150,255,0.35)]"></div>
+					<div className="absolute inset-0 rounded-xl bg-gradient-to-r from-[#f4aaff] via-[#d9b8ff] to-[#bfa3ff] opacity-95 blur-[1.5px] shadow-[0_0_25px_ rgba(200,150,255,0.35)]"></div>
 					<div className="relative flex items-center rounded-xl bg-white px-4 sm:px-5 py-2 sm:py-2.5 w-full">
 						<input
 							type="text"

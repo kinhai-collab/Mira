@@ -83,6 +83,92 @@ function MobileProfileMenu() {
 }
 export default function Dashboard() {
 	const router = useRouter();
+	const [currentTime, setCurrentTime] = useState(new Date());
+	const [serverGreeting, setServerGreeting] = useState<string | null>(null);
+	const [firstName, setFirstName] = useState<string | null>(null);
+
+	// Update time every second
+	useEffect(() => {
+		const timer = setInterval(() => {
+			setCurrentTime(new Date());
+		}, 1000);
+
+		return () => clearInterval(timer);
+	}, []);
+
+	// Send system time to backend
+	useEffect(() => {
+		const sendSystemTime = async () => {
+			try {
+				// Use relative path as requested
+				const endpoint = `/greeting`;
+
+				const formData = new URLSearchParams({
+					timestamp: new Date().toISOString(),
+					timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+					localTime: new Date().toLocaleString(),
+				});
+
+				// Read token from localStorage (if available)
+				let token: string | null = null;
+				try {
+					// Prefer 'access_token' if present, fallback to 'token'
+					token = localStorage.getItem("access_token") ?? localStorage.getItem("token");
+				} catch {}
+
+				const res = await fetch(endpoint, {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/x-www-form-urlencoded",
+						...(token ? { Authorization: `Bearer ${token}` } : {}),
+					},
+					// Send URLSearchParams directly per request pattern
+					body: formData,
+				});
+
+				if (!res.ok) {
+					const errorData = await res.json().catch(() => ({}));
+					console.error("Failed to send system time:", errorData);
+					return;
+				}
+
+				const data = await res.json().catch(() => ({}));
+				console.log("System time sent successfully:", data);
+
+				// Display only the message from backend
+				if (data && data.message) {
+					setServerGreeting(String(data.message));
+				}
+			} catch (err) {
+				console.error("Error sending system time:", err);
+			}
+		};
+
+		// Send immediately on mount
+		sendSystemTime();
+
+		// Optional: Send periodically (e.g., every 5 minutes)
+		const interval = setInterval(sendSystemTime, 5 * 60 * 1000);
+
+		return () => clearInterval(interval);
+	}, []);
+
+	// Format time as needed
+	const formatTime = (date: Date) => {
+		return date.toLocaleTimeString("en-US", {
+			hour: "2-digit",
+			minute: "2-digit",
+			hour12: true,
+		});
+	};
+
+	// Get greeting based on time
+	const getGreeting = () => {
+		const hour = currentTime.getHours();
+		if (hour < 12) return "Good Morning";
+		if (hour < 18) return "Good Afternoon";
+		return "Good Evening";
+	};
 
 	return (
 		<div className="flex flex-col md:flex-row h-screen bg-[#F8F8FB] text-gray-800">
@@ -91,10 +177,11 @@ export default function Dashboard() {
 				{/* Header */}
 				<div className="mb-8 md:mb-10 text-center md:text-left">
 					<h1 className="text-2xl md:text-[28px] font-semibold mb-1">
-						Good Morning, Bob!
+						{serverGreeting ?? `${getGreeting()}, ${firstName ?? "there"}!`}
 					</h1>
 					<p className="text-gray-500 text-sm md:text-base">
-						You’re feeling good today. Here’s your day at a glance.
+						You're feeling good today. Here's your day at a glance. •{" "}
+						{formatTime(currentTime)}
 					</p>
 				</div>
 
