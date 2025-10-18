@@ -1,6 +1,7 @@
 /** @format */
 import "./globals.css";
 import { Outfit } from "next/font/google";
+import Sidebar from "@/components/Sidebar";
 
 const outfit = Outfit({
 	subsets: ["latin"],
@@ -21,9 +22,15 @@ export default function RootLayout({
 	return (
 		<html lang="en">
 			<body
-				className={`${outfit.className} font-light min-h-screen bg-[#F8F8FB] text-gray-900`}
+				className={`${outfit.className} font-light min-h-screen bg-[#F8F8FB] text-gray-900 flex`}
 			>
-				{children}
+				{/* ✅ Compact lavender Sidebar */}
+				<aside className="hidden md:flex">
+					<Sidebar />
+				</aside>
+
+				{/* ✅ Page content */}
+				<main className="flex-1 overflow-y-auto">{children}</main>
 			</body>
 		</html>
 	);

@@ -14,70 +14,28 @@ export default function OnboardingStep2() {
 	});
 
 	const handleInputChange = (field: string, value: string) => {
-		setFormData(prev => ({
+		setFormData((prev) => ({
 			...prev,
-			[field]: value
+			[field]: value,
 		}));
 	};
 
 	const handleContinue = () => {
 		try {
 			localStorage.setItem(
-			  "mira_onboarding_step2",
-			  JSON.stringify({
-				firstName: formData.firstName,
-				middleName: formData.middleName,
-				lastName: formData.lastName,
-			  })
+				"mira_onboarding_step2",
+				JSON.stringify({
+					firstName: formData.firstName,
+					middleName: formData.middleName,
+					lastName: formData.lastName,
+				})
 			);
-		  } catch {}
+		} catch {}
 		router.push("/onboarding/step3");
 	};
 
 	return (
 		<div className="flex flex-col md:flex-row h-screen bg-gradient-to-b from-[#D9B8FF] via-[#E8C9F8] to-[#F6D7F8] text-gray-800">
-			{/* Sidebar (hidden on small screens) */}
-			<aside className="hidden md:flex w-20 bg-[#F0ECF8] flex-col items-center justify-between py-6 border-r border-gray-200">
-				{/* Top Section */}
-				<div className="flex flex-col items-center space-y-6">
-					{/* Mira orb → Home */}
-					<div
-						onClick={() => router.push("/")}
-						className="w-8 h-8 rounded-full bg-gradient-to-br from-pink-300 to-purple-400 shadow-md cursor-pointer hover:scale-110 hover:shadow-[0_0_15px_4px_rgba(200,150,255,0.4)] transition-transform"
-						title="Go Home"
-					/>
-
-					{/* Sidebar icons */}
-					<div className="flex flex-col items-center gap-5 mt-4">
-						{["Dashboard", "Settings", "Reminder"].map((name, i) => (
-							<div
-								key={i}
-								onClick={() => {
-									if (name === "Dashboard") router.push("/dashboard");
-									else router.push(`/dashboard/${name.toLowerCase()}`);
-								}}
-								className="p-3 w-11 h-11 flex items-center justify-center rounded-lg bg-white border border-gray-100 shadow-sm hover:shadow-md transition-all cursor-pointer"
-							>
-								<Icon
-									name={name}
-									size={22}
-									className="opacity-80 hover:opacity-100 transition"
-								/>
-							</div>
-						))}
-					</div>
-				</div>
-
-				{/* Profile Icon */}
-				<div
-					onClick={() => router.push("/dashboard/profile")}
-					className="p-3 w-11 h-11 flex items-center justify-center rounded-lg bg-white border border-gray-100 shadow-sm hover:shadow-md transition-all cursor-pointer"
-					title="Profile"
-				>
-					<Icon name="Profile" size={22} />
-				</div>
-			</aside>
-
 			{/* Main Content */}
 			<main className="flex flex-1 justify-center items-center px-4 md:px-10 overflow-y-auto py-10 md:py-0">
 				<div className="bg-white rounded-lg shadow-xl p-6 sm:p-8 md:p-10 w-full max-w-md sm:max-w-lg md:max-w-2xl">
@@ -110,7 +68,7 @@ export default function OnboardingStep2() {
 						{[
 							{ label: "First name", field: "firstName" },
 							{ label: "Middle name", field: "middleName" },
-							{ label: "Last name", field: "lastName" }
+							{ label: "Last name", field: "lastName" },
 						].map((item, i) => (
 							<div key={i}>
 								<label className="block text-sm font-medium text-gray-700 mb-1">
@@ -119,7 +77,9 @@ export default function OnboardingStep2() {
 								<input
 									type="text"
 									value={formData[item.field as keyof typeof formData]}
-									onChange={(e) => handleInputChange(item.field, e.target.value)}
+									onChange={(e) =>
+										handleInputChange(item.field, e.target.value)
+									}
 									className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-purple-300"
 								/>
 							</div>

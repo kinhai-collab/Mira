@@ -27,9 +27,10 @@ export default function OnboardingStep1() {
 		} else {
 			const newConsents = { ...consents, [key]: value };
 			// Update selectAll based on individual checkboxes
-			newConsents.selectAll = newConsents.manageDrafts && 
-				newConsents.readCompose && 
-				newConsents.seeDownloadOther && 
+			newConsents.selectAll =
+				newConsents.manageDrafts &&
+				newConsents.readCompose &&
+				newConsents.seeDownloadOther &&
 				newConsents.seeDownloadContacts;
 			setConsents(newConsents);
 		}
@@ -37,52 +38,18 @@ export default function OnboardingStep1() {
 
 	const handleContinue = () => {
 		console.log("Consents:", consents);
-		try { 
-			localStorage.setItem("mira_onboarding_step1", JSON.stringify({ consents })); 
-		} catch {};
+		try {
+			localStorage.setItem(
+				"mira_onboarding_step1",
+				JSON.stringify({ consents })
+			);
+		} catch {}
 		console.log("Consents:", consents);
 		router.push("/onboarding/step2");
 	};
 
 	return (
 		<div className="flex flex-col md:flex-row h-screen bg-gradient-to-b from-[#D9B8FF] via-[#E8C9F8] to-[#F6D7F8] text-gray-800">
-			{/* Sidebar - visible only on md+ */}
-			<aside className="hidden md:flex w-20 bg-[#F0ECF8] flex-col items-center justify-between py-6 border-r border-gray-200">
-				{/* Top Section */}
-				<div className="flex flex-col items-center space-y-6">
-					{/* Mira orb → Home */}
-					<div
-						onClick={() => router.push("/")}
-						className="w-8 h-8 rounded-full bg-gradient-to-br from-pink-300 to-purple-400 shadow-md cursor-pointer hover:scale-110 hover:shadow-[0_0_15px_4px_rgba(200,150,255,0.4)] transition-transform"
-						title="Go Home"
-					/>
-					{/* Icons */}
-					<div className="flex flex-col items-center gap-5 mt-4">
-						{["Dashboard", "Settings", "Reminder"].map((name, i) => (
-							<div
-								key={i}
-								onClick={() => {
-									if (name === "Dashboard") router.push("/dashboard");
-									else router.push(`/dashboard/${name.toLowerCase()}`);
-								}}
-								className="p-3 w-11 h-11 flex items-center justify-center rounded-lg bg-white border border-gray-100 shadow-sm hover:shadow-md transition-all cursor-pointer"
-							>
-								<Icon name={name} size={22} />
-							</div>
-						))}
-					</div>
-				</div>
-
-				{/* Profile */}
-				<div
-					onClick={() => router.push("/dashboard/profile")}
-					className="p-3 w-11 h-11 flex items-center justify-center rounded-lg bg-white border border-gray-100 shadow-sm hover:shadow-md transition-all cursor-pointer"
-					title="Profile"
-				>
-					<Icon name="Profile" size={22} />
-				</div>
-			</aside>
-
 			{/* Main Section */}
 			<main className="flex-1 flex justify-center items-center px-4 md:px-10 overflow-y-auto py-10 md:py-0">
 				<div className="bg-white rounded-lg shadow-xl p-6 sm:p-8 md:p-10 w-full max-w-md sm:max-w-lg md:max-w-2xl">
@@ -117,7 +84,9 @@ export default function OnboardingStep1() {
 							<input
 								type="checkbox"
 								checked={consents.selectAll}
-								onChange={(e) => handleConsentChange("selectAll", e.target.checked)}
+								onChange={(e) =>
+									handleConsentChange("selectAll", e.target.checked)
+								}
 								className="mt-1 w-4 h-4 text-purple-600 rounded focus:ring-purple-400"
 							/>
 							<p className="text-gray-800 text-[15px] font-medium">
@@ -129,15 +98,26 @@ export default function OnboardingStep1() {
 						<div className="pl-6 space-y-4">
 							{[
 								{ text: "Manage drafts and send emails.", key: "manageDrafts" },
-								{ text: "Read, compose, and send emails from your email accounts.", key: "readCompose" },
-								{ text: "See and download contact info automatically saved in your \"Other contacts.\"", key: "seeDownloadOther" },
-								{ text: "See and download your contacts.", key: "seeDownloadContacts" },
+								{
+									text: "Read, compose, and send emails from your email accounts.",
+									key: "readCompose",
+								},
+								{
+									text: 'See and download contact info automatically saved in your "Other contacts."',
+									key: "seeDownloadOther",
+								},
+								{
+									text: "See and download your contacts.",
+									key: "seeDownloadContacts",
+								},
 							].map((item, i) => (
 								<div key={i} className="flex items-start gap-3">
 									<input
 										type="checkbox"
 										checked={consents[item.key as keyof typeof consents]}
-										onChange={(e) => handleConsentChange(item.key, e.target.checked)}
+										onChange={(e) =>
+											handleConsentChange(item.key, e.target.checked)
+										}
 										className="mt-1 w-4 h-4 text-purple-600 rounded focus:ring-purple-400"
 									/>
 									<div>

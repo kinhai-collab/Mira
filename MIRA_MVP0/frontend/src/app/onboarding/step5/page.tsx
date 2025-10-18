@@ -12,25 +12,69 @@ export default function OnboardingStep5() {
 
 	const handleFinish = async () => {
 		try {
-			const email = (() => { try { return localStorage.getItem("mira_email") || ""; } catch { return ""; } })();
-			if (!email) { alert("Missing email from signup. Please sign up again."); router.push("/signup"); return; }
-			
+			const email = (() => {
+				try {
+					return localStorage.getItem("mira_email") || "";
+				} catch {
+					return "";
+				}
+			})();
+			if (!email) {
+				alert("Missing email from signup. Please sign up again.");
+				router.push("/signup");
+				return;
+			}
+
 			// Collect all onboarding data from localStorage
-			const step1Data = (() => { try { return JSON.parse(localStorage.getItem("mira_onboarding_step1") || "{}"); } catch { return {}; } })();
-			const step2Data = (() => { try { return JSON.parse(localStorage.getItem("mira_onboarding_step2") || "{}"); } catch { return {}; } })();
-			const step3Data = (() => { try { return JSON.parse(localStorage.getItem("mira_onboarding_step3") || "{}"); } catch { return {}; } })();
-			const step4Data = (() => { try { return JSON.parse(localStorage.getItem("mira_onboarding_step4") || "{}"); } catch { return {}; } })();
-			
-			const payload = { 
-				email, 
+			const step1Data = (() => {
+				try {
+					return JSON.parse(
+						localStorage.getItem("mira_onboarding_step1") || "{}"
+					);
+				} catch {
+					return {};
+				}
+			})();
+			const step2Data = (() => {
+				try {
+					return JSON.parse(
+						localStorage.getItem("mira_onboarding_step2") || "{}"
+					);
+				} catch {
+					return {};
+				}
+			})();
+			const step3Data = (() => {
+				try {
+					return JSON.parse(
+						localStorage.getItem("mira_onboarding_step3") || "{}"
+					);
+				} catch {
+					return {};
+				}
+			})();
+			const step4Data = (() => {
+				try {
+					return JSON.parse(
+						localStorage.getItem("mira_onboarding_step4") || "{}"
+					);
+				} catch {
+					return {};
+				}
+			})();
+
+			const payload = {
+				email,
 				step1: step1Data,
 				step2: step2Data,
 				step3: step3Data,
 				step4: step4Data,
-				step5: { permissions }
+				step5: { permissions },
 			};
-			
-			const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+
+			const apiBase = (
+				process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+			).replace(/\/+$/, "");
 			const endpoint = `${apiBase}/onboarding_save`;
 			const res = await fetch(endpoint, {
 				method: "POST",
@@ -38,10 +82,13 @@ export default function OnboardingStep5() {
 				body: JSON.stringify(payload),
 			});
 			const data = await res.json();
-			if (!res.ok) throw new Error(data?.detail?.message || data?.message || "Failed to save onboarding");
+			if (!res.ok)
+				throw new Error(
+					data?.detail?.message || data?.message || "Failed to save onboarding"
+				);
 			// Go to dashboard
 			router.push("/dashboard");
-		} catch (e:any) {
+		} catch (e: any) {
 			alert(e?.message || "Failed to finish onboarding");
 		}
 	};
@@ -51,48 +98,6 @@ export default function OnboardingStep5() {
 
 	return (
 		<div className="flex flex-col md:flex-row h-screen bg-gradient-to-b from-[#D9B8FF] via-[#E8C9F8] to-[#F6D7F8] text-gray-800">
-			{/* Sidebar - hidden on mobile */}
-			<aside className="hidden md:flex w-20 bg-[#F0ECF8] flex-col items-center justify-between py-6 border-r border-gray-200">
-				{/* Top Section */}
-				<div className="flex flex-col items-center space-y-6">
-					{/* Mira orb → Home */}
-					<div
-						onClick={() => router.push("/")}
-						className="w-8 h-8 rounded-full bg-gradient-to-br from-pink-300 to-purple-400 shadow-md cursor-pointer hover:scale-110 hover:shadow-[0_0_15px_4px_rgba(200,150,255,0.4)] transition-transform"
-						title="Go Home"
-					/>
-
-					{/* Sidebar icons */}
-					<div className="flex flex-col items-center gap-5 mt-4">
-						{["Dashboard", "Settings", "Reminder"].map((name, i) => (
-							<div
-								key={i}
-								onClick={() => {
-									if (name === "Dashboard") router.push("/dashboard");
-									else router.push(`/dashboard/${name.toLowerCase()}`);
-								}}
-								className="p-3 w-11 h-11 flex items-center justify-center rounded-lg bg-white border border-gray-100 shadow-sm hover:shadow-md transition cursor-pointer"
-							>
-								<Icon
-									name={name}
-									size={22}
-									className="opacity-80 hover:opacity-100 transition"
-								/>
-							</div>
-						))}
-					</div>
-				</div>
-
-				{/* Profile Icon */}
-				<div
-					onClick={() => router.push("/dashboard/profile")}
-					className="p-3 w-11 h-11 flex items-center justify-center rounded-lg bg-white border border-gray-100 shadow-sm hover:shadow-md transition cursor-pointer"
-					title="Profile"
-				>
-					<Icon name="Profile" size={22} />
-				</div>
-			</aside>
-
 			{/* Main Content */}
 			<main className="flex flex-1 justify-center items-center px-4 md:px-10 overflow-y-auto py-10 md:py-0">
 				<div className="bg-white rounded-lg shadow-xl p-6 sm:p-8 md:p-10 w-full max-w-md sm:max-w-lg md:max-w-2xl">
