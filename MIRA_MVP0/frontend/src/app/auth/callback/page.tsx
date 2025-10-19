@@ -10,60 +10,55 @@ export default function AuthCallback() {
 	const [status, setStatus] = useState("Processing authentication...");
 
 	useEffect(() => {
-  const handleAuthCallback = async () => {
-    try {
-      // 1) Grab token from URL fragment and persist it
-      const accessToken = extractTokenFromUrl();
-      if (!accessToken) {
-        setStatus("No access token found. Redirecting to login...");
-        setTimeout(() => router.push("/login"), 1500);
-        return;
-      }
-      storeAuthToken(accessToken);
+		const handleAuthCallback = async () => {
+			try {
+				// Extract token from URL fragment
+				const accessToken = extractTokenFromUrl();
+				
+				if (accessToken) {
+					setStatus("Storing authentication data...");
+					
+					// Store the token and user data
+					storeAuthToken(accessToken);
+					
+					// Dispatch event to notify components of user data update
+					window.dispatchEvent(new CustomEvent('userDataUpdated'));
+					
+					setStatus("Authentication successful! Redirecting...");
+					
+					// Small delay to show success message
+					setTimeout(() => {
+						router.push("/dashboard");
+					}, 1000);
+				} else {
+					setStatus("No authentication token found. Redirecting to login...");
+					
+					// Check if there are any error parameters in the URL
+					const urlParams = new URLSearchParams(window.location.search);
+					const error = urlParams.get('error');
+					const errorDescription = urlParams.get('error_description');
+					
+					if (error) {
+						console.error("OAuth error:", error, errorDescription);
+						setStatus(`Authentication failed: ${errorDescription || error}`);
+					}
+					
+					setTimeout(() => {
+						router.push("/login");
+					}, 2000);
+				}
+			} catch (error) {
+				console.error("Error during authentication callback:", error);
+				setStatus("Authentication failed. Redirecting to login...");
+				setTimeout(() => {
+					router.push("/login");
+				}, 2000);
+			}
+		};
 
-      // 2) Ask backend who this is (email)
-      const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
-      const meRes = await fetch(`${apiBase}/me`, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      if (!meRes.ok) {
-        setStatus("Failed to fetch user profile. Redirecting to login...");
-        setTimeout(() => router.push("/login"), 1500);
-        return;
-      }
-      const me = await meRes.json();
-      const email = me?.email;
-      if (email) {
-        try {
-          localStorage.setItem("mira_email", email);
-          localStorage.setItem("mira_provider", "google");
-        } catch {}
-      }
+		handleAuthCallback();
+	}, [router]);
 
-      // 3) Check onboarding status
-      const statusRes = await fetch(`${apiBase}/onboarding_status?email=${encodeURIComponent(email || "")}`, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      const statusJson = await statusRes.json();
-      const onboarded = !!statusJson?.onboarded;
-
-      // 4) Route: first-time (no onboarding row) -> onboarding/step1, else -> dashboard
-      if (!onboarded) {
-        setStatus("Welcome! Let’s complete your onboarding...");
-        router.replace("/onboarding/step1");
-      } else {
-        setStatus("Welcome back. Redirecting to dashboard...");
-        router.replace("/dashboard");
-      }
-    } catch (err) {
-      console.error("Error during authentication callback:", err);
-      setStatus("Authentication failed. Redirecting to login...");
-      setTimeout(() => router.push("/login"), 1500);
-    }
-  };
-
-  handleAuthCallback();
-}, [router]);
 	return (
 		<div className="flex items-center justify-center min-h-screen bg-gradient-to-b from-[#D9B8FF] via-[#E8C9F8] to-[#F6D7F8]">
 			<div className="text-center">
