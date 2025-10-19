@@ -4,6 +4,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/components/Icon";
+import { clearAuthTokens, getStoredUserData, UserData } from "@/utils/auth";
 
 export default function ProfileMenu() {
 	const [open, setOpen] = useState(false);
@@ -11,6 +12,7 @@ export default function ProfileMenu() {
 	const router = useRouter();
 	const menuRef = useRef<HTMLDivElement>(null);
 	const [active, setActive] = useState("Dashboard");
+	const [userData, setUserData] = useState<UserData | null>(null);
 
 	useEffect(() => {
 		const handleClickOutside = (event: MouseEvent) => {
@@ -22,9 +24,15 @@ export default function ProfileMenu() {
 		return () => document.removeEventListener("mousedown", handleClickOutside);
 	}, []);
 
+	// Load user data on component mount
+	useEffect(() => {
+		const storedUserData = getStoredUserData();
+		setUserData(storedUserData);
+	}, []);
+
 	const handleLogout = () => {
 		setShowLogoutModal(false);
-		localStorage.removeItem("token");
+		clearAuthTokens();
 		router.push("/login");
 	};
 
@@ -40,11 +48,17 @@ export default function ProfileMenu() {
 					}`}
 					style={{ outline: "none" }}
 				>
-					<img
-						src="/Icons/Property 1=Profile.svg"
-						alt="Profile"
-						className="w-5 h-5 opacity-80"
-					/>
+					{userData?.picture ? (
+						<img
+							src={userData.picture}
+							alt="Profile"
+							className="w-8 h-8 rounded-full object-cover"
+						/>
+					) : (
+						<div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white font-medium text-sm">
+							{userData?.fullName?.charAt(0) || userData?.email?.charAt(0) || 'U'}
+						</div>
+					)}
 				</button>
 
 				{/* Dropdown */}
@@ -53,15 +67,21 @@ export default function ProfileMenu() {
 						<div className="px-4 pb-2 border-b border-gray-200">
 							<div className="flex flex-col gap-0.5 text-gray-700 text-sm">
 								<div className="flex items-center gap-2">
-									<img
-										src="/Icons/Property 1=Profile.svg"
-										alt="User"
-										className="w-4 h-4 opacity-80"
-									/>
-									<span>miraisthbest@gmail.com</span>
+									{userData?.picture ? (
+										<img
+											src={userData.picture}
+											alt="User"
+											className="w-4 h-4 rounded-full object-cover"
+										/>
+									) : (
+										<div className="w-4 h-4 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white font-medium text-xs">
+											{userData?.fullName?.charAt(0) || userData?.email?.charAt(0) || 'U'}
+										</div>
+									)}
+									<span>{userData?.email || 'No email'}</span>
 								</div>
 								<span className="pl-6 text-gray-500 text-xs">
-									Anusha Shivakumar
+									{userData?.fullName || 'No name'}
 								</span>
 							</div>
 						</div>
@@ -130,7 +150,7 @@ export default function ProfileMenu() {
 						<p className="text-sm text-gray-600 mb-6">
 							You log out Mira as <br />
 							<span className="font-medium text-gray-800">
-								miraisthbest@gmail.com
+								{userData?.email || 'Unknown user'}
 							</span>
 						</p>
 

@@ -5,7 +5,8 @@ import { FcGoogle } from "react-icons/fc";
 import { FaApple } from "react-icons/fa";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/components/Icon";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { isAuthenticated } from "@/utils/auth";
 
 export default function LoginPage() {
 	const router = useRouter();
@@ -13,6 +14,13 @@ export default function LoginPage() {
 	const [email, setEmail] = useState("");
 	const [password, setPassword] = useState("");
 	const [loading, setLoading] = useState(false);
+
+	// Redirect if already authenticated
+	useEffect(() => {
+		if (isAuthenticated()) {
+			router.push('/dashboard');
+		}
+	}, [router]);
 
 	const handleNavigate = (path: string) => {
 		router.push(path);
@@ -39,7 +47,7 @@ export default function LoginPage() {
 			if (!res.ok) throw new Error("Invalid credentials");
 			const data = await res.json();
 
-			localStorage.setItem("token", data.access_token);
+			localStorage.setItem("access_token", data.access_token);
 			router.push("/dashboard");
 		} catch (err) {
 			alert("Login failed. Please check your credentials.");

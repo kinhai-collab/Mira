@@ -6,6 +6,7 @@ import { Icon } from "@/components/Icon";
 import { useRouter } from "next/navigation";
 
 import { useState, useEffect } from "react";
+import { extractTokenFromUrl, storeAuthToken, isAuthenticated } from "@/utils/auth";
 
 import ProfileMenu from "@/components/ProfileMenu";
 
@@ -24,7 +25,8 @@ function MobileProfileMenu() {
 	}, []);
 
 	const handleLogout = () => {
-		localStorage.removeItem("token");
+		localStorage.removeItem("access_token");
+		localStorage.removeItem("token"); // Remove both for compatibility
 		router.push("/login");
 	};
 
@@ -87,6 +89,14 @@ export default function Dashboard() {
 	const [serverGreeting, setServerGreeting] = useState<string | null>(null);
 	const [firstName, setFirstName] = useState<string | null>(null);
 
+	// Check authentication on mount
+	useEffect(() => {
+		if (!isAuthenticated()) {
+			router.push('/login');
+			return;
+		}
+	}, [router]);
+
 	// Update time every second
 	useEffect(() => {
 		const timer = setInterval(() => {
@@ -100,6 +110,17 @@ export default function Dashboard() {
 	useEffect(() => {
 		const sendSystemTime = async () => {
 			try {
+				// First, check if there's a token in the URL (for OAuth callback)
+				const urlToken = extractTokenFromUrl();
+				if (urlToken) {
+					storeAuthToken(urlToken);
+					// Clear the URL hash after extracting the token
+					window.history.replaceState({}, document.title, window.location.pathname);
+					// Reload the page to refresh user data in all components
+					window.location.reload();
+					return;
+				}
+				
 				// Use relative path as requested
 				const endpoint = `/greeting`;
 

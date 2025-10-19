@@ -4,6 +4,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/components/Icon";
+import { extractTokenFromUrl, storeAuthToken, isAuthenticated } from "@/utils/auth";
 import ProfileMenu from "@/components/ProfileMenu";
 
 export default function Home() {
@@ -22,9 +23,26 @@ export default function Home() {
 		"Processing daily brief...",
 	];
 
-	// Fetch greeting from backend on mount
+	// Check authentication and fetch greeting from backend on mount
     useEffect(() => {
-        const fetchGreeting = async () => {
+        const initializeApp = async () => {
+            // First, check if there's a token in the URL (for OAuth callback)
+            const urlToken = extractTokenFromUrl();
+            if (urlToken) {
+                storeAuthToken(urlToken);
+                // Clear the URL hash after extracting the token
+                window.history.replaceState({}, document.title, window.location.pathname);
+                // Reload the page to refresh user data in all components
+                window.location.reload();
+                return;
+            }
+
+            // Check if user is authenticated
+            if (!isAuthenticated()) {
+                router.push('/login');
+                return;
+            }
+            
             let token: string | null = null;
             try {
                 token = localStorage.getItem("access_token") ?? localStorage.getItem("token");
@@ -49,8 +67,8 @@ export default function Home() {
                 }
             } catch {}
         };
-        fetchGreeting();
-    }, []);
+        initializeApp();
+    }, [router]);
 
 	// Animate steps
 	useEffect(() => {

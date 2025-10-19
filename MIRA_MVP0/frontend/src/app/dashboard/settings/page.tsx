@@ -1,10 +1,24 @@
 /** @format */
 "use client";
 
-export default function ProfilePage() {
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { isAuthenticated } from "@/utils/auth";
+
+export default function SettingsPage() {
+	const router = useRouter();
+
+	// Check authentication on mount
+	useEffect(() => {
+		if (!isAuthenticated()) {
+			router.push('/login');
+			return;
+		}
+	}, [router]);
+
 	return (
 		<div className="flex items-center justify-center h-screen text-gray-700 text-lg font-medium">
-			Profile Page (Coming soon)
+			Settings Page (Coming soon)
 		</div>
 	);
 }
