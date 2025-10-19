@@ -3,9 +3,9 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { Icon } from "@/components/Icon";
 import { extractTokenFromUrl, storeAuthToken, isAuthenticated } from "@/utils/auth";
-import ProfileMenu from "@/components/ProfileMenu";
 
 export default function Home() {
 	const router = useRouter();
@@ -14,14 +14,6 @@ export default function Home() {
 	const [isThinking, setIsThinking] = useState(false);
 	const [steps, setSteps] = useState<string[]>([]);
     const [greeting, setGreeting] = useState<string>("Hey There!");
-	const [firstName, setFirstName] = useState<string>("");
-
-	const reasoningSteps = [
-		"Analyzed your calendar for today",
-		"Prioritized 3 urgent emails",
-		"Suggested optimal meeting time",
-		"Processing daily brief...",
-	];
 
 	// Check authentication and fetch greeting from backend on mount
     useEffect(() => {
@@ -48,7 +40,8 @@ export default function Home() {
                 token = localStorage.getItem("access_token") ?? localStorage.getItem("token");
             } catch {}
             try {
-                const res = await fetch("/greeting", {
+                const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+                const res = await fetch(`${apiBase}/greeting`, {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/x-www-form-urlencoded",
@@ -73,6 +66,12 @@ export default function Home() {
 	// Animate steps
 	useEffect(() => {
 		if (isThinking) {
+			const reasoningSteps = [
+				"Analyzed your calendar for today",
+				"Prioritized 3 urgent emails",
+				"Suggested optimal meeting time",
+				"Processing daily brief...",
+			];
 			let index = 0;
 			const interval = setInterval(() => {
 				if (index < reasoningSteps.length) {
@@ -135,10 +134,12 @@ export default function Home() {
 						<div className="px-4 pb-2 border-b border-gray-200">
 							<div className="flex flex-col gap-0.5 text-gray-700 text-sm">
 								<div className="flex items-center gap-2">
-									<img
+									<Image
 										src="/Icons/Property 1=Profile.svg"
 										alt="User"
-										className="w-4 h-4 opacity-80"
+										width={16}
+										height={16}
+										className="opacity-80"
 									/>
 									<span>miraisthbest@gmail.com</span>
 								</div>

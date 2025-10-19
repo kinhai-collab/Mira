@@ -4,7 +4,6 @@
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import { Icon } from "@/components/Icon";
-import { isAuthenticated } from "@/utils/auth";
 
 export default function OnboardingStep1() {
 	const router = useRouter();

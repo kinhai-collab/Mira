@@ -6,9 +6,8 @@ import { Icon } from "@/components/Icon";
 import { useRouter } from "next/navigation";
 
 import { useState, useEffect } from "react";
-import { extractTokenFromUrl, storeAuthToken, isAuthenticated } from "@/utils/auth";
+import { extractTokenFromUrl, storeAuthToken, isAuthenticated, clearAuthTokens } from "@/utils/auth";
 
-import ProfileMenu from "@/components/ProfileMenu";
 
 function MobileProfileMenu() {
 	const [open, setOpen] = useState(false);
@@ -25,8 +24,13 @@ function MobileProfileMenu() {
 	}, []);
 
 	const handleLogout = () => {
-		localStorage.removeItem("access_token");
-		localStorage.removeItem("token"); // Remove both for compatibility
+		console.log("Logout initiated from Dashboard");
+		clearAuthTokens();
+		
+		// Dispatch event to notify other components
+		window.dispatchEvent(new CustomEvent('userDataUpdated'));
+		
+		console.log("User logged out from Dashboard, redirecting to login...");
 		router.push("/login");
 	};
 
@@ -50,11 +54,13 @@ function MobileProfileMenu() {
 					<div className="px-4 pb-2 border-b border-gray-200">
 						<div className="flex flex-col gap-0.5 text-gray-700 text-sm">
 							<div className="flex items-center gap-2">
-								<img
-									src="/Icons/Property 1=Profile.svg"
-									alt="User"
-									className="w-4 h-4 opacity-80"
-								/>
+							<Image
+								src="/Icons/Property 1=Profile.svg"
+								alt="User"
+								width={16}
+								height={16}
+								className="w-4 h-4 opacity-80"
+							/>
 								<span>miraisthbest@gmail.com</span>
 							</div>
 							<span className="pl-6 text-gray-500 text-xs">User NameF</span>
@@ -87,7 +93,7 @@ export default function Dashboard() {
 	const router = useRouter();
 	const [currentTime, setCurrentTime] = useState(new Date());
 	const [serverGreeting, setServerGreeting] = useState<string | null>(null);
-	const [firstName, setFirstName] = useState<string | null>(null);
+	const [firstName] = useState<string | null>(null);
 
 	// Check authentication on mount
 	useEffect(() => {
@@ -121,8 +127,9 @@ export default function Dashboard() {
 					return;
 				}
 				
-				// Use relative path as requested
-				const endpoint = `/greeting`;
+				// Use full backend URL
+				const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+				const endpoint = `${apiBase}/greeting`;
 
 				const formData = new URLSearchParams({
 					timestamp: new Date().toISOString(),
@@ -201,7 +208,7 @@ export default function Dashboard() {
 						{serverGreeting ?? `${getGreeting()}, ${firstName ?? "there"}!`}
 					</h1>
 					<p className="text-gray-500 text-sm md:text-base">
-						You're feeling good today. Here's your day at a glance. •{" "}
+						You&apos;re feeling good today. Here&apos;s your day at a glance. •{" "}
 						{formatTime(currentTime)}
 					</p>
 				</div>

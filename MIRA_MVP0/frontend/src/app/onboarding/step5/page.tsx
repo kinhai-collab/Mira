@@ -8,7 +8,7 @@ import { FaBell, FaMicrophone, FaBolt } from "react-icons/fa";
 
 export default function OnboardingStep5() {
 	const router = useRouter();
-	const [permissions, setPermissions] = useState([]);
+	const [permissions] = useState([]);
 
 	const handleFinish = async () => {
 		try {
@@ -86,14 +86,27 @@ export default function OnboardingStep5() {
 				throw new Error(
 					data?.detail?.message || data?.message || "Failed to save onboarding"
 				);
+			
+			// Store user name information from onboarding for profile display
+			try {
+				const firstName = step2Data?.firstName || "";
+				const lastName = step2Data?.lastName || "";
+				if (firstName || lastName) {
+					const fullName = [firstName, lastName].filter(Boolean).join(" ");
+					localStorage.setItem("mira_full_name", fullName);
+					// Dispatch custom event to notify ProfileMenu component
+					window.dispatchEvent(new CustomEvent('userDataUpdated'));
+				}
+			} catch (e) {
+				console.log("Could not store full name:", e);
+			}
+			
 			// Go to dashboard
 			router.push("/dashboard");
-		} catch (e: any) {
-			alert(e?.message || "Failed to finish onboarding");
+		} catch (e) {
+			const errorMessage = e instanceof Error ? e.message : "Failed to finish onboarding";
+			alert(errorMessage);
 		}
-	};
-	const handleNavigate = (path: string) => {
-		router.push(path);
 	};
 
 	return (

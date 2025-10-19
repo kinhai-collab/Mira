@@ -22,11 +22,8 @@ export default function SignupPage() {
 		}
 	}, [router]);
 
-	const handleNavigate = (path: string) => {
-		router.push(path);
-	};
 
-	const handleSignup = async (e: React.FormEvent) => {
+	const handleSignup = async (e: React.FormEvent<HTMLFormElement>) => {
 		e.preventDefault();
 		console.log("Signup attempt:", { email, password });
 		setLoading(true);
@@ -47,15 +44,22 @@ export default function SignupPage() {
 			if (!res.ok) {
 				const errorData = await res.json().catch(() => ({}));
 				console.error("Signup failed:", errorData);
-				alert((errorData as any)?.detail?.message || "Signup failed");
+				const errorMessage = (errorData as { detail?: { message?: string } })?.detail?.message || "Signup failed";
+				alert(errorMessage);
 				setLoading(false);
 				return;
 			}
 
 			const data = await res.json().catch(() => ({}));
 			console.log("Signup success:", data);
-			// Save email for onboarding
-			try { localStorage.setItem("mira_email", email); } catch {}
+			
+			// Save user information for onboarding and profile display
+			try { 
+				localStorage.setItem("mira_email", email);
+				localStorage.setItem("mira_provider", "email");
+				// Note: User will complete profile info during onboarding
+			} catch {}
+			
 			alert("Signup successful!");
 			router.push("/onboarding/step1");
 		} catch (err) {
@@ -74,51 +78,9 @@ export default function SignupPage() {
 	};
 
 	return (
-		<div className="flex flex-col md:flex-row h-screen bg-gradient-to-b from-[#D9B8FF] via-[#E8C9F8] to-[#F6D7F8] text-gray-800">
-			{/* Sidebar - hidden on mobile */}
-			<aside className="hidden md:flex w-20 bg-[#F0ECF8] flex-col items-center justify-between py-6 border-r border-gray-200">
-				{/* Top Section */}
-				<div className="flex flex-col items-center space-y-6">
-					{/* Mira orb → Home */}
-					<div
-						onClick={() => router.push("/")}
-						className="w-8 h-8 rounded-full bg-gradient-to-br from-pink-300 to-purple-400 shadow-md cursor-pointer hover:scale-110 hover:shadow-[0_0_15px_4px_rgba(200,150,255,0.4)] transition-transform"
-						title="Go Home"
-					/>
-
-					{/* Sidebar icons */}
-					<div className="flex flex-col items-center gap-5 mt-4">
-						{["Dashboard", "Settings", "Reminder"].map((name, i) => (
-							<div
-								key={i}
-								onClick={() => {
-									if (name === "Dashboard") router.push("/dashboard");
-									else router.push(`/dashboard/${name.toLowerCase()}`);
-								}}
-								className="p-3 w-11 h-11 flex items-center justify-center rounded-lg bg-white border border-gray-100 shadow-sm hover:shadow-md transition cursor-pointer"
-							>
-								<Icon
-									name={name}
-									size={22}
-									className="opacity-80 hover:opacity-100 transition"
-								/>
-							</div>
-						))}
-					</div>
-				</div>
-
-				{/* Profile Icon */}
-				<div
-					onClick={() => router.push("/dashboard/profile")}
-					className="p-3 w-11 h-11 flex items-center justify-center rounded-lg bg-white border border-gray-100 shadow-sm hover:shadow-md transition cursor-pointer"
-					title="Profile"
-				>
-					<Icon name="Profile" size={22} />
-				</div>
-			</aside>
-
+		<div className="h-screen bg-gradient-to-b from-[#D9B8FF] via-[#E8C9F8] to-[#F6D7F8] text-gray-800">
 			{/* Main Signup Content */}
-			<main className="flex flex-1 justify-center items-center px-4 md:px-10 overflow-y-auto py-10 md:py-0">
+			<main className="flex justify-center items-center px-4 md:px-10 overflow-y-auto py-10 md:py-0 h-full">
 				<div className="bg-white rounded-lg shadow-xl p-6 sm:p-8 md:p-10 w-full max-w-md sm:max-w-lg">
 					{/* Header */}
 					<h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-2 text-center">

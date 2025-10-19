@@ -74,25 +74,13 @@ async def sign_in(email: str = Form(...), password: str = Form(...)):
 def google_login():
     # Redirect the user to Supabase's Google OAuth authorization URL
     # Include the callback URL for the frontend
-    callback_url = "http://localhost:3000/auth/callback"
+    callback_url = os.getenv("FRONTEND_URL", "http://localhost:3000") + "/auth/callback"
     redirect_url = f"{SUPABASE_URL}/auth/v1/authorize?provider=google&redirect_to={callback_url}"
     return RedirectResponse(url=redirect_url)
 
-@router.get("/auth/callback")
-def google_callback(access_token: str = Query(None)):
-    # This endpoint handles the callback after Google login
-    # It expects an access token returned by Supabase
-    if not access_token:
-        raise HTTPException(status_code=400, detail="Missing access token")
-    
-    # Include the access token and API key in the headers to fetch user info
-    headers = {"Authorization": f"Bearer {access_token}", "apikey": SUPABASE_KEY}
-    res = requests.get(f"{SUPABASE_URL}/auth/v1/user", headers=headers)
-
-    if res.status_code == 200:
-        return {"status": "success", "user": res.json()}
-    else:
-        raise HTTPException(status_code=res.status_code, detail=res.json())
+# Note: The Google OAuth callback is handled directly by the frontend
+# at /auth/callback page, which extracts the token from the URL fragment
+# and stores it in localStorage. No backend callback endpoint is needed.
     
 @router.get("/me")
 def me(authorization: Optional[str] = Header(default=None)):

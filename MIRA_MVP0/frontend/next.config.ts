@@ -3,25 +3,14 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-	devIndicators: {
-		appIsrStatus: false,
-		buildActivity: false,
+	output: 'export',
+	trailingSlash: true,
+	images: {
+		unoptimized: true
 	},
-	experimental: {
-		// disable the new devtools safely
-		turbo: {
-			resolveAlias: {},
-		},
-	},
-	rewrites: async () => {
-		const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
-		return [
-			{
-				source: "/greeting",
-				destination: `${apiBase}/greeting`,
-			},
-		];
-	},
+	outputFileTracingRoot: __dirname,
+	// Note: rewrites are not supported with static export
+	// API calls should be made directly to the backend URL in the frontend code
 };
 
 export default nextConfig;
