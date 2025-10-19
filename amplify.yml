@@ -1,0 +1,17 @@
+version: 1
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - cd MIRA_MVP0/frontend
+        - npm ci
+    build:
+      commands:
+        - npm run build
+  artifacts:
+    baseDirectory: MIRA_MVP0/frontend/out
+    files:
+      - '**/*'
+  cache:
+    paths:
+      - MIRA_MVP0/frontend/node_modules/**/*

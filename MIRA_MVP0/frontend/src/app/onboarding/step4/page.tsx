@@ -10,7 +10,7 @@ import { RiExchangeBoxFill } from "react-icons/ri";
 
 export default function OnboardingStep4() {
 	const router = useRouter();
-	const [connectedCalendars, setConnectedCalendars] = useState([]);
+	const [connectedCalendars] = useState([]);
 
 	const handleContinue = () => {
 		try {

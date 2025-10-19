@@ -3,6 +3,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { Icon } from "@/components/Icon";
 import { clearAuthTokens, getStoredUserData, UserData } from "@/utils/auth";
 
@@ -24,15 +25,48 @@ export default function ProfileMenu() {
 		return () => document.removeEventListener("mousedown", handleClickOutside);
 	}, []);
 
-	// Load user data on component mount
+	// Load user data on component mount and when localStorage changes
 	useEffect(() => {
-		const storedUserData = getStoredUserData();
-		setUserData(storedUserData);
+		const loadUserData = () => {
+			const storedUserData = getStoredUserData();
+			console.log("ProfileMenu: Loading user data:", storedUserData);
+			setUserData(storedUserData);
+		};
+
+		// Load initial data
+		loadUserData();
+
+		// Listen for storage changes (when user data is updated)
+		const handleStorageChange = (e: StorageEvent) => {
+			if (e.key && e.key.startsWith('mira_')) {
+				loadUserData();
+			}
+		};
+
+		window.addEventListener('storage', handleStorageChange);
+
+		// Also listen for custom events (for same-tab updates)
+		const handleUserDataUpdate = () => {
+			loadUserData();
+		};
+
+		window.addEventListener('userDataUpdated', handleUserDataUpdate);
+
+		return () => {
+			window.removeEventListener('storage', handleStorageChange);
+			window.removeEventListener('userDataUpdated', handleUserDataUpdate);
+		};
 	}, []);
 
 	const handleLogout = () => {
+		console.log("Logout initiated for user:", userData);
 		setShowLogoutModal(false);
 		clearAuthTokens();
+		
+		// Dispatch event to notify other components
+		window.dispatchEvent(new CustomEvent('userDataUpdated'));
+		
+		console.log("User logged out, redirecting to login...");
 		router.push("/login");
 	};
 
@@ -49,9 +83,11 @@ export default function ProfileMenu() {
 					style={{ outline: "none" }}
 				>
 					{userData?.picture ? (
-						<img
+						<Image
 							src={userData.picture}
 							alt="Profile"
+							width={32}
+							height={32}
 							className="w-8 h-8 rounded-full object-cover"
 						/>
 					) : (
@@ -67,12 +103,14 @@ export default function ProfileMenu() {
 						<div className="px-4 pb-2 border-b border-gray-200">
 							<div className="flex flex-col gap-0.5 text-gray-700 text-sm">
 								<div className="flex items-center gap-2">
-									{userData?.picture ? (
-										<img
-											src={userData.picture}
-											alt="User"
-											className="w-4 h-4 rounded-full object-cover"
-										/>
+							{userData?.picture ? (
+								<Image
+									src={userData.picture}
+									alt="User"
+									width={16}
+									height={16}
+									className="w-4 h-4 rounded-full object-cover"
+								/>
 									) : (
 										<div className="w-4 h-4 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white font-medium text-xs">
 											{userData?.fullName?.charAt(0) || userData?.email?.charAt(0) || 'U'}
@@ -90,11 +128,13 @@ export default function ProfileMenu() {
 							onClick={() => router.push("/switch-account")}
 							className="flex items-center gap-3 w-full px-4 py-2 mt-2 text-sm hover:bg-gray-50 rounded-md transition"
 						>
-							<img
-								src="/Icons/Property 1=SwitchAccount.svg"
-								alt="Switch account"
-								className="w-4 h-4 opacity-80"
-							/>
+								<Image
+									src="/Icons/Property 1=SwitchAccount.svg"
+									alt="Switch account"
+									width={16}
+									height={16}
+									className="w-4 h-4 opacity-80"
+								/>
 							<span>Switch account</span>
 						</button>
 
@@ -102,11 +142,13 @@ export default function ProfileMenu() {
 							onClick={() => setShowLogoutModal(true)}
 							className="flex items-center gap-3 w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-md transition"
 						>
-							<img
-								src="/Icons/Property 1=LogOut.svg"
-								alt="Logout"
-								className="w-4 h-4 opacity-80"
-							/>
+								<Image
+									src="/Icons/Property 1=LogOut.svg"
+									alt="Logout"
+									width={16}
+									height={16}
+									className="w-4 h-4 opacity-80"
+								/>
 							<span>Log out</span>
 						</button>
 					</div>

@@ -22,9 +22,6 @@ export default function LoginPage() {
 		}
 	}, [router]);
 
-	const handleNavigate = (path: string) => {
-		router.push(path);
-	};
 
 	const handleLogin = async (e: React.FormEvent) => {
 		e.preventDefault();
@@ -47,9 +44,45 @@ export default function LoginPage() {
 			if (!res.ok) throw new Error("Invalid credentials");
 			const data = await res.json();
 
+			// Store the access token
 			localStorage.setItem("access_token", data.access_token);
+			
+			// Store user profile data from signin response
+			const userEmail = data.user_email || email;
+			localStorage.setItem("mira_email", userEmail);
+			localStorage.setItem("mira_provider", "email");
+			
+			console.log("Login: Stored user data:", { email: userEmail, provider: "email" });
+			
+			// Dispatch custom event to notify ProfileMenu component
+			window.dispatchEvent(new CustomEvent('userDataUpdated'));
+			
+			// Try to fetch additional user profile information
+			try {
+				const userRes = await fetch(`${apiBase}/me`, {
+					headers: {
+						"Authorization": `Bearer ${data.access_token}`,
+						"Content-Type": "application/json"
+					}
+				});
+				
+				if (userRes.ok) {
+					const userData = await userRes.json();
+					// Store additional profile data if available
+					if (userData.user_metadata?.full_name) {
+						localStorage.setItem("mira_full_name", userData.user_metadata.full_name);
+					}
+					if (userData.user_metadata?.avatar_url) {
+						localStorage.setItem("mira_profile_picture", userData.user_metadata.avatar_url);
+					}
+				}
+			} catch {
+				// Continue without additional profile data
+				console.log("Could not fetch additional profile data");
+			}
+			
 			router.push("/dashboard");
-		} catch (err) {
+		} catch {
 			alert("Login failed. Please check your credentials.");
 		} finally {
 			setLoading(false);

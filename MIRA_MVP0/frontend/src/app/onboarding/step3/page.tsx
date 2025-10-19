@@ -9,7 +9,7 @@ import { FaMicrosoft } from "react-icons/fa";
 
 export default function OnboardingStep3() {
 	const router = useRouter();
-	const [connectedEmails, setConnectedEmails] = useState([]);
+	const [connectedEmails] = useState([]);
 
 	const handleContinue = () => {
 		try {
