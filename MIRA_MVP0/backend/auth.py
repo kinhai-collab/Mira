@@ -73,7 +73,9 @@ async def sign_in(email: str = Form(...), password: str = Form(...)):
 @router.get("/auth/google")
 def google_login():
     # Redirect the user to Supabase's Google OAuth authorization URL
-    redirect_url = f"{SUPABASE_URL}/auth/v1/authorize?provider=google"
+    # Include the callback URL for the frontend
+    callback_url = "http://localhost:3000/auth/callback"
+    redirect_url = f"{SUPABASE_URL}/auth/v1/authorize?provider=google&redirect_to={callback_url}"
     return RedirectResponse(url=redirect_url)
 
 @router.get("/auth/callback")

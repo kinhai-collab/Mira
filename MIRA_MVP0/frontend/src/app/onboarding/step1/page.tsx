@@ -2,8 +2,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Icon } from "@/components/Icon";
+import { isAuthenticated } from "@/utils/auth";
 
 export default function OnboardingStep1() {
 	const router = useRouter();
@@ -14,6 +15,16 @@ export default function OnboardingStep1() {
 		seeDownloadOther: false,
 		seeDownloadContacts: false,
 	});
+
+	// Check if user has an email for onboarding (from signup)
+	useEffect(() => {
+		const email = localStorage.getItem("mira_email");
+		if (!email) {
+			// No email means user didn't complete signup, redirect to signup
+			router.push('/signup');
+			return;
+		}
+	}, [router]);
 
 	const handleConsentChange = (key: string, value: boolean) => {
 		if (key === "selectAll") {
