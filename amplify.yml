@@ -8,6 +8,9 @@ frontend:
     build:
       commands:
         - npm run build
+  environment:
+    variables:
+      NEXT_PUBLIC_API_URL: https://ytm2meewyf.execute-api.us-east-2.amazonaws.com/dev
   artifacts:
     baseDirectory: MIRA_MVP0/frontend/out
     files:
