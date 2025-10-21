@@ -5,7 +5,7 @@ frontend:
       commands:
         - cd MIRA_MVP0/frontend
         - npm ci
-        - echo "API URL: $NEXT_PUBLIC_API_URL"
+        - echo "API URL is $NEXT_PUBLIC_API_URL"
     build:
       commands:
         - npm run build
