@@ -75,11 +75,19 @@ export default function LoginPage() {
 					if (userData.user_metadata?.avatar_url) {
 						localStorage.setItem("mira_profile_picture", userData.user_metadata.avatar_url);
 					}
+					
+					console.log("Login: Fetched additional profile data:", {
+						fullName: userData.user_metadata?.full_name,
+						avatar: userData.user_metadata?.avatar_url
+					});
 				}
-			} catch {
+			} catch (error) {
 				// Continue without additional profile data
-				console.log("Could not fetch additional profile data");
+				console.log("Could not fetch additional profile data:", error);
 			}
+			
+			// Dispatch event again after fetching additional data
+			window.dispatchEvent(new CustomEvent('userDataUpdated'));
 			
 			router.push("/dashboard");
 		} catch {

@@ -20,7 +20,7 @@ router = APIRouter()
 async def sign_up(email: str = Form(...), password: str = Form(...)):
     try:
         # Prepare Supabase signup request
-        url = f"{SUPABASE_URL}/auth/v1/signup"
+        url = f"{SUPABASE_URL.rstrip('/')}/auth/v1/signup"
         headers = {"apikey": SUPABASE_KEY, "Content-Type": "application/json"}
         payload = {"email": email, "password": password}
         res = requests.post(url, headers=headers, json=payload)
@@ -47,7 +47,7 @@ async def sign_up(email: str = Form(...), password: str = Form(...)):
 async def sign_in(email: str = Form(...), password: str = Form(...)):
     try:
         # Prepare Supabase sign-in request
-        url = f"{SUPABASE_URL}/auth/v1/token?grant_type=password"
+        url = f"{SUPABASE_URL.rstrip('/')}/auth/v1/token?grant_type=password"
         headers = {"apikey": SUPABASE_KEY, "Content-Type": "application/json"}
         payload = {"email": email, "password": password}
         res = requests.post(url, headers=headers, json=payload)
@@ -74,8 +74,10 @@ async def sign_in(email: str = Form(...), password: str = Form(...)):
 def google_login():
     # Redirect the user to Supabase's Google OAuth authorization URL
     # Include the callback URL for the frontend
-    callback_url = os.getenv("FRONTEND_URL", "http://localhost:3000") + "/auth/callback"
-    redirect_url = f"{SUPABASE_URL}/auth/v1/authorize?provider=google&redirect_to={callback_url}"
+    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip('/')
+    callback_url = frontend_url + "/auth/callback"
+    supabase_url = SUPABASE_URL.rstrip('/')
+    redirect_url = f"{supabase_url}/auth/v1/authorize?provider=google&redirect_to={callback_url}"
     return RedirectResponse(url=redirect_url)
 
 # Note: The Google OAuth callback is handled directly by the frontend
@@ -89,7 +91,7 @@ def me(authorization: Optional[str] = Header(default=None)):
     token = authorization.split(" ", 1)[1].strip()
     headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {token}"}
     try:
-        r = requests.get(f"{SUPABASE_URL}/auth/v1/user", headers=headers)
+        r = requests.get(f"{SUPABASE_URL.rstrip('/')}/auth/v1/user", headers=headers)
         return JSONResponse(status_code=r.status_code, content=r.json())
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {e}")
@@ -141,7 +143,7 @@ def onboarding_save(payload: dict = Body(...)):
     }
     try:
         r = requests.post(
-            f"{SUPABASE_URL}/rest/v1/onboarding?on_conflict=email",
+            f"{SUPABASE_URL.rstrip('/')}/rest/v1/onboarding?on_conflict=email",
             headers=headers,
             json=row
         )
@@ -173,7 +175,7 @@ def onboarding_status(
                 raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
             token = authorization.split(" ", 1)[1].strip()
             headers_me = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {token}"}
-            r_me = requests.get(f"{SUPABASE_URL}/auth/v1/user", headers=headers_me)
+            r_me = requests.get(f"{SUPABASE_URL.rstrip('/')}/auth/v1/user", headers=headers_me)
             if r_me.status_code != 200:
                 raise HTTPException(status_code=401, detail="Unable to fetch user from token")
             email = (r_me.json() or {}).get("email")
@@ -185,7 +187,7 @@ def onboarding_status(
             "Authorization": f"Bearer {SUPABASE_KEY}",
         }
         r = requests.get(
-            f"{SUPABASE_URL}/rest/v1/onboarding",
+            f"{SUPABASE_URL.rstrip('/')}/rest/v1/onboarding",
             headers=headers_sb,
             params={"select": "email", "email": f"eq.{email}"},
         )

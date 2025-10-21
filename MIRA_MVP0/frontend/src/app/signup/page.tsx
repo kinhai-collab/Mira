@@ -57,8 +57,20 @@ export default function SignupPage() {
 			try { 
 				localStorage.setItem("mira_email", email);
 				localStorage.setItem("mira_provider", "email");
-				// Note: User will complete profile info during onboarding
-			} catch {}
+				
+				// Store access token if provided in response
+				if (data.access_token) {
+					localStorage.setItem("access_token", data.access_token);
+					console.log("Signup: Stored access token");
+				}
+				
+				// Dispatch event to notify ProfileMenu component
+				window.dispatchEvent(new CustomEvent('userDataUpdated'));
+				
+				console.log("Signup: Stored user data:", { email, provider: "email" });
+			} catch (error) {
+				console.error("Failed to store user data during signup:", error);
+			}
 			
 			alert("Signup successful!");
 			router.push("/onboarding/step1");
