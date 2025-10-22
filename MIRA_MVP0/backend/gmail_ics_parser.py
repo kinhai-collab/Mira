@@ -31,7 +31,7 @@ def is_invitation_email(part):
     if "text/calendar" in headers.get("content-type", "").lower():
         return True
 
-    # Optional: check method header
+    # Check method header
     method = headers.get("method", "")
     if method.upper() in ["REQUEST", "CANCEL", "REPLY"]:
         return True
@@ -40,7 +40,7 @@ def is_invitation_email(part):
 
 
 def extract_ics_from_part(part, msg_id, access_token):
-    """Recursively extract .ics calendar events from an email part."""
+    """Recursively extract .ics calendar events and email info from an email part."""
     events = []
     filename = part.get("filename", "")
     mime_type = part.get("mimeType", "")
@@ -49,7 +49,6 @@ def extract_ics_from_part(part, msg_id, access_token):
     # Detect invitation
     is_invite = is_invitation_email(part)
 
-    # Proceed if filename ends with .ics OR it's an invitation
     if filename.endswith(".ics") or is_invite:
 
         # Inline .ics data
@@ -62,10 +61,11 @@ def extract_ics_from_part(part, msg_id, access_token):
                     description_raw = str(component.get("DESCRIPTION"))
                     description_clean = BeautifulSoup(description_raw, "html.parser").get_text()
                     events.append({
-                        "summary": str(component.get("SUMMARY")),
+                        "organizer": str(component.get("ORGANIZER", headers.get("from", ""))),
+                        "subject": str(component.get("SUMMARY", headers.get("subject", ""))),
                         "start": str(component.get("DTSTART").dt),
                         "end": str(component.get("DTEND").dt),
-                        "location": str(component.get("LOCATION")),
+                        "location": str(component.get("LOCATION", "")),
                         "description": description_clean
                     })
 
@@ -80,10 +80,11 @@ def extract_ics_from_part(part, msg_id, access_token):
                         description_raw = str(component.get("DESCRIPTION"))
                         description_clean = BeautifulSoup(description_raw, "html.parser").get_text()
                         events.append({
-                            "summary": str(component.get("SUMMARY")),
+                            "organizer": str(component.get("ORGANIZER", headers.get("from", ""))),
+                            "subject": str(component.get("SUMMARY", headers.get("subject", ""))),
                             "start": str(component.get("DTSTART").dt),
                             "end": str(component.get("DTEND").dt),
-                            "location": str(component.get("LOCATION")),
+                            "location": str(component.get("LOCATION", "")),
                             "description": description_clean
                         })
 
