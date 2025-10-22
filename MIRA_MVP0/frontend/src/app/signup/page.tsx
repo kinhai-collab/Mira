@@ -14,6 +14,7 @@ export default function SignupPage() {
 	const [email, setEmail] = useState("");
 	const [password, setPassword] = useState("");
 	const [loading, setLoading] = useState(false);
+	const [error, setError] = useState("");
 	const isDev = process.env.NODE_ENV !== "production";
 
 	// Redirect if already authenticated
@@ -28,6 +29,7 @@ export default function SignupPage() {
 		e.preventDefault();
 		if (isDev) console.log("Signup attempt:", { email, password });
 		setLoading(true);
+		setError(""); // Clear any existing errors
 
 		try {
 			const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
@@ -46,7 +48,7 @@ export default function SignupPage() {
 				const errorData = await res.json().catch(() => ({}));
 				console.error("Signup failed:", errorData);
 				const errorMessage = (errorData as { detail?: { message?: string } })?.detail?.message || "Signup failed";
-				alert(errorMessage);
+				setError(errorMessage);
 				setLoading(false);
 				return;
 			}
@@ -77,7 +79,7 @@ export default function SignupPage() {
 			router.push("/onboarding/step1");
 		} catch (err) {
 			console.error("Error during signup:", err);
-			alert("Something went wrong, please try again.");
+			setError("Something went wrong, please try again.");
 		} finally {
 			setLoading(false);
 		}
@@ -146,6 +148,20 @@ export default function SignupPage() {
 						onChange={(e) => setPassword(e.target.value)}
 							/>
 						</div>
+
+						{/* Error Message */}
+						{error && (
+							<div className="text-center">
+								<p className="text-[#d73333] text-lg font-normal leading-normal tracking-[0.09px]">
+									<span className="text-[#d73333]">This email is already registered.</span>
+									<span className="text-[#272829]"> Try to </span>
+									<a href="/login" className="font-bold text-[#272829] underline">
+										log in
+									</a>
+									<span className="text-[#272829]"> instead.</span>
+								</p>
+							</div>
+						)}
 
 						{/* Create Account Button */}
 					<button
