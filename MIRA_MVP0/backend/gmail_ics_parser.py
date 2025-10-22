@@ -16,34 +16,46 @@ def get_attachment_content(msg_id, attachment_id, access_token):
     return base64.urlsafe_b64decode(data) if data else None
 
 
+def is_invitation_email(part):
+    """
+    Detect if an email part is a calendar invitation based on MIME type or headers.
+    """
+    mime_type = part.get("mimeType", "")
+    headers = {h.get("name").lower(): h.get("value") for h in part.get("headers", [])}
+
+    # Check MIME type
+    if mime_type == "text/calendar":
+        return True
+
+    # Check Content-Type header
+    if "text/calendar" in headers.get("content-type", "").lower():
+        return True
+
+    # Optional: check method header
+    method = headers.get("method", "")
+    if method.upper() in ["REQUEST", "CANCEL", "REPLY"]:
+        return True
+
+    return False
+
+
 def extract_ics_from_part(part, msg_id, access_token):
     """Recursively extract .ics calendar events from an email part."""
     events = []
     filename = part.get("filename", "")
+    mime_type = part.get("mimeType", "")
+    headers = {h.get("name").lower(): h.get("value") for h in part.get("headers", [])}
 
-    # Check for inline .ics data
-    data_base64 = part.get("body", {}).get("data")
-    if data_base64 and filename.endswith(".ics"):
-        ics_bytes = base64.urlsafe_b64decode(data_base64)
-        cal = Calendar.from_ical(ics_bytes)
-        for component in cal.walk():
-            if component.name == "VEVENT":
-                # Clean HTML tags from description
-                description_raw = str(component.get("DESCRIPTION"))
-                description_clean = BeautifulSoup(description_raw, "html.parser").get_text()
-                events.append({
-                    "summary": str(component.get("SUMMARY")),
-                    "start": str(component.get("DTSTART").dt),
-                    "end": str(component.get("DTEND").dt),
-                    "location": str(component.get("LOCATION")),
-                    "description": description_clean
-                })
+    # Detect invitation
+    is_invite = is_invitation_email(part)
 
-    # Check if the part contains an attachmentId for .ics
-    attachment_id = part.get("body", {}).get("attachmentId")
-    if attachment_id and filename.endswith(".ics"):
-        ics_bytes = get_attachment_content(msg_id, attachment_id, access_token)
-        if ics_bytes:
+    # Proceed if filename ends with .ics OR it's an invitation
+    if filename.endswith(".ics") or is_invite:
+
+        # Inline .ics data
+        data_base64 = part.get("body", {}).get("data")
+        if data_base64:
+            ics_bytes = base64.urlsafe_b64decode(data_base64)
             cal = Calendar.from_ical(ics_bytes)
             for component in cal.walk():
                 if component.name == "VEVENT":
@@ -57,6 +69,24 @@ def extract_ics_from_part(part, msg_id, access_token):
                         "description": description_clean
                     })
 
+        # Attachment .ics
+        attachment_id = part.get("body", {}).get("attachmentId")
+        if attachment_id:
+            ics_bytes = get_attachment_content(msg_id, attachment_id, access_token)
+            if ics_bytes:
+                cal = Calendar.from_ical(ics_bytes)
+                for component in cal.walk():
+                    if component.name == "VEVENT":
+                        description_raw = str(component.get("DESCRIPTION"))
+                        description_clean = BeautifulSoup(description_raw, "html.parser").get_text()
+                        events.append({
+                            "summary": str(component.get("SUMMARY")),
+                            "start": str(component.get("DTSTART").dt),
+                            "end": str(component.get("DTEND").dt),
+                            "location": str(component.get("LOCATION")),
+                            "description": description_clean
+                        })
+
     # Recursively process nested parts
     for subpart in part.get("parts", []):
         events.extend(extract_ics_from_part(subpart, msg_id, access_token))
@@ -67,7 +97,6 @@ def extract_ics_from_part(part, msg_id, access_token):
 def get_gmail_events(access_token, max_messages=10):
     """Fetch Gmail messages and extract all .ics calendar events."""
     headers = {"Authorization": f"Bearer {access_token}"}
-    # Search for emails with .ics attachments
     messages_res = requests.get(
         "https://gmail.googleapis.com/gmail/v1/users/me/messages?q=has:attachment filename:ics",
         headers=headers
@@ -75,7 +104,6 @@ def get_gmail_events(access_token, max_messages=10):
     messages = messages_res.json().get("messages", [])
     events = []
 
-    # Loop through messages and extract events
     for msg in messages[:max_messages]:
         msg_id = msg['id']
         msg_detail = requests.get(
