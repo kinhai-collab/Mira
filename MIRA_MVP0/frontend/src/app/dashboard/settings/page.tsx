@@ -1,12 +1,97 @@
 /** @format */
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { isAuthenticated } from "@/utils/auth";
+import Image from "next/image";
+import { isAuthenticated, getStoredUserData, UserData } from "@/utils/auth";
+import { ChevronDown, Sun, MapPin, Bell, Mic, MicOff, Volume2, VolumeX, Mail, Calendar, CreditCard, Check } from "lucide-react";
+
+// Custom Checkbox Component (Square for Notifications)
+const CustomCheckbox = ({ checked, onChange, className = "" }: { checked: boolean; onChange: (checked: boolean) => void; className?: string }) => (
+	<div className={`relative w-5 h-5 ${className}`}>
+		<div className={`absolute inset-0 border-2 border-gray-400 rounded ${checked ? 'bg-gray-400 border-gray-400' : 'bg-transparent'}`} />
+		{checked && (
+			<div className="absolute inset-0 flex items-center justify-center">
+				<Check className="w-3 h-3 text-white" strokeWidth={3} />
+			</div>
+		)}
+		<input
+			type="checkbox"
+			checked={checked}
+			onChange={(e) => onChange(e.target.checked)}
+			className="absolute inset-0 opacity-0 cursor-pointer"
+		/>
+	</div>
+);
+
+// Custom Circular Checkbox Component (for Privacy Settings)
+const CustomCircularCheckbox = ({ checked, onChange, className = "" }: { checked: boolean; onChange: (checked: boolean) => void; className?: string }) => (
+	<div className={`relative w-5 h-5 ${className}`}>
+		<div className={`absolute inset-0 border-2 border-gray-400 rounded-full ${checked ? 'bg-gray-400 border-gray-400' : 'bg-transparent'}`} />
+		{checked && (
+			<div className="absolute inset-0 flex items-center justify-center">
+				<Check className="w-3 h-3 text-white" strokeWidth={3} />
+			</div>
+		)}
+		<input
+			type="checkbox"
+			checked={checked}
+			onChange={(e) => onChange(e.target.checked)}
+			className="absolute inset-0 opacity-0 cursor-pointer"
+		/>
+	</div>
+);
+
+// Custom Radio Button Component (for Subscription Plans)
+const CustomRadioButton = ({ checked, onChange, name, value, className = "" }: { checked: boolean; onChange: (value: string) => void; name: string; value: string; className?: string }) => (
+	<div className={`relative w-5 h-5 ${className}`}>
+		<div className={`absolute inset-0 border-2 border-gray-400 rounded-full ${checked ? 'bg-gray-400 border-gray-400' : 'bg-transparent'}`} />
+		{checked && (
+			<div className="absolute inset-0 flex items-center justify-center">
+				<div className="w-2 h-2 bg-white rounded-full"></div>
+			</div>
+		)}
+		<input
+			type="radio"
+			name={name}
+			value={value}
+			checked={checked}
+			onChange={(e) => onChange(e.target.value)}
+			className="absolute inset-0 opacity-0 cursor-pointer"
+		/>
+	</div>
+);
+
+type TabType = 'profile' | 'preferences' | 'notifications' | 'privacy' | 'subscription';
 
 export default function SettingsPage() {
 	const router = useRouter();
+	const [activeTab, setActiveTab] = useState<TabType>('profile');
+	const [userData, setUserData] = useState<UserData | null>(null);
+	const [formData, setFormData] = useState({
+		email: '',
+		firstName: '',
+		middleName: '',
+		lastName: '',
+		language: 'English',
+		timeZone: 'UTC-5 (Eastern Time)',
+		voice: 'Default',
+		pushNotifications: true,
+		microphoneAccess: true,
+		wakeWordDetection: false,
+		emailAccess: true,
+		calendarAccess: true,
+		selectedPlan: 'basic',
+		cardName: '',
+		cardNumber: '',
+		expDate: '',
+		cvv: '',
+		address: '',
+		city: '',
+		state: '',
+		postalCode: ''
+	});
 
 	// Check authentication on mount
 	useEffect(() => {
@@ -14,11 +99,640 @@ export default function SettingsPage() {
 			router.push('/login');
 			return;
 		}
+		const storedUserData = getStoredUserData();
+		setUserData(storedUserData);
+		if (storedUserData) {
+			setFormData(prev => ({
+				...prev,
+				email: storedUserData.email || '',
+				firstName: storedUserData.fullName?.split(' ')[0] || '',
+				lastName: storedUserData.fullName?.split(' ').slice(1).join(' ') || ''
+			}));
+		}
 	}, [router]);
 
+	const tabs = [
+		{ id: 'profile' as TabType, label: 'Profile' },
+		{ id: 'preferences' as TabType, label: 'Preferences' },
+		{ id: 'notifications' as TabType, label: 'Notifications' },
+		{ id: 'privacy' as TabType, label: 'Privacy settings' },
+		{ id: 'subscription' as TabType, label: 'Manage subscription' }
+	];
+
+	const handleInputChange = (field: string, value: any) => {
+		setFormData(prev => ({ ...prev, [field]: value }));
+	};
+
+	const handleSave = () => {
+		// TODO: Implement save functionality
+		console.log('Saving settings:', formData);
+	};
+
+	const renderProfileTab = () => (
+		<div className="space-y-5">
+			<p className="text-xl text-gray-800 leading-6">
+				Update your personal information, profile photo, and account details to keep your profile up to date.
+			</p>
+			
+			<div className="space-y-8">
+				{/* Profile Picture */}
+				<div className="space-y-3">
+					<h3 className="text-lg text-gray-700 font-normal">Profile Picture</h3>
+					<div className="flex items-center gap-5">
+						<div className="w-30 h-30 bg-pink-400 rounded-full flex items-center justify-center">
+							<span className="text-6xl text-black font-bold">
+								{userData?.fullName?.charAt(0) || userData?.email?.charAt(0) || 'J'}
+							</span>
+						</div>
+						<button className="px-4 py-2 bg-gray-50 border border-gray-800 rounded-full text-sm text-gray-800 hover:bg-gray-100 transition-colors font-light">
+							Change Picture
+						</button>
+					</div>
+				</div>
+
+				{/* Form Fields */}
+				<div className="space-y-5">
+					<div>
+						<label className="block text-lg text-gray-700 mb-3">Email</label>
+						<input
+							type="email"
+							value={formData.email}
+							onChange={(e) => handleInputChange('email', e.target.value)}
+							className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500"
+							placeholder="Enter your email"
+						/>
+					</div>
+
+					<div>
+						<label className="block text-lg text-gray-700 mb-3">First name<span className="text-red-500">*</span></label>
+						<input
+							type="text"
+							value={formData.firstName}
+							onChange={(e) => handleInputChange('firstName', e.target.value)}
+							className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500"
+							placeholder="Enter your first name"
+						/>
+					</div>
+
+					<div>
+						<label className="block text-lg text-gray-700 mb-3">Middle name</label>
+						<input
+							type="text"
+							value={formData.middleName}
+							onChange={(e) => handleInputChange('middleName', e.target.value)}
+							className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500"
+							placeholder="Enter your middle name"
+						/>
+					</div>
+
+					<div>
+						<label className="block text-lg text-gray-700 mb-3">Last name<span className="text-red-500">*</span></label>
+						<input
+							type="text"
+							value={formData.lastName}
+							onChange={(e) => handleInputChange('lastName', e.target.value)}
+							className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500"
+							placeholder="Enter your last name"
+						/>
+					</div>
+				</div>
+
+				<button
+					onClick={handleSave}
+					className="px-6 py-3 bg-gray-800 text-white rounded-full font-semibold text-lg hover:bg-gray-900 transition-colors"
+				>
+					Save
+				</button>
+			</div>
+		</div>
+	);
+
+	const renderPreferencesTab = () => (
+		<div className="space-y-5">
+			<p className="text-xl text-gray-800 leading-6">
+				Customize your experience by adjusting language, region, and voice options to suit your needs.
+			</p>
+			
+			<div className="space-y-5 w-80">
+				<div>
+					<label className="block text-lg text-gray-700 mb-3">Language</label>
+					<div className="relative">
+						<select
+							value={formData.language}
+							onChange={(e) => handleInputChange('language', e.target.value)}
+							className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 appearance-none text-gray-500"
+						>
+							<option value="English">Select Language</option>
+							<option value="Spanish">Spanish</option>
+							<option value="French">French</option>
+							<option value="German">German</option>
+						</select>
+						<ChevronDown className="absolute right-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+					</div>
+				</div>
+
+				<div>
+					<label className="block text-lg text-gray-700 mb-3">Time Zone</label>
+					<div className="relative">
+						<select
+							value={formData.timeZone}
+							onChange={(e) => handleInputChange('timeZone', e.target.value)}
+							className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 appearance-none text-gray-500"
+						>
+							<option value="UTC-5 (Eastern Time)">Select Time Zone</option>
+							<option value="UTC-6 (Central Time)">UTC-6 (Central Time)</option>
+							<option value="UTC-7 (Mountain Time)">UTC-7 (Mountain Time)</option>
+							<option value="UTC-8 (Pacific Time)">UTC-8 (Pacific Time)</option>
+						</select>
+						<ChevronDown className="absolute right-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+					</div>
+				</div>
+
+				<div>
+					<label className="block text-lg text-gray-700 mb-3">Voice</label>
+					<div className="relative">
+						<select
+							value={formData.voice}
+							onChange={(e) => handleInputChange('voice', e.target.value)}
+							className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 appearance-none text-gray-500"
+						>
+							<option value="Default">Select Voice</option>
+							<option value="Male">Male</option>
+							<option value="Female">Female</option>
+							<option value="Neutral">Neutral</option>
+						</select>
+						<ChevronDown className="absolute right-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+					</div>
+				</div>
+			</div>
+
+			<button
+				onClick={handleSave}
+				className="px-6 py-3 bg-gray-800 text-white rounded-full font-semibold text-lg hover:bg-gray-900 transition-colors"
+			>
+				Save
+			</button>
+		</div>
+	);
+
+	const renderNotificationsTab = () => (
+		<div className="space-y-5">
+			<p className="text-xl text-gray-800 leading-6">
+				Choose how and when you'd like to receive updates, alerts, and promotional messages.
+			</p>
+			
+			<div className="space-y-5">
+				{/* Push Notifications */}
+				<div className="flex items-center justify-between px-6 py-4 bg-white rounded-lg border border-gray-400">
+					<div className="flex items-center gap-2">
+						<div className="w-10 h-10 bg-gray-50 rounded-full flex items-center justify-center p-2">
+							<Image src="http://localhost:3845/assets/de743db53464c6c095cf515d6168d60fced9432f.png" alt="Push Notification" width={24} height={24} />
+						</div>
+						<div className="ml-2">
+							<h4 className="text-lg text-gray-700 font-normal">Push Notification</h4>
+							<p className="text-sm text-gray-500">Get notified about important emails and reminders</p>
+						</div>
+					</div>
+					<CustomCheckbox 
+						checked={formData.pushNotifications}
+						onChange={(checked) => handleInputChange('pushNotifications', checked)}
+					/>
+				</div>
+
+				{/* Microphone Access */}
+				<div className="flex items-center justify-between px-6 py-4 bg-white rounded-lg border border-gray-400">
+					<div className="flex items-center gap-2">
+						<div className="w-10 h-10 bg-gray-50 rounded-full flex items-center justify-center p-2">
+							<Image src="http://localhost:3845/assets/8ef2d8b65bb80f3ac291b6917f4d7737b647cc0c.png" alt="Microphone Access" width={24} height={24} />
+						</div>
+						<div className="ml-2">
+							<h4 className="text-lg text-gray-700 font-normal">Microphone Access</h4>
+							<p className="text-sm text-gray-500">Use voice commands to interact with Mira</p>
+						</div>
+					</div>
+					<CustomCheckbox 
+						checked={formData.microphoneAccess}
+						onChange={(checked) => handleInputChange('microphoneAccess', checked)}
+					/>
+				</div>
+
+				{/* Wake Word Detection */}
+				<div className="flex items-center justify-between px-6 py-4 bg-white rounded-lg border border-gray-400">
+					<div className="flex items-center gap-2">
+						<div className="w-10 h-10 bg-gray-50 rounded-full flex items-center justify-center p-2">
+							<Image src="http://localhost:3845/assets/526c0b3f21a1492022061abf00cf2f04067fc40e.png" alt="Wake Word Detection" width={24} height={24} />
+						</div>
+						<div className="ml-2">
+							<h4 className="text-lg text-gray-700 font-normal">Wake Word Detection</h4>
+							<p className="text-sm text-gray-500">Activate Mira with your voice</p>
+						</div>
+					</div>
+					<CustomCheckbox 
+						checked={formData.wakeWordDetection}
+						onChange={(checked) => handleInputChange('wakeWordDetection', checked)}
+					/>
+				</div>
+			</div>
+
+			<button
+				onClick={handleSave}
+				className="px-6 py-3 bg-gray-800 text-white rounded-full font-semibold text-lg hover:bg-gray-900 transition-colors"
+			>
+				Save
+			</button>
+		</div>
+	);
+
+	const renderPrivacyTab = () => (
+		<div className="space-y-5">
+			<p className="text-xl text-gray-800 leading-6">
+				Control what information you share and manage how your data is used to keep your account secure.
+			</p>
+			
+			<div className="space-y-8">
+				{/* Email Connections */}
+				<div>
+					<h3 className="text-xl text-gray-800 mb-5">Your Email</h3>
+					<div className="space-y-5">
+						<div className="flex items-center justify-between px-6 py-4 bg-white rounded-lg border border-gray-400">
+							<div className="flex items-center gap-5">
+								<div className="w-6 h-6 rounded flex items-center justify-center">
+									<Image src="http://localhost:3845/assets/2c90628fe80a9ab0fe5c3bd0a92fa638dfe22c31.png" alt="Gmail" width={24} height={24} />
+								</div>
+								<span className="text-lg text-gray-700">Gmail</span>
+							</div>
+							<button className="px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-100 transition-colors">
+								Connect
+							</button>
+						</div>
+
+						<div className="flex items-center justify-between px-6 py-4 bg-white rounded-lg border border-gray-400">
+							<div className="flex items-center gap-5">
+								<div className="w-6 h-6 rounded flex items-center justify-center">
+									<Image src="http://localhost:3845/assets/9c97b509463f005f8f2379dfd40f686d8fd62a94.png" alt="Outlook" width={24} height={24} />
+								</div>
+								<span className="text-lg text-gray-700">Outlook</span>
+							</div>
+							<button className="px-4 py-2 bg-purple-100 rounded-lg text-sm text-gray-700">
+								Connected
+							</button>
+						</div>
+
+						<div className="flex items-center justify-between px-6 py-4 bg-white rounded-lg border border-gray-400">
+							<div className="flex items-center gap-5">
+								<div className="w-6 h-6 rounded flex items-center justify-center">
+									<Image src="http://localhost:3845/assets/c2d13f3d5785488e3e63777e711a9c332bbb5177.png" alt="Microsoft 365" width={24} height={24} />
+								</div>
+								<span className="text-lg text-gray-700">Microsoft 365</span>
+							</div>
+							<button className="px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-100 transition-colors">
+								Connect
+							</button>
+						</div>
+					</div>
+				</div>
+
+				{/* Calendar Connections */}
+				<div>
+					<h3 className="text-xl text-gray-800 mb-5">Your Calendar</h3>
+					<div className="space-y-5">
+						<div className="flex items-center justify-between px-6 py-4 bg-white rounded-lg border border-gray-400">
+							<div className="flex items-center gap-5">
+								<div className="w-6 h-6 rounded flex items-center justify-center">
+									<Image src="http://localhost:3845/assets/4d13c1eeaa3310ccfcfebf898c5f097ce92cd40a.png" alt="Google Calendar" width={24} height={24} />
+								</div>
+								<span className="text-lg text-gray-700">Google Calendar</span>
+							</div>
+							<button className="px-4 py-2 bg-purple-100 rounded-lg text-sm text-gray-700">
+								Connected
+							</button>
+						</div>
+
+						<div className="flex items-center justify-between px-6 py-4 bg-white rounded-lg border border-gray-400">
+							<div className="flex items-center gap-5">
+								<div className="w-6 h-6 rounded flex items-center justify-center">
+									<Image src="http://localhost:3845/assets/9c97b509463f005f8f2379dfd40f686d8fd62a94.png" alt="Outlook Calendar" width={24} height={24} />
+								</div>
+								<span className="text-lg text-gray-700">Outlook Calendar</span>
+							</div>
+							<button className="px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-100 transition-colors">
+								Connect
+							</button>
+						</div>
+
+						<div className="flex items-center justify-between px-6 py-4 bg-white rounded-lg border border-gray-400">
+							<div className="flex items-center gap-5">
+								<div className="w-6 h-6 rounded flex items-center justify-center">
+									<Image src="http://localhost:3845/assets/c2d13f3d5785488e3e63777e711a9c332bbb5177.png" alt="Microsoft Calendar" width={24} height={24} />
+								</div>
+								<span className="text-lg text-gray-700">Microsoft Calendar</span>
+							</div>
+							<button className="px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-100 transition-colors">
+								Connect
+							</button>
+						</div>
+
+						<div className="flex items-center justify-between px-6 py-4 bg-white rounded-lg border border-gray-400">
+							<div className="flex items-center gap-5">
+								<div className="w-6 h-6 rounded flex items-center justify-center">
+									<Image src="http://localhost:3845/assets/ad872ddf9a4c7c70c533ff796d7a06ef06ddd99b.png" alt="Exchange Calendar" width={24} height={24} />
+								</div>
+								<span className="text-lg text-gray-700">Exchange Calendar</span>
+							</div>
+							<button className="px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-100 transition-colors">
+								Connect
+							</button>
+						</div>
+					</div>
+				</div>
+
+				{/* Permissions */}
+				<div className="space-y-5">
+					<div className="flex items-start gap-3">
+						<CustomCircularCheckbox 
+							checked={formData.emailAccess}
+							onChange={(checked) => handleInputChange('emailAccess', checked)}
+							className="mt-1"
+						/>
+						<p className="text-base text-gray-700 leading-5">
+							Allow Mira to access your email to read, compose, manage drafts, and send emails from your connected accounts. <a href="#" className="text-gray-500 underline text-sm">Learn more</a>
+						</p>
+					</div>
+
+					<div className="flex items-start gap-3">
+						<CustomCircularCheckbox 
+							checked={formData.calendarAccess}
+							onChange={(checked) => handleInputChange('calendarAccess', checked)}
+							className="mt-1"
+						/>
+						<p className="text-base text-gray-700 leading-5">
+							Allow Mira to access your calendar to view, create, edit, and manage your events and reminders across connected accounts.
+						</p>
+					</div>
+
+					{/* Privacy Policy Section */}
+					<div className="mt-6">
+						<p className="text-lg text-gray-800 leading-6">
+							<span className="font-bold">Make sure you trust Mira:</span> Review{' '}
+							<a href="#" className="text-purple-600 underline">Mira's Privacy Policy</a> and{' '}
+							<a href="#" className="text-purple-600 underline">Terms of Service</a> to understand how Mira will process and protect your data.
+						</p>
+					</div>
+				</div>
+			</div>
+
+			<button
+				onClick={handleSave}
+				className="px-6 py-3 bg-gray-800 text-white rounded-full font-semibold text-lg hover:bg-gray-900 transition-colors"
+			>
+				Save
+			</button>
+		</div>
+	);
+
+	const renderSubscriptionTab = () => (
+		<div className="space-y-5">
+			<p className="text-xl text-gray-800 leading-6">
+				View your current plan, update billing details, or upgrade your subscription anytime.
+			</p>
+			
+			<div className="space-y-5">
+				{/* Plan Selection */}
+				<div className="space-y-5">
+					<div className={`flex items-center justify-between px-6 py-4 rounded-lg border ${formData.selectedPlan === 'basic' ? 'border-gray-400 bg-gray-50' : 'border-gray-400 bg-white'}`}>
+						<div className="flex items-center gap-2">
+							<div className="w-10 h-10 rounded flex items-center justify-center">
+								<Image src="http://localhost:3845/assets/7d3acea3f952d5aea6859a1bcba0e438d9b66a8a.svg" alt="Basic Plan" width={40} height={40} />
+							</div>
+							<div>
+								<h4 className="text-lg font-normal text-gray-700">Basic Plan - Free</h4>
+								<p className="text-sm text-gray-500">AI assistant managing Email, calendar, and meeting</p>
+							</div>
+						</div>
+						<div className="relative">
+							<CustomRadioButton
+								name="plan"
+								value="basic"
+								checked={formData.selectedPlan === 'basic'}
+								onChange={(value) => handleInputChange('selectedPlan', value)}
+							/>
+						</div>
+					</div>
+
+					<div className={`flex items-center justify-between px-6 py-4 rounded-lg border ${formData.selectedPlan === 'advanced' ? 'border-gray-400 bg-gray-50' : 'border-gray-400 bg-white'}`}>
+						<div className="flex items-center gap-2">
+							<div className="w-10 h-10 rounded flex items-center justify-center">
+								<Image src="http://localhost:3845/assets/67893a5fc0bae1ab45586228c49afb8964616e48.svg" alt="Advanced Plan" width={40} height={40} />
+							</div>
+							<div>
+								<h4 className="text-lg font-normal text-gray-700">Advanced Plan - $9/month</h4>
+								<p className="text-sm text-gray-500">AI assistant with customized voice</p>
+							</div>
+						</div>
+						<div className="relative">
+							<CustomRadioButton
+								name="plan"
+								value="advanced"
+								checked={formData.selectedPlan === 'advanced'}
+								onChange={(value) => handleInputChange('selectedPlan', value)}
+							/>
+						</div>
+					</div>
+
+					<div className={`flex items-center justify-between px-6 py-4 rounded-lg border ${formData.selectedPlan === 'premium' ? 'border-gray-400 bg-gray-50' : 'border-gray-400 bg-white'}`}>
+						<div className="flex items-center gap-2">
+							<div className="w-10 h-10 rounded flex items-center justify-center">
+								<Image src="http://localhost:3845/assets/0d6f50ab620eb4ec3b3434c5325fe53fb7df8cfd.svg" alt="Premium Plan" width={40} height={40} />
+							</div>
+							<div>
+								<h4 className="text-lg font-normal text-gray-700">Premium Plan - $19/month</h4>
+								<p className="text-sm text-gray-500">Customized voice AI assistant being able to make appointments for you</p>
+							</div>
+						</div>
+						<div className="relative">
+							<CustomRadioButton
+								name="plan"
+								value="premium"
+								checked={formData.selectedPlan === 'premium'}
+								onChange={(value) => handleInputChange('selectedPlan', value)}
+							/>
+						</div>
+					</div>
+				</div>
+
+				{/* Card Details */}
+				<div className="space-y-10">
+					<div>
+						<h3 className="text-2xl font-medium text-gray-800 mb-2">Card Details</h3>
+						<p className="text-lg text-gray-500">Update your card details.</p>
+					</div>
+
+					<div className="space-y-5">
+						<div>
+							<label className="block text-lg text-gray-700 mb-3">Name on card</label>
+							<input
+								type="text"
+								value={formData.cardName}
+								onChange={(e) => handleInputChange('cardName', e.target.value)}
+								className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500"
+								placeholder="Enter name on card"
+							/>
+						</div>
+
+						<div className="flex gap-6">
+							<div className="flex-1">
+								<label className="block text-lg text-gray-700 mb-3">Card number</label>
+								<input
+									type="text"
+									value={formData.cardNumber}
+									onChange={(e) => handleInputChange('cardNumber', e.target.value)}
+									className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500"
+									placeholder="1234 5678 9012 3456"
+								/>
+							</div>
+							<div className="w-28">
+								<label className="block text-lg text-gray-700 mb-3">Exp date</label>
+								<input
+									type="text"
+									value={formData.expDate}
+									onChange={(e) => handleInputChange('expDate', e.target.value)}
+									className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500"
+									placeholder="MM/YY"
+								/>
+							</div>
+							<div className="w-28">
+								<label className="block text-lg text-gray-700 mb-3">CVV</label>
+								<input
+									type="text"
+									value={formData.cvv}
+									onChange={(e) => handleInputChange('cvv', e.target.value)}
+									className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500"
+									placeholder="123"
+								/>
+							</div>
+						</div>
+
+						<div>
+							<label className="block text-lg text-gray-700 mb-3">Address</label>
+							<input
+								type="text"
+								value={formData.address}
+								onChange={(e) => handleInputChange('address', e.target.value)}
+								className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500"
+								placeholder="Enter your address"
+							/>
+						</div>
+
+						<div className="flex gap-6">
+							<div className="flex-1">
+								<label className="block text-lg text-gray-700 mb-3">City</label>
+								<input
+									type="text"
+									value={formData.city}
+									onChange={(e) => handleInputChange('city', e.target.value)}
+									className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500"
+									placeholder="Enter city"
+								/>
+							</div>
+							<div className="w-28">
+								<label className="block text-lg text-gray-700 mb-3">State</label>
+								<input
+									type="text"
+									value={formData.state}
+									onChange={(e) => handleInputChange('state', e.target.value)}
+									className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500"
+									placeholder="State"
+								/>
+							</div>
+							<div className="w-28">
+								<label className="block text-lg text-gray-700 mb-3">Postal code</label>
+								<input
+									type="text"
+									value={formData.postalCode}
+									onChange={(e) => handleInputChange('postalCode', e.target.value)}
+									className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500"
+									placeholder="12345"
+								/>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<button
+				onClick={handleSave}
+				className="px-6 py-3 bg-gray-800 text-white rounded-full font-semibold text-lg hover:bg-gray-900 transition-colors"
+			>
+				Save
+			</button>
+		</div>
+	);
+
+	const renderTabContent = () => {
+		switch (activeTab) {
+			case 'profile':
+				return renderProfileTab();
+			case 'preferences':
+				return renderPreferencesTab();
+			case 'notifications':
+				return renderNotificationsTab();
+			case 'privacy':
+				return renderPrivacyTab();
+			case 'subscription':
+				return renderSubscriptionTab();
+			default:
+				return renderProfileTab();
+		}
+	};
+
 	return (
-		<div className="flex items-center justify-center h-screen text-gray-700 text-lg font-medium">
-			Settings Page (Coming soon)
+		<div className="min-h-screen bg-gray-50 p-8">
+			{/* Header */}
+			<div className="flex items-center justify-between mb-8">
+				<div className="flex items-center gap-8">
+					<div className="flex items-center gap-2">
+						<span className="text-base text-gray-800">Wed, Oct 15</span>
+					</div>
+					<div className="flex items-center gap-2 px-3 py-2 bg-white rounded-full border border-gray-200">
+						<MapPin className="w-4 h-4 text-gray-600" />
+						<span className="text-base text-gray-800">New York</span>
+					</div>
+					<div className="flex items-center gap-2 px-3 py-2 bg-white rounded-full border border-gray-200">
+						<Sun className="w-6 h-6 text-yellow-500" />
+						<span className="text-base text-gray-800">20°</span>
+					</div>
+				</div>
+				<div className="w-11 h-11 bg-white rounded-lg border border-gray-200 flex items-center justify-center">
+					<Bell className="w-6 h-6 text-gray-600" />
+				</div>
+			</div>
+
+			{/* Title */}
+			<div className="mb-8">
+				<h1 className="text-4xl font-medium text-black">Settings</h1>
+			</div>
+
+			{/* Tab Navigation */}
+			<div className="flex items-center gap-8 mb-8 border-b border-gray-300">
+				{tabs.map((tab) => (
+					<button
+						key={tab.id}
+						onClick={() => setActiveTab(tab.id)}
+						className={`px-2 py-1 text-xl transition-colors ${
+							activeTab === tab.id
+								? 'text-gray-800 font-medium border-b-2 border-purple-600 pb-4'
+								: 'text-gray-500 font-medium hover:text-gray-700 pb-4'
+						}`}
+					>
+						{tab.label}
+					</button>
+				))}
+			</div>
+
+			{/* Tab Content */}
+			<div className="max-w-4xl">
+				{renderTabContent()}
+			</div>
 		</div>
 	);
 }

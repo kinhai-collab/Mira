@@ -115,7 +115,7 @@ export default function Sidebar() {
 	const router = useRouter();
 
 	return (
-		<div className="flex flex-col items-center justify-between h-screen bg-[#F0ECF8] py-6 border-r border-gray-200 w-20">
+		<div className="fixed left-0 top-0 flex flex-col items-center justify-between h-screen bg-[#F0ECF8] py-6 border-r border-gray-200 w-20 z-10">
 			{/* Top Section */}
 			<div className="flex flex-col items-center space-y-6">
 				{/* Mira orb */}
