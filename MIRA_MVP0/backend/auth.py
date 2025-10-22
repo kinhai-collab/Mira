@@ -3,12 +3,17 @@ from fastapi.responses import JSONResponse, RedirectResponse
 import requests
 import os
 from dotenv import load_dotenv
+from urllib.parse import urlencode
+from fastapi import Header
 from typing import Optional
 
 # Load environment variables
 load_dotenv()
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+REDIRECT_URI = os.getenv("REDIRECT_URI")
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise Exception("Missing Supabase credentials in .env file")
@@ -20,7 +25,7 @@ router = APIRouter()
 async def sign_up(email: str = Form(...), password: str = Form(...)):
     try:
         # Prepare Supabase signup request
-        url = f"{SUPABASE_URL}/auth/v1/signup"
+        url = f"{SUPABASE_URL.rstrip('/')}/auth/v1/signup"
         headers = {"apikey": SUPABASE_KEY, "Content-Type": "application/json"}
         payload = {"email": email, "password": password}
         res = requests.post(url, headers=headers, json=payload)
@@ -47,7 +52,7 @@ async def sign_up(email: str = Form(...), password: str = Form(...)):
 async def sign_in(email: str = Form(...), password: str = Form(...)):
     try:
         # Prepare Supabase sign-in request
-        url = f"{SUPABASE_URL}/auth/v1/token?grant_type=password"
+        url = f"{SUPABASE_URL.rstrip('/')}/auth/v1/token?grant_type=password"
         headers = {"apikey": SUPABASE_KEY, "Content-Type": "application/json"}
         payload = {"email": email, "password": password}
         res = requests.post(url, headers=headers, json=payload)
@@ -69,18 +74,86 @@ async def sign_in(email: str = Form(...), password: str = Form(...)):
         # Handle unexpected errors
         raise HTTPException(status_code=500, detail={"status": "error", "message": f"Error: {e}"})
 
+
+# Gmail OAuth Integration
+SCOPES = [
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.send"
+]
+
+AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+TOKEN_URL = "https://oauth2.googleapis.com/token"
+
 # Google signup/in endpoint
 @router.get("/auth/google")
-def google_login():
-    # Redirect the user to Supabase's Google OAuth authorization URL
-    # Include the callback URL for the frontend
-    callback_url = os.getenv("FRONTEND_URL", "http://localhost:3000") + "/auth/callback"
-    redirect_url = f"{SUPABASE_URL}/auth/v1/authorize?provider=google&redirect_to={callback_url}"
-    return RedirectResponse(url=redirect_url)
+def google_oauth_start():
+    # Redirect user to Google Consent Screen
+    params = {
+        "client_id": CLIENT_ID,
+        "redirect_uri": REDIRECT_URI,
+        "response_type": "code",
+        "scope": " ".join(SCOPES),
+        "access_type": "offline",   # Request refresh token
+        "prompt": "consent"
+    }
+    url = f"{AUTH_URL}?{urlencode(params)}"
+    # Redirect user to Google's OAuth page
+    return RedirectResponse(url=url)
 
-# Note: The Google OAuth callback is handled directly by the frontend
-# at /auth/callback page, which extracts the token from the URL fragment
-# and stores it in localStorage. No backend callback endpoint is needed.
+
+@router.get("/auth/google/callback")
+def google_oauth_callback(code: str = Query(...)):
+    # Exchange code for access token
+    data = {
+        "code": code,
+        "client_id": CLIENT_ID,
+        "client_secret": CLIENT_SECRET,
+        "redirect_uri": REDIRECT_URI,
+        "grant_type": "authorization_code"
+    }
+    
+    # Send POST request to get access token
+    res = requests.post(TOKEN_URL, data=data)
+    token_data = res.json()
+
+    if "access_token" not in token_data:
+        raise HTTPException(status_code=400, detail="Failed to retrieve access token")
+
+    access_token = token_data["access_token"]
+
+    # Get Gmail user info
+    headers = {"Authorization": f"Bearer {access_token}"}
+    profile_res = requests.get("https://www.googleapis.com/gmail/v1/users/me/profile", headers=headers)
+    profile = profile_res.json()
+
+    return JSONResponse({
+        "status": "success",
+        "email": profile.get("emailAddress"),
+        "access_token": access_token,
+        "refresh_token": token_data.get("refresh_token")
+    })
+
+@router.post("/auth/google/refresh")
+def google_refresh_token(refresh_token: str = Query(...)):
+    # Refresh access token using the provided refresh token
+    data = {
+        "client_id": CLIENT_ID,
+        "client_secret": CLIENT_SECRET,
+        "refresh_token": refresh_token,
+        "grant_type": "refresh_token"
+    }
+
+    res = requests.post(TOKEN_URL, data=data)
+    token_data = res.json()
+
+    if "access_token" not in token_data:
+        raise HTTPException(status_code=400, detail="Failed to refresh access token")
+
+    return JSONResponse({
+        "access_token": token_data["access_token"],
+        "expires_in": token_data.get("expires_in")
+    })
+
     
 @router.get("/me")
 def me(authorization: Optional[str] = Header(default=None)):

@@ -9,7 +9,7 @@ provider:
     STAGE: ${self:provider.stage}
     SUPABASE_URL: https://oxozhsomntvuyrurfzre.supabase.co/
     SUPABASE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im94b3poc29tbnR2dXlydXJmenJlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA0NjczNDAsImV4cCI6MjA3NjA0MzM0MH0.kXO2FS3sTV3jpT1A8dzr0sr8Md2VM80dbG2uzOnG6_c
-    FRONTEND_URL: https://main.d3k2oig02afj8c.amplifyapp.com
+    FRONTEND_URL: https://main.dd480r9y8ima.amplifyapp.com
   
 plugins:
   - serverless-python-requirements
