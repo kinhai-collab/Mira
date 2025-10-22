@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { isAuthenticated, getStoredUserData, UserData } from "@/utils/auth";
+import { isAuthenticated, getStoredUserData, UserData, getStoredToken } from "@/utils/auth";
 import { ChevronDown, Sun, MapPin, Bell, Check } from "lucide-react";
 
 // Custom Checkbox Component (Square for Notifications)
@@ -93,23 +93,40 @@ export default function SettingsPage() {
 		postalCode: ''
 	});
 
-	// Check authentication on mount
+	// Check authentication on mount and load user data
 	useEffect(() => {
 		if (!isAuthenticated()) {
 			router.push('/login');
 			return;
 		}
+		loadUserData();
+	}, [router]);
+
+	// Load user data from localStorage
+	const loadUserData = () => {
 		const storedUserData = getStoredUserData();
 		setUserData(storedUserData);
 		if (storedUserData) {
+			const nameParts = storedUserData.fullName?.split(' ') || [];
 			setFormData(prev => ({
 				...prev,
 				email: storedUserData.email || '',
-				firstName: storedUserData.fullName?.split(' ')[0] || '',
-				lastName: storedUserData.fullName?.split(' ').slice(1).join(' ') || ''
+				firstName: nameParts[0] || '',
+				lastName: nameParts.slice(1).join(' ') || ''
 			}));
 		}
-	}, [router]);
+	};
+
+	// Listen for user data updates (from Google OAuth or manual signup/login)
+	useEffect(() => {
+		const handleUserDataUpdate = () => {
+			console.log('User data updated, reloading...');
+			loadUserData();
+		};
+
+		window.addEventListener('userDataUpdated', handleUserDataUpdate);
+		return () => window.removeEventListener('userDataUpdated', handleUserDataUpdate);
+	}, []);
 
 	const tabs = [
 		{ id: 'profile' as TabType, label: 'Profile' },
@@ -123,9 +140,57 @@ export default function SettingsPage() {
 		setFormData(prev => ({ ...prev, [field]: value }));
 	};
 
-	const handleSave = () => {
-		// TODO: Implement save functionality
-		console.log('Saving settings:', formData);
+	const handleSave = async () => {
+		try {
+			const token = getStoredToken();
+			if (!token) {
+				alert('Please log in again.');
+				router.push('/login');
+				return;
+			}
+
+			const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+			const payload = {
+				firstName: formData.firstName?.trim() || undefined,
+				middleName: formData.middleName?.trim() || undefined,
+				lastName: formData.lastName?.trim() || undefined,
+				fullName: [formData.firstName?.trim(), formData.lastName?.trim()].filter(Boolean).join(' ') || undefined,
+				// picture can be wired when Change Picture is implemented
+			};
+
+			const res = await fetch(`${apiBase}/profile_update`, {
+				method: 'POST',
+				headers: {
+					'Authorization': `Bearer ${token}`,
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify(payload)
+			});
+
+			const data = await res.json().catch(() => ({}));
+			if (!res.ok) {
+				const message = data?.detail?.message || data?.message || 'Failed to save profile';
+				alert(message);
+				return;
+			}
+
+			// Update localStorage for immediate UI reflect
+			try {
+				const fullName = payload.fullName || '';
+				if (fullName) localStorage.setItem('mira_full_name', fullName);
+				// If backend returns avatar/full name, prefer that
+				const returned = data?.user || {};
+				const meta = returned?.user_metadata || returned?.user?.user_metadata || {};
+				if (meta.full_name) localStorage.setItem('mira_full_name', meta.full_name);
+				if (meta.avatar_url) localStorage.setItem('mira_profile_picture', meta.avatar_url);
+				window.dispatchEvent(new CustomEvent('userDataUpdated'));
+			} catch {}
+
+			alert('Profile saved');
+		} catch (e) {
+			console.error('Failed to save profile:', e);
+			alert('Something went wrong while saving.');
+		}
 	};
 
 	const renderProfileTab = () => (
@@ -139,10 +204,20 @@ export default function SettingsPage() {
 				<div className="space-y-3">
 					<h3 className="text-lg text-gray-700 font-normal">Profile Picture</h3>
 					<div className="flex items-center gap-5">
-						<div className="w-30 h-30 bg-pink-400 rounded-full flex items-center justify-center">
-							<span className="text-6xl text-black font-bold">
-								{userData?.fullName?.charAt(0) || userData?.email?.charAt(0) || 'J'}
-							</span>
+						<div className="w-30 h-30 bg-pink-400 rounded-full flex items-center justify-center overflow-hidden">
+							{userData?.picture ? (
+								<Image
+									src={userData.picture}
+									alt="Profile Picture"
+									width={120}
+									height={120}
+									className="w-full h-full object-cover"
+								/>
+							) : (
+								<span className="text-6xl text-black font-bold">
+									{userData?.fullName?.charAt(0) || userData?.email?.charAt(0) || 'J'}
+								</span>
+							)}
 						</div>
 						<button className="px-4 py-2 bg-gray-50 border border-gray-800 rounded-full text-sm text-gray-800 hover:bg-gray-100 transition-colors font-light">
 							Change Picture
@@ -158,7 +233,7 @@ export default function SettingsPage() {
 							type="email"
 							value={formData.email}
 							onChange={(e) => handleInputChange('email', e.target.value)}
-							className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500"
+							className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-gray-900 placeholder-gray-500"
 							placeholder="Enter your email"
 						/>
 					</div>
@@ -169,7 +244,7 @@ export default function SettingsPage() {
 							type="text"
 							value={formData.firstName}
 							onChange={(e) => handleInputChange('firstName', e.target.value)}
-							className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500"
+							className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-gray-900 placeholder-gray-500"
 							placeholder="Enter your first name"
 						/>
 					</div>
@@ -180,7 +255,7 @@ export default function SettingsPage() {
 							type="text"
 							value={formData.middleName}
 							onChange={(e) => handleInputChange('middleName', e.target.value)}
-							className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500"
+							className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-gray-900 placeholder-gray-500"
 							placeholder="Enter your middle name"
 						/>
 					</div>
@@ -191,7 +266,7 @@ export default function SettingsPage() {
 							type="text"
 							value={formData.lastName}
 							onChange={(e) => handleInputChange('lastName', e.target.value)}
-							className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500"
+							className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-gray-900 placeholder-gray-500"
 							placeholder="Enter your last name"
 						/>
 					</div>
@@ -220,7 +295,7 @@ export default function SettingsPage() {
 						<select
 							value={formData.language}
 							onChange={(e) => handleInputChange('language', e.target.value)}
-							className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 appearance-none text-gray-500"
+							className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 appearance-none text-gray-900"
 						>
 							<option value="English">Select Language</option>
 							<option value="Spanish">Spanish</option>
@@ -237,7 +312,7 @@ export default function SettingsPage() {
 						<select
 							value={formData.timeZone}
 							onChange={(e) => handleInputChange('timeZone', e.target.value)}
-							className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 appearance-none text-gray-500"
+							className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 appearance-none text-gray-900"
 						>
 							<option value="UTC-5 (Eastern Time)">Select Time Zone</option>
 							<option value="UTC-6 (Central Time)">UTC-6 (Central Time)</option>
@@ -254,7 +329,7 @@ export default function SettingsPage() {
 						<select
 							value={formData.voice}
 							onChange={(e) => handleInputChange('voice', e.target.value)}
-							className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 appearance-none text-gray-500"
+							className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 appearance-none text-gray-900"
 						>
 							<option value="Default">Select Voice</option>
 							<option value="Male">Male</option>
@@ -574,7 +649,7 @@ export default function SettingsPage() {
 								type="text"
 								value={formData.cardName}
 								onChange={(e) => handleInputChange('cardName', e.target.value)}
-								className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500"
+								className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-gray-900 placeholder-gray-500"
 								placeholder="Enter name on card"
 							/>
 						</div>
@@ -586,7 +661,7 @@ export default function SettingsPage() {
 									type="text"
 									value={formData.cardNumber}
 									onChange={(e) => handleInputChange('cardNumber', e.target.value)}
-									className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500"
+									className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-gray-900 placeholder-gray-500"
 									placeholder="1234 5678 9012 3456"
 								/>
 							</div>
@@ -596,7 +671,7 @@ export default function SettingsPage() {
 									type="text"
 									value={formData.expDate}
 									onChange={(e) => handleInputChange('expDate', e.target.value)}
-									className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500"
+									className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-gray-900 placeholder-gray-500"
 									placeholder="MM/YY"
 								/>
 							</div>
@@ -606,7 +681,7 @@ export default function SettingsPage() {
 									type="text"
 									value={formData.cvv}
 									onChange={(e) => handleInputChange('cvv', e.target.value)}
-									className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500"
+									className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-gray-900 placeholder-gray-500"
 									placeholder="123"
 								/>
 							</div>
@@ -618,7 +693,7 @@ export default function SettingsPage() {
 								type="text"
 								value={formData.address}
 								onChange={(e) => handleInputChange('address', e.target.value)}
-								className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500"
+								className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-gray-900 placeholder-gray-500"
 								placeholder="Enter your address"
 							/>
 						</div>
@@ -630,7 +705,7 @@ export default function SettingsPage() {
 									type="text"
 									value={formData.city}
 									onChange={(e) => handleInputChange('city', e.target.value)}
-									className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500"
+									className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-gray-900 placeholder-gray-500"
 									placeholder="Enter city"
 								/>
 							</div>
@@ -640,7 +715,7 @@ export default function SettingsPage() {
 									type="text"
 									value={formData.state}
 									onChange={(e) => handleInputChange('state', e.target.value)}
-									className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500"
+									className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-gray-900 placeholder-gray-500"
 									placeholder="State"
 								/>
 							</div>
@@ -650,7 +725,7 @@ export default function SettingsPage() {
 									type="text"
 									value={formData.postalCode}
 									onChange={(e) => handleInputChange('postalCode', e.target.value)}
-									className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500"
+									className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-gray-900 placeholder-gray-500"
 									placeholder="12345"
 								/>
 							</div>

@@ -5,7 +5,7 @@ import Sidebar from "@/components/Sidebar";
 
 const outfit = Outfit({
 	subsets: ["latin"],
-	weight: ["100", "300"],
+	weight: ["100", "300", "400", "500", "600", "700"],
 	display: "swap",
 });
 

@@ -14,6 +14,7 @@ export default function SignupPage() {
 	const [email, setEmail] = useState("");
 	const [password, setPassword] = useState("");
 	const [loading, setLoading] = useState(false);
+	const isDev = process.env.NODE_ENV !== "production";
 
 	// Redirect if already authenticated
 	useEffect(() => {
@@ -25,7 +26,7 @@ export default function SignupPage() {
 
 	const handleSignup = async (e: React.FormEvent<HTMLFormElement>) => {
 		e.preventDefault();
-		console.log("Signup attempt:", { email, password });
+		if (isDev) console.log("Signup attempt:", { email, password });
 		setLoading(true);
 
 		try {
@@ -51,7 +52,7 @@ export default function SignupPage() {
 			}
 
 			const data = await res.json().catch(() => ({}));
-			console.log("Signup success:", data);
+			if (isDev) console.log("Signup success:", data);
 			
 			// Save user information for onboarding and profile display
 			try { 
@@ -61,13 +62,13 @@ export default function SignupPage() {
 				// Store access token if provided in response
 				if (data.access_token) {
 					localStorage.setItem("access_token", data.access_token);
-					console.log("Signup: Stored access token");
+					if (isDev) console.log("Signup: Stored access token");
 				}
 				
 				// Dispatch event to notify ProfileMenu component
 				window.dispatchEvent(new CustomEvent('userDataUpdated'));
 				
-				console.log("Signup: Stored user data:", { email, provider: "email" });
+				if (isDev) console.log("Signup: Stored user data:", { email, provider: "email" });
 			} catch (error) {
 				console.error("Failed to store user data during signup:", error);
 			}
@@ -83,7 +84,7 @@ export default function SignupPage() {
 	};
 
 	const handleGoogleSignup = () => {
-		console.log("Google signup clicked");
+		if (isDev) console.log("Google signup clicked");
 		const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
 		window.location.href = `${apiBase}/auth/google`;
 

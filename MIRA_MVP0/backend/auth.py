@@ -96,6 +96,109 @@ def me(authorization: Optional[str] = Header(default=None)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {e}")
 
+@router.post("/profile_update")
+def profile_update(
+    payload: dict = Body(...),
+    authorization: Optional[str] = Header(default=None)
+):
+    """
+    Updates the authenticated user's Supabase auth user_metadata with profile info.
+
+    Expected payload (JSON):
+    {
+      "firstName": "...",       // optional
+      "middleName": "...",      // optional
+      "lastName": "...",        // optional
+      "fullName": "...",        // optional (fallback: first + last)
+      "picture": "https://..."   // optional avatar URL
+    }
+    Requires Authorization: Bearer <user_access_token> header.
+    """
+    # Validate Authorization header
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+
+    token = authorization.split(" ", 1)[1].strip()
+
+    # Build user_metadata update
+    first_name = (payload or {}).get("firstName")
+    middle_name = (payload or {}).get("middleName")
+    last_name = (payload or {}).get("lastName")
+    full_name = (payload or {}).get("fullName")
+    picture = (payload or {}).get("picture")
+
+    if not full_name:
+        names = [n for n in [first_name, last_name] if n]
+        if names:
+            full_name = " ".join(names)
+
+    user_metadata: dict = {}
+    if first_name:
+        user_metadata["given_name"] = first_name
+    if middle_name:
+        user_metadata["middle_name"] = middle_name
+    if last_name:
+        user_metadata["family_name"] = last_name
+    if full_name:
+        user_metadata["full_name"] = full_name
+    if picture:
+        user_metadata["avatar_url"] = picture
+
+    if not user_metadata:
+        return {"status": "noop", "message": "No profile fields provided"}
+
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        # PATCH auth user metadata
+        r = requests.patch(
+            f"{SUPABASE_URL.rstrip('/')}/auth/v1/user",
+            headers=headers,
+            json={"data": user_metadata},
+        )
+
+        if r.status_code not in (200, 201):
+            try:
+                err = r.json()
+            except Exception:
+                err = {"error": r.text}
+            raise HTTPException(status_code=r.status_code, detail=err)
+
+        return {"status": "success", "user": r.json()}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {e}")
+
+# Trailing-slash alias to avoid 405 when client sends /profile_update/
+@router.post("/profile_update/")
+def profile_update_alias(
+    payload: dict = Body(...),
+    authorization: Optional[str] = Header(default=None)
+):
+    return profile_update(payload=payload, authorization=authorization)
+
+# Test endpoint to verify server is working
+@router.get("/test")
+def test():
+    return {"status": "ok", "message": "Server is running"}
+
+# Handle CORS preflight for profile_update
+@router.options("/profile_update")
+def profile_update_options():
+    return JSONResponse(
+        status_code=200,
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        }
+    )
+
 @router.post("/onboarding_save")
 def onboarding_save(payload: dict = Body(...)):
     """

@@ -52,7 +52,8 @@ export function extractUserDataFromToken(token: string): UserData | null {
 			userData.fullName = payload.user_metadata.full_name || 
 								payload.user_metadata.name || 
 								payload.user_metadata.display_name ||
-								payload.user_metadata.given_name + ' ' + payload.user_metadata.family_name;
+								(payload.user_metadata.given_name && payload.user_metadata.family_name ? 
+								 `${payload.user_metadata.given_name} ${payload.user_metadata.family_name}` : null);
 			userData.picture = payload.user_metadata.avatar_url || 
 							  payload.user_metadata.picture || 
 							  payload.user_metadata.photo_url;
