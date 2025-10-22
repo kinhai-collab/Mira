@@ -286,7 +286,7 @@ export default function SettingsPage() {
 				<div className="flex items-center justify-between px-6 py-4 bg-white rounded-lg border border-gray-400">
 					<div className="flex items-center gap-2">
 						<div className="w-10 h-10 bg-gray-50 rounded-full flex items-center justify-center p-2">
-							<Image src="http://localhost:3845/assets/de743db53464c6c095cf515d6168d60fced9432f.png" alt="Push Notification" width={24} height={24} />
+							<Image src="/Icons/image 9.png" alt="Push Notification" width={24} height={24} />
 						</div>
 						<div className="ml-2">
 							<h4 className="text-lg text-gray-700 font-normal">Push Notification</h4>
@@ -303,7 +303,7 @@ export default function SettingsPage() {
 				<div className="flex items-center justify-between px-6 py-4 bg-white rounded-lg border border-gray-400">
 					<div className="flex items-center gap-2">
 						<div className="w-10 h-10 bg-gray-50 rounded-full flex items-center justify-center p-2">
-							<Image src="http://localhost:3845/assets/8ef2d8b65bb80f3ac291b6917f4d7737b647cc0c.png" alt="Microphone Access" width={24} height={24} />
+							<Image src="/Icons/image 10.png" alt="Microphone Access" width={24} height={24} />
 						</div>
 						<div className="ml-2">
 							<h4 className="text-lg text-gray-700 font-normal">Microphone Access</h4>
@@ -320,7 +320,7 @@ export default function SettingsPage() {
 				<div className="flex items-center justify-between px-6 py-4 bg-white rounded-lg border border-gray-400">
 					<div className="flex items-center gap-2">
 						<div className="w-10 h-10 bg-gray-50 rounded-full flex items-center justify-center p-2">
-							<Image src="http://localhost:3845/assets/526c0b3f21a1492022061abf00cf2f04067fc40e.png" alt="Wake Word Detection" width={24} height={24} />
+							<Image src="/Icons/image 11.png" alt="Wake Word Detection" width={24} height={24} />
 						</div>
 						<div className="ml-2">
 							<h4 className="text-lg text-gray-700 font-normal">Wake Word Detection</h4>
@@ -357,7 +357,7 @@ export default function SettingsPage() {
 						<div className="flex items-center justify-between px-6 py-4 bg-white rounded-lg border border-gray-400">
 							<div className="flex items-center gap-5">
 								<div className="w-6 h-6 rounded flex items-center justify-center">
-									<Image src="http://localhost:3845/assets/2c90628fe80a9ab0fe5c3bd0a92fa638dfe22c31.png" alt="Gmail" width={24} height={24} />
+									<Image src="/Icons/image 4.png" alt="Gmail" width={24} height={24} />
 								</div>
 								<span className="text-lg text-gray-700">Gmail</span>
 							</div>
@@ -369,7 +369,7 @@ export default function SettingsPage() {
 						<div className="flex items-center justify-between px-6 py-4 bg-white rounded-lg border border-gray-400">
 							<div className="flex items-center gap-5">
 								<div className="w-6 h-6 rounded flex items-center justify-center">
-									<Image src="http://localhost:3845/assets/9c97b509463f005f8f2379dfd40f686d8fd62a94.png" alt="Outlook" width={24} height={24} />
+									<Image src="/Icons/image 5.png" alt="Outlook" width={24} height={24} />
 								</div>
 								<span className="text-lg text-gray-700">Outlook</span>
 							</div>
@@ -381,7 +381,7 @@ export default function SettingsPage() {
 						<div className="flex items-center justify-between px-6 py-4 bg-white rounded-lg border border-gray-400">
 							<div className="flex items-center gap-5">
 								<div className="w-6 h-6 rounded flex items-center justify-center">
-									<Image src="http://localhost:3845/assets/c2d13f3d5785488e3e63777e711a9c332bbb5177.png" alt="Microsoft 365" width={24} height={24} />
+									<Image src="/Icons/image 6.png" alt="Microsoft 365" width={24} height={24} />
 								</div>
 								<span className="text-lg text-gray-700">Microsoft 365</span>
 							</div>
@@ -399,7 +399,7 @@ export default function SettingsPage() {
 						<div className="flex items-center justify-between px-6 py-4 bg-white rounded-lg border border-gray-400">
 							<div className="flex items-center gap-5">
 								<div className="w-6 h-6 rounded flex items-center justify-center">
-									<Image src="http://localhost:3845/assets/4d13c1eeaa3310ccfcfebf898c5f097ce92cd40a.png" alt="Google Calendar" width={24} height={24} />
+									<Image src="/Icons/image 7.png" alt="Google Calendar" width={24} height={24} />
 								</div>
 								<span className="text-lg text-gray-700">Google Calendar</span>
 							</div>
@@ -411,7 +411,7 @@ export default function SettingsPage() {
 						<div className="flex items-center justify-between px-6 py-4 bg-white rounded-lg border border-gray-400">
 							<div className="flex items-center gap-5">
 								<div className="w-6 h-6 rounded flex items-center justify-center">
-									<Image src="http://localhost:3845/assets/9c97b509463f005f8f2379dfd40f686d8fd62a94.png" alt="Outlook Calendar" width={24} height={24} />
+									<Image src="/Icons/image 5.png" alt="Outlook Calendar" width={24} height={24} />
 								</div>
 								<span className="text-lg text-gray-700">Outlook Calendar</span>
 							</div>
@@ -423,7 +423,7 @@ export default function SettingsPage() {
 						<div className="flex items-center justify-between px-6 py-4 bg-white rounded-lg border border-gray-400">
 							<div className="flex items-center gap-5">
 								<div className="w-6 h-6 rounded flex items-center justify-center">
-									<Image src="http://localhost:3845/assets/c2d13f3d5785488e3e63777e711a9c332bbb5177.png" alt="Microsoft Calendar" width={24} height={24} />
+									<Image src="/Icons/image 6.png" alt="Microsoft Calendar" width={24} height={24} />
 								</div>
 								<span className="text-lg text-gray-700">Microsoft Calendar</span>
 							</div>
@@ -435,7 +435,7 @@ export default function SettingsPage() {
 						<div className="flex items-center justify-between px-6 py-4 bg-white rounded-lg border border-gray-400">
 							<div className="flex items-center gap-5">
 								<div className="w-6 h-6 rounded flex items-center justify-center">
-									<Image src="http://localhost:3845/assets/ad872ddf9a4c7c70c533ff796d7a06ef06ddd99b.png" alt="Exchange Calendar" width={24} height={24} />
+									<Image src="/Icons/image 8.png" alt="Exchange Calendar" width={24} height={24} />
 								</div>
 								<span className="text-lg text-gray-700">Exchange Calendar</span>
 							</div>
@@ -502,7 +502,7 @@ export default function SettingsPage() {
 					<div className={`flex items-center justify-between px-6 py-4 rounded-lg border ${formData.selectedPlan === 'basic' ? 'border-gray-400 bg-gray-50' : 'border-gray-400 bg-white'}`}>
 						<div className="flex items-center gap-2">
 							<div className="w-10 h-10 rounded flex items-center justify-center">
-								<Image src="http://localhost:3845/assets/7d3acea3f952d5aea6859a1bcba0e438d9b66a8a.svg" alt="Basic Plan" width={40} height={40} />
+								<Image src="/Icons/Ellipse 12.svg" alt="Basic Plan" width={40} height={40} />
 							</div>
 							<div>
 								<h4 className="text-lg font-normal text-gray-700">Basic Plan - Free</h4>
@@ -522,7 +522,7 @@ export default function SettingsPage() {
 					<div className={`flex items-center justify-between px-6 py-4 rounded-lg border ${formData.selectedPlan === 'advanced' ? 'border-gray-400 bg-gray-50' : 'border-gray-400 bg-white'}`}>
 						<div className="flex items-center gap-2">
 							<div className="w-10 h-10 rounded flex items-center justify-center">
-								<Image src="http://localhost:3845/assets/67893a5fc0bae1ab45586228c49afb8964616e48.svg" alt="Advanced Plan" width={40} height={40} />
+								<Image src="/Icons/Ellipse 10.svg" alt="Advanced Plan" width={40} height={40} />
 							</div>
 							<div>
 								<h4 className="text-lg font-normal text-gray-700">Advanced Plan - $9/month</h4>
@@ -542,7 +542,7 @@ export default function SettingsPage() {
 					<div className={`flex items-center justify-between px-6 py-4 rounded-lg border ${formData.selectedPlan === 'premium' ? 'border-gray-400 bg-gray-50' : 'border-gray-400 bg-white'}`}>
 						<div className="flex items-center gap-2">
 							<div className="w-10 h-10 rounded flex items-center justify-center">
-								<Image src="http://localhost:3845/assets/0d6f50ab620eb4ec3b3434c5325fe53fb7df8cfd.svg" alt="Premium Plan" width={40} height={40} />
+								<Image src="/Icons/Ellipse 11.svg" alt="Premium Plan" width={40} height={40} />
 							</div>
 							<div>
 								<h4 className="text-lg font-normal text-gray-700">Premium Plan - $19/month</h4>
