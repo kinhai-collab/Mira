@@ -1,7 +1,8 @@
 /** @format */
 import "./globals.css";
 import { Outfit } from "next/font/google";
-import Sidebar from "@/components/Sidebar";
+import ConditionalSidebar from "@/components/ConditionalSidebar";
+import MainContent from "@/components/MainContent";
 
 const outfit = Outfit({
 	subsets: ["latin"],
@@ -24,13 +25,11 @@ export default function RootLayout({
 			<body
 				className={`${outfit.className} font-light min-h-screen bg-[#F8F8FB] text-gray-900 flex`}
 			>
-				{/* ✅ Compact lavender Sidebar */}
-				<aside className="hidden md:flex">
-					<Sidebar />
-				</aside>
+				{/* ✅ Conditionally rendered sidebar */}
+				<ConditionalSidebar />
 
-				{/* ✅ Page content */}
-				<main className="flex-1 overflow-y-auto ml-20">{children}</main>
+				{/* ✅ Page content with conditional margin */}
+				<MainContent>{children}</MainContent>
 			</body>
 		</html>
 	);
