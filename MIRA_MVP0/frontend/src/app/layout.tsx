@@ -30,7 +30,7 @@ export default function RootLayout({
 				</aside>
 
 				{/* ✅ Page content */}
-				<main className="flex-1 overflow-y-auto">{children}</main>
+				<main className="flex-1 overflow-y-auto ml-20">{children}</main>
 			</body>
 		</html>
 	);
