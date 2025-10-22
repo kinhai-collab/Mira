@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { isAuthenticated, getStoredUserData, UserData } from "@/utils/auth";
-import { ChevronDown, Sun, MapPin, Bell, Mic, MicOff, Volume2, VolumeX, Mail, Calendar, CreditCard, Check } from "lucide-react";
+import { ChevronDown, Sun, MapPin, Bell, Check } from "lucide-react";
 
 // Custom Checkbox Component (Square for Notifications)
 const CustomCheckbox = ({ checked, onChange, className = "" }: { checked: boolean; onChange: (checked: boolean) => void; className?: string }) => (
@@ -119,7 +119,7 @@ export default function SettingsPage() {
 		{ id: 'subscription' as TabType, label: 'Manage subscription' }
 	];
 
-	const handleInputChange = (field: string, value: any) => {
+	const handleInputChange = (field: string, value: string | boolean) => {
 		setFormData(prev => ({ ...prev, [field]: value }));
 	};
 
@@ -278,7 +278,7 @@ export default function SettingsPage() {
 	const renderNotificationsTab = () => (
 		<div className="space-y-5">
 			<p className="text-xl text-gray-800 leading-6">
-				Choose how and when you'd like to receive updates, alerts, and promotional messages.
+				Choose how and when you&apos;d like to receive updates, alerts, and promotional messages.
 			</p>
 			
 			<div className="space-y-5">
@@ -474,7 +474,7 @@ export default function SettingsPage() {
 					<div className="mt-6">
 						<p className="text-lg text-gray-800 leading-6">
 							<span className="font-bold">Make sure you trust Mira:</span> Review{' '}
-							<a href="#" className="text-purple-600 underline">Mira's Privacy Policy</a> and{' '}
+							<a href="#" className="text-purple-600 underline">Mira&apos;s Privacy Policy</a> and{' '}
 							<a href="#" className="text-purple-600 underline">Terms of Service</a> to understand how Mira will process and protect your data.
 						</p>
 					</div>
