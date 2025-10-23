@@ -286,19 +286,20 @@ def onboarding_status(
     Response: {"email": "...", "onboarded": true/false}
     """
     try:
+        # If no email provided, get it from the token
         if not email:
             if not authorization or not authorization.lower().startswith("bearer "):
                 raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
             token = authorization.split(" ", 1)[1].strip()
-        headers_me = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {token}"}
-        r_me = requests.get(f"{SUPABASE_URL.rstrip('/')}/auth/v1/user", headers=headers_me)
-        if r_me.status_code != 200:
-            print(f"Supabase auth error in onboarding_status: {r_me.status_code} - {r_me.text}")
-            raise HTTPException(status_code=401, detail="Unable to fetch user from token")
-        email = (r_me.json() or {}).get("email")
-        if not email:
-            print(f"No email found in Supabase user response: {r_me.json()}")
-            raise HTTPException(status_code=400, detail="No email in Supabase user response")
+            headers_me = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {token}"}
+            r_me = requests.get(f"{SUPABASE_URL.rstrip('/')}/auth/v1/user", headers=headers_me)
+            if r_me.status_code != 200:
+                print(f"Supabase auth error in onboarding_status: {r_me.status_code} - {r_me.text}")
+                raise HTTPException(status_code=401, detail="Unable to fetch user from token")
+            email = (r_me.json() or {}).get("email")
+            if not email:
+                print(f"No email found in Supabase user response: {r_me.json()}")
+                raise HTTPException(status_code=400, detail="No email in Supabase user response")
 
         headers_sb = {
             "apikey": SUPABASE_KEY,
@@ -309,6 +310,7 @@ def onboarding_status(
             headers=headers_sb,
             params={"select": "email", "email": f"eq.{email}"},
         )
+        print(f"Onboarding query response: {r.status_code} - {r.text}")
         if r.status_code != 200:
             try:
                 err = r.json()
@@ -317,6 +319,7 @@ def onboarding_status(
             raise HTTPException(status_code=r.status_code, detail=err)
 
         rows = r.json() or []
+        print(f"Onboarding rows found: {len(rows)} for email: {email}")
         return {"email": email, "onboarded": len(rows) > 0}
     except HTTPException:
         raise

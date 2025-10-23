@@ -45,6 +45,38 @@ export default function Home() {
 				return;
 			}
 
+			// Check onboarding status as a fallback (in case user landed here directly)
+			try {
+				const token = localStorage.getItem("access_token") ?? localStorage.getItem("token");
+				if (token) {
+					const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+					const email = localStorage.getItem("mira_email");
+					
+					if (email) {
+						const onboardingRes = await fetch(`${apiBase}/onboarding_status?email=${encodeURIComponent(email)}`, {
+							headers: {
+								"Authorization": `Bearer ${token}`,
+								"Content-Type": "application/json"
+							}
+						});
+						
+						if (onboardingRes.ok) {
+							const onboardingData = await onboardingRes.json();
+							const onboarded = !!onboardingData?.onboarded;
+							
+							if (!onboarded) {
+								console.log("User not onboarded, redirecting to onboarding from home page");
+								router.push("/onboarding/step1");
+								return;
+							}
+						}
+					}
+				}
+			} catch (error) {
+				console.log("Error checking onboarding status on home page:", error);
+				// Continue to normal flow if check fails
+			}
+
 			// Only call greeting API once
 			if (greetingCalledRef.current) return;
 			greetingCalledRef.current = true;

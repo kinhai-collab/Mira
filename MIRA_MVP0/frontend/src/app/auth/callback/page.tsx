@@ -76,11 +76,15 @@ export default function AuthCallback() {
       }
 
       // 4) Check onboarding status
+      console.log("Checking onboarding status for email:", email);
       const statusRes = await fetch(`${apiBase}/onboarding_status?email=${encodeURIComponent(email || "")}`, {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
+      console.log("Onboarding status response:", statusRes.status, statusRes.statusText);
       const statusJson = await statusRes.json();
+      console.log("Onboarding status data:", statusJson);
       const onboarded = !!statusJson?.onboarded;
+      console.log("User onboarded:", onboarded);
 
       // 5) Route: first-time (no onboarding row) -> onboarding/step1, else -> home page
       if (!onboarded) {
