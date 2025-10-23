@@ -5,7 +5,7 @@ import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { Icon } from "@/components/Icon";
-import { clearAuthTokens, getStoredUserData, UserData } from "@/utils/auth";
+import { clearAuthTokens, getStoredUserData, UserData, refreshUserData } from "@/utils/auth";
 
 export default function ProfileMenu() {
 	const [open, setOpen] = useState(false);
@@ -27,9 +27,20 @@ export default function ProfileMenu() {
 
 	// Load user data on component mount and when localStorage changes
 	useEffect(() => {
-		const loadUserData = () => {
-			const storedUserData = getStoredUserData();
+		const loadUserData = async () => {
+			let storedUserData = getStoredUserData();
 			console.log("ProfileMenu: Loading user data:", storedUserData);
+			
+			// If no user data is stored, try to refresh from backend
+			if (!storedUserData || (!storedUserData.fullName && !storedUserData.picture)) {
+				console.log("ProfileMenu: No user data found, attempting to refresh from backend");
+				const refreshedData = await refreshUserData();
+				if (refreshedData) {
+					storedUserData = refreshedData;
+					console.log("ProfileMenu: Refreshed user data:", storedUserData);
+				}
+			}
+			
 			setUserData(storedUserData);
 		};
 

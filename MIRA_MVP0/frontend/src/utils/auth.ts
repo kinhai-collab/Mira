@@ -24,7 +24,22 @@ export function extractTokenFromUrl(): string | null {
 export function extractUserDataFromToken(token: string): UserData | null {
 	try {
 		console.log("Extracting user data from token...");
-		const payload = JSON.parse(atob(token.split('.')[1]));
+		console.log("Token length:", token.length);
+		console.log("Token starts with:", token.substring(0, 50));
+		
+		// Check if token is a JWT (has dots)
+		if (!token.includes('.')) {
+			console.log("Token is not a JWT format, skipping extraction");
+			return null;
+		}
+		
+		const parts = token.split('.');
+		if (parts.length !== 3) {
+			console.log("Token doesn't have 3 parts, invalid JWT format");
+			return null;
+		}
+		
+		const payload = JSON.parse(atob(parts[1]));
 		console.log("Token payload:", payload);
 		
 		const userData: UserData = {
@@ -34,9 +49,15 @@ export function extractUserDataFromToken(token: string): UserData | null {
 		// Extract Google OAuth data from user_metadata
 		if (payload.user_metadata) {
 			console.log("User metadata found:", payload.user_metadata);
-			userData.fullName = payload.user_metadata.full_name || payload.user_metadata.name || payload.user_metadata.display_name;
-			userData.picture = payload.user_metadata.avatar_url || payload.user_metadata.picture || payload.user_metadata.photo_url;
-			userData.provider = 'google';
+			userData.fullName = payload.user_metadata.full_name || 
+								payload.user_metadata.name || 
+								payload.user_metadata.display_name ||
+								(payload.user_metadata.given_name && payload.user_metadata.family_name ? 
+								 `${payload.user_metadata.given_name} ${payload.user_metadata.family_name}` : null);
+			userData.picture = payload.user_metadata.avatar_url || 
+							  payload.user_metadata.picture || 
+							  payload.user_metadata.photo_url;
+			userData.provider = payload.user_metadata.provider || 'google';
 		}
 
 		// Extract app metadata
@@ -51,6 +72,9 @@ export function extractUserDataFromToken(token: string): UserData | null {
 		if (payload.picture && !userData.picture) {
 			userData.picture = payload.picture;
 		}
+		if (payload.given_name && payload.family_name && !userData.fullName) {
+			userData.fullName = `${payload.given_name} ${payload.family_name}`;
+		}
 
 		// If no full name from metadata, try to construct from email
 		if (!userData.fullName && userData.email) {
@@ -62,6 +86,7 @@ export function extractUserDataFromToken(token: string): UserData | null {
 		return userData;
 	} catch (e) {
 		console.error("Could not extract user data from token:", e);
+		console.error("Token was:", token.substring(0, 100));
 		return null;
 	}
 }
@@ -160,4 +185,55 @@ export function requireAuth(router: AppRouterInstance, redirectTo: string = '/lo
 		return false;
 	}
 	return true;
+}
+
+export async function refreshUserData(): Promise<UserData | null> {
+	const token = getStoredToken();
+	if (!token) return null;
+	
+	try {
+		const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+		const response = await fetch(`${apiBase}/me`, {
+			headers: { Authorization: `Bearer ${token}` },
+		});
+		
+		if (!response.ok) return null;
+		
+		const me = await response.json();
+		const userData: UserData = {
+			email: me.email || '',
+			fullName: me.user_metadata?.full_name || 
+					 me.user_metadata?.name || 
+					 me.user_metadata?.display_name ||
+					 (me.user_metadata?.given_name && me.user_metadata?.family_name ? 
+					  `${me.user_metadata.given_name} ${me.user_metadata.family_name}` : null),
+			picture: me.user_metadata?.avatar_url || 
+					me.user_metadata?.picture || 
+					me.user_metadata?.photo_url ||
+					me.avatar_url,
+			provider: me.app_metadata?.provider || 'google'
+		};
+		
+		// Update localStorage with fresh data
+		if (userData.email) {
+			localStorage.setItem("mira_email", userData.email);
+			if (userData.fullName) {
+				localStorage.setItem("mira_full_name", userData.fullName);
+			}
+			if (userData.picture) {
+				localStorage.setItem("mira_profile_picture", userData.picture);
+			}
+			if (userData.provider) {
+				localStorage.setItem("mira_provider", userData.provider);
+			}
+			
+			// Dispatch event to notify components
+			window.dispatchEvent(new CustomEvent('userDataUpdated'));
+		}
+		
+		return userData;
+	} catch (error) {
+		console.error("Failed to refresh user data:", error);
+		return null;
+	}
 }

@@ -75,11 +75,19 @@ export default function LoginPage() {
 					if (userData.user_metadata?.avatar_url) {
 						localStorage.setItem("mira_profile_picture", userData.user_metadata.avatar_url);
 					}
+					
+					console.log("Login: Fetched additional profile data:", {
+						fullName: userData.user_metadata?.full_name,
+						avatar: userData.user_metadata?.avatar_url
+					});
 				}
-			} catch {
+			} catch (error) {
 				// Continue without additional profile data
-				console.log("Could not fetch additional profile data");
+				console.log("Could not fetch additional profile data:", error);
 			}
+			
+			// Dispatch event again after fetching additional data
+			window.dispatchEvent(new CustomEvent('userDataUpdated'));
 			
 			router.push("/dashboard");
 		} catch {
@@ -181,22 +189,6 @@ export default function LoginPage() {
 				</div>
 			</main>
 
-			{/* Bottom Nav (Mobile only) */}
-			<div className="md:hidden fixed bottom-0 left-0 right-0 bg-[#F0ECF8] border-t border-gray-200 flex justify-around py-3">
-				{["Dashboard", "Settings", "Reminder", "Profile"].map((name, i) => (
-					<div
-						key={i}
-						onClick={() => {
-							if (name === "Dashboard") router.push("/dashboard");
-							else if (name === "Profile") router.push("/dashboard/profile");
-							else router.push(`/dashboard/${name.toLowerCase()}`);
-						}}
-						className="flex flex-col items-center text-gray-700"
-					>
-						<Icon name={name} size={20} />
-					</div>
-				))}
-			</div>
 		</div>
 	);
 }
