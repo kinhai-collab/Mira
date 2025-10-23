@@ -102,10 +102,9 @@ def google_oauth_start():
     # Redirect user to Google's OAuth page
     return RedirectResponse(url=url)
 
-
 @router.get("/auth/google/callback")
 def google_oauth_callback(code: str = Query(...)):
-    # Exchange code for access token
+    # Exchange the authorization code for an access token
     data = {
         "code": code,
         "client_id": CLIENT_ID,
@@ -113,49 +112,43 @@ def google_oauth_callback(code: str = Query(...)):
         "redirect_uri": REDIRECT_URI,
         "grant_type": "authorization_code"
     }
-    
-    # Send POST request to get access token
-    res = requests.post(TOKEN_URL, data=data)
-    token_data = res.json()
+
+    try:
+        res = requests.post(TOKEN_URL, data=data)
+        token_data = res.json()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error requesting access token: {str(e)}")
 
     if "access_token" not in token_data:
         raise HTTPException(status_code=400, detail="Failed to retrieve access token")
 
     access_token = token_data["access_token"]
 
-    # Get Gmail user info
-    headers = {"Authorization": f"Bearer {access_token}"}
-    profile_res = requests.get("https://www.googleapis.com/gmail/v1/users/me/profile", headers=headers)
-    profile = profile_res.json()
+    # Retrieve Gmail user info
+    try:
+        headers = {"Authorization": f"Bearer {access_token}"}
+        profile_res = requests.get("https://www.googleapis.com/gmail/v1/users/me/profile", headers=headers)
+        profile = profile_res.json()
+        email = profile.get("emailAddress")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error retrieving Gmail profile: {str(e)}")
 
-    return JSONResponse({
-        "status": "success",
-        "email": profile.get("emailAddress"),
-        "access_token": access_token,
-        "refresh_token": token_data.get("refresh_token")
-    })
+    # Sign up the user in Supabase
+    try:
+        supabase_url = f"{SUPABASE_URL.rstrip('/')}/auth/v1/signup"
+        headers_sup = {"apikey": SUPABASE_KEY, "Content-Type": "application/json"}
+        payload = {"email": email, "password": os.urandom(16).hex()}
+        requests.post(supabase_url, headers=headers_sup, json=payload)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error signing up in Supabase: {str(e)}")
 
-@router.post("/auth/google/refresh")
-def google_refresh_token(refresh_token: str = Query(...)):
-    # Refresh access token using the provided refresh token
-    data = {
-        "client_id": CLIENT_ID,
-        "client_secret": CLIENT_SECRET,
-        "refresh_token": refresh_token,
-        "grant_type": "refresh_token"
-    }
+    # Redirect user to frontend onboarding
+    frontend_onboarding_url = "https://main.dd480r9y8ima.amplifyapp.com/onboarding/step1"
+    redirect = RedirectResponse(
+        url=f"{frontend_onboarding_url}?email={email}&access_token={access_token}"
+    )
+    return redirect
 
-    res = requests.post(TOKEN_URL, data=data)
-    token_data = res.json()
-
-    if "access_token" not in token_data:
-        raise HTTPException(status_code=400, detail="Failed to refresh access token")
-
-    return JSONResponse({
-        "access_token": token_data["access_token"],
-        "expires_in": token_data.get("expires_in")
-    })
-    
 @router.get("/me")
 def me(authorization: Optional[str] = Header(default=None)):
     if not authorization or not authorization.lower().startswith("bearer "):
