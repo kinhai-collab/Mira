@@ -27,15 +27,67 @@ export async function playVoice(text: string) {
 		const audio = new Audio(url);
 		console.log("Audio element created");
 
+		// Add event listeners for debugging
+		audio.addEventListener('loadstart', () => console.log('Audio load started'));
+		audio.addEventListener('loadeddata', () => console.log('Audio data loaded'));
+		audio.addEventListener('canplay', () => console.log('Audio can play'));
+		audio.addEventListener('error', (e) => console.error('Audio error:', e));
+		audio.addEventListener('ended', () => console.log('Audio playback ended'));
+
 		const tryPlay = () => {
-			audio.play().catch((err) => console.warn("Autoplay blocked:", err));
+			console.log("Attempting to play audio...");
+			audio.play()
+				.then(() => {
+					console.log("Audio playing successfully!");
+				})
+				.catch((err) => {
+					console.warn("Audio play failed:", err);
+					// Try again with user interaction
+					document.addEventListener("click", tryPlay, { once: true });
+				});
 			document.removeEventListener("click", tryPlay);
 		};
 
-		// Attempt immediate playback, otherwise wait for user interaction
-		audio.play().catch(() => {
-			document.addEventListener("click", tryPlay, { once: true });
+		// Wait for audio to be ready, then try to play
+		audio.addEventListener('canplay', () => {
+			console.log("Audio ready, attempting to play...");
+			audio.play()
+				.then(() => {
+					console.log("Audio playing successfully!");
+				})
+				.catch((err) => {
+					console.warn("Autoplay blocked, waiting for user interaction:", err);
+					document.addEventListener("click", tryPlay, { once: true });
+				});
 		});
+
+		// Fallback: try to play immediately as well
+		setTimeout(() => {
+			console.log("Fallback: attempting immediate play...");
+			audio.play()
+				.then(() => {
+					console.log("Fallback play successful!");
+				})
+				.catch((err) => {
+					console.log("Fallback play also blocked:", err.message);
+				});
+		}, 100);
+
+		// Brave-specific: Try multiple times with different approaches
+		setTimeout(() => {
+			console.log("Brave fallback: trying with user gesture simulation...");
+			// Try to play with a simulated user gesture
+			const playPromise = audio.play();
+			if (playPromise !== undefined) {
+				playPromise
+					.then(() => console.log("Brave fallback successful!"))
+					.catch((err) => {
+						console.log("Brave fallback failed:", err.message);
+						// Show a message to user to click to play
+						console.log("Please click anywhere on the page to play the voice");
+					});
+			}
+		}, 500);
 	} catch (err) {
 		console.error("Voice playback failed:", err);
 	}
