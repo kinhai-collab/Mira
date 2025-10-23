@@ -54,7 +54,14 @@ async def generate_voice(text: str = "Hello from Mira!"):
             raise HTTPException(status_code=500, detail="No audio data received from ElevenLabs")
 
         # Return as stream response (works with frontend fetch)
-        return StreamingResponse(iter([audio_bytes]), media_type="audio/mpeg")
+        return StreamingResponse(
+            iter([audio_bytes]), 
+            media_type="audio/mpeg",
+            headers={
+                "Content-Disposition": "inline",
+                "Cache-Control": "no-cache"
+            }
+        )
 
     except Exception as e:
         print("Error generating voice:", e)

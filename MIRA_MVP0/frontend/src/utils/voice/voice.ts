@@ -8,12 +8,24 @@ export async function playVoice(text: string) {
 		console.log("API Base:", apiBase);
 		
 		const res = await fetch(voiceUrl);
-		if (!res.ok) throw new Error("Voice API failed");
+		console.log("Voice API response status:", res.status);
+		console.log("Voice API response headers:", res.headers);
+		
+		if (!res.ok) {
+			const errorText = await res.text();
+			console.error("Voice API failed:", res.status, errorText);
+			throw new Error(`Voice API failed: ${res.status} - ${errorText}`);
+		}
 
 		const arrayBuffer = await res.arrayBuffer();
+		console.log("Audio data received, size:", arrayBuffer.byteLength, "bytes");
+		
 		const blob = new Blob([arrayBuffer], { type: "audio/mpeg" });
 		const url = URL.createObjectURL(blob);
+		console.log("Audio blob URL created:", url);
+		
 		const audio = new Audio(url);
+		console.log("Audio element created");
 
 		const tryPlay = () => {
 			audio.play().catch((err) => console.warn("Autoplay blocked:", err));
