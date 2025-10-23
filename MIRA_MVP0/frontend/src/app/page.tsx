@@ -15,11 +15,11 @@ import { supabase } from "@/utils/supabaseClient";
 
 export default function Home() {
 	const router = useRouter();
-	const hasPlayed = useRef(false);
 	const [input, setInput] = useState("");
 	const [isThinking, setIsThinking] = useState(false);
 	const [steps, setSteps] = useState<string[]>([]);
 	const [greeting, setGreeting] = useState<string>("Hey There!");
+	const greetingCalledRef = useRef(false); // Ref to persist across re-renders
 
 	// Check authentication and fetch greeting from backend on mount
 	useEffect(() => {
@@ -44,6 +44,10 @@ export default function Home() {
 				router.push("/login");
 				return;
 			}
+
+			// Only call greeting API once
+			if (greetingCalledRef.current) return;
+			greetingCalledRef.current = true;
 
 			let token: string | null = null;
 			try {
@@ -70,45 +74,17 @@ export default function Home() {
 				const data = await res.json().catch(() => ({}));
 				if (data && data.message) {
 					const message = String(data.message);
+					console.log("Setting greeting and playing voice:", message);
 					setGreeting(message);
 					playVoice(message); // Trigger voice playback
 				}
 			} catch {}
 		};
 		initializeApp();
-	}, [router]);
+	}, []); // Remove router dependency to prevent multiple calls
 
-	//Mira Voive
-	useEffect(() => {
-		const fetchAndGreetUser = async () => {
-			try {
-				const {
-					data: { user },
-					error,
-				} = await supabase.auth.getUser();
-
-				if (error || !user) {
-					console.warn("No user found:", error);
-					return;
-				}
-
-				// Get name or fallback to email prefix
-				const displayName =
-					user.user_metadata?.full_name || user.email?.split("@")[0] || "user";
-
-				const greeting = `Good morning, ${displayName}!`;
-
-				if (!hasPlayed.current) {
-					hasPlayed.current = true; // prevent overlap
-					playVoice(greeting);
-				}
-			} catch (err) {
-				console.error("Error fetching user:", err);
-			}
-		};
-
-		fetchAndGreetUser();
-	}, []);
+	// Note: Greeting is now handled by the backend API in the initializeApp function above
+	// This Supabase greeting system has been removed to prevent conflicts
 
 	// Animate steps
 	useEffect(() => {

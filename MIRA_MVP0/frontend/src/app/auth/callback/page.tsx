@@ -82,13 +82,13 @@ export default function AuthCallback() {
       const statusJson = await statusRes.json();
       const onboarded = !!statusJson?.onboarded;
 
-      // 5) Route: first-time (no onboarding row) -> onboarding/step1, else -> dashboard
+      // 5) Route: first-time (no onboarding row) -> onboarding/step1, else -> home page
       if (!onboarded) {
-        setStatus("Welcome! Let’s complete your onboarding...");
+        setStatus("Welcome! Let's complete your onboarding...");
         router.replace("/onboarding/step1");
       } else {
-        setStatus("Welcome back. Redirecting to dashboard...");
-        router.replace("/dashboard");
+        setStatus("Welcome back. Redirecting to home...");
+        router.replace("/");
       }
     } catch (err) {
       console.error("Error during authentication callback:", err);

@@ -101,8 +101,8 @@ export default function OnboardingStep5() {
 				console.log("Could not store full name:", e);
 			}
 			
-			// Go to dashboard
-			router.push("/dashboard");
+			// Go to home page
+			router.push("/");
 		} catch (e) {
 			const errorMessage = e instanceof Error ? e.message : "Failed to finish onboarding";
 			alert(errorMessage);
