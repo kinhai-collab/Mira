@@ -1,67 +1,90 @@
 /** @format */
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { Icon } from "@/components/Icon";
-import { extractTokenFromUrl, storeAuthToken, isAuthenticated } from "@/utils/auth";
+import {
+	extractTokenFromUrl,
+	storeAuthToken,
+	isAuthenticated,
+} from "@/utils/auth";
+import { playVoice } from "@/utils/voice/voice";
+import { supabase } from "@/utils/supabaseClient";
 
 export default function Home() {
 	const router = useRouter();
-
 	const [input, setInput] = useState("");
 	const [isThinking, setIsThinking] = useState(false);
 	const [steps, setSteps] = useState<string[]>([]);
-    const [greeting, setGreeting] = useState<string>("Hey There!");
+	const [greeting, setGreeting] = useState<string>("Hey There!");
+	const greetingCalledRef = useRef(false); // Ref to persist across re-renders
 
 	// Check authentication and fetch greeting from backend on mount
-    useEffect(() => {
-        const initializeApp = async () => {
-            // First, check if there's a token in the URL (for OAuth callback)
-            const urlToken = extractTokenFromUrl();
-            if (urlToken) {
-                storeAuthToken(urlToken);
-                // Clear the URL hash after extracting the token
-                window.history.replaceState({}, document.title, window.location.pathname);
-                // Reload the page to refresh user data in all components
-                window.location.reload();
-                return;
-            }
+	useEffect(() => {
+		const initializeApp = async () => {
+			// First, check if there's a token in the URL (for OAuth callback)
+			const urlToken = extractTokenFromUrl();
+			if (urlToken) {
+				storeAuthToken(urlToken);
+				// Clear the URL hash after extracting the token
+				window.history.replaceState(
+					{},
+					document.title,
+					window.location.pathname
+				);
+				// Reload the page to refresh user data in all components
+				window.location.reload();
+				return;
+			}
 
-            // Check if user is authenticated
-            if (!isAuthenticated()) {
-                router.push('/login');
-                return;
-            }
-            
-            let token: string | null = null;
-            try {
-                token = localStorage.getItem("access_token") ?? localStorage.getItem("token");
-            } catch {}
-            try {
-                const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
-                const res = await fetch(`${apiBase}/greeting`, {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/x-www-form-urlencoded",
-                        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-                    },
-                    body: new URLSearchParams({
-                        timestamp: new Date().toISOString(),
-                        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-                        localTime: new Date().toLocaleString(),
-                    }),
-                });
-                if (!res.ok) return;
-                const data = await res.json().catch(() => ({}));
-                if (data && data.message) {
-                   setGreeting(String(data.message));
-                }
-            } catch {}
-        };
-        initializeApp();
-    }, [router]);
+			// Check if user is authenticated
+			if (!isAuthenticated()) {
+				router.push("/login");
+				return;
+			}
+
+			// Only call greeting API once
+			if (greetingCalledRef.current) return;
+			greetingCalledRef.current = true;
+
+			let token: string | null = null;
+			try {
+				token =
+					localStorage.getItem("access_token") ?? localStorage.getItem("token");
+			} catch {}
+			try {
+				const apiBase = (
+					process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+				).replace(/\/+$/, "");
+				const res = await fetch(`${apiBase}/greeting`, {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/x-www-form-urlencoded",
+						...(token ? { Authorization: `Bearer ${token}` } : {}),
+					},
+					body: new URLSearchParams({
+						timestamp: new Date().toISOString(),
+						timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+						localTime: new Date().toLocaleString(),
+					}),
+				});
+				if (!res.ok) return;
+				const data = await res.json().catch(() => ({}));
+				if (data && data.message) {
+					const message = String(data.message);
+					console.log("Setting greeting and playing voice:", message);
+					setGreeting(message);
+					playVoice(message); // Trigger voice playback
+				}
+			} catch {}
+		};
+		initializeApp();
+	}, []); // Remove router dependency to prevent multiple calls
+
+	// Note: Greeting is now handled by the backend API in the initializeApp function above
+	// This Supabase greeting system has been removed to prevent conflicts
 
 	// Animate steps
 	useEffect(() => {

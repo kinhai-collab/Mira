@@ -18,7 +18,7 @@ export default function LoginPage() {
 	// Redirect if already authenticated
 	useEffect(() => {
 		if (isAuthenticated()) {
-			router.push('/dashboard');
+			router.push('/');
 		}
 	}, [router]);
 
@@ -89,7 +89,7 @@ export default function LoginPage() {
 			// Dispatch event again after fetching additional data
 			window.dispatchEvent(new CustomEvent('userDataUpdated'));
 			
-			router.push("/dashboard");
+			router.push("/");
 		} catch {
 			alert("Login failed. Please check your credentials.");
 		} finally {
