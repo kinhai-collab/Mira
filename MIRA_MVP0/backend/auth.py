@@ -78,6 +78,7 @@ def google_login():
     callback_url = frontend_url + "/auth/callback"
     supabase_url = SUPABASE_URL.rstrip('/')
     redirect_url = f"{supabase_url}/auth/v1/authorize?provider=google&redirect_to={callback_url}"
+    print(f"Google OAuth redirect URL: {redirect_url}")
     return RedirectResponse(url=redirect_url)
 
 # Note: The Google OAuth callback is handled directly by the frontend
@@ -92,9 +93,21 @@ def me(authorization: Optional[str] = Header(default=None)):
     headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {token}"}
     try:
         r = requests.get(f"{SUPABASE_URL.rstrip('/')}/auth/v1/user", headers=headers)
-        return JSONResponse(status_code=r.status_code, content=r.json())
+        if r.status_code == 200:
+            return JSONResponse(status_code=200, content=r.json())
+        else:
+            # Log the error for debugging
+            print(f"Supabase auth error: {r.status_code} - {r.text}")
+            try:
+                error_data = r.json()
+                raise HTTPException(status_code=r.status_code, detail=error_data)
+            except:
+                raise HTTPException(status_code=r.status_code, detail={"error": r.text})
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error: {e}")
+        print(f"Unexpected error in /me endpoint: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @router.post("/profile_update")
 def profile_update(
@@ -277,13 +290,15 @@ def onboarding_status(
             if not authorization or not authorization.lower().startswith("bearer "):
                 raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
             token = authorization.split(" ", 1)[1].strip()
-            headers_me = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {token}"}
-            r_me = requests.get(f"{SUPABASE_URL.rstrip('/')}/auth/v1/user", headers=headers_me)
-            if r_me.status_code != 200:
-                raise HTTPException(status_code=401, detail="Unable to fetch user from token")
-            email = (r_me.json() or {}).get("email")
-            if not email:
-                raise HTTPException(status_code=400, detail="No email in Supabase user response")
+        headers_me = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {token}"}
+        r_me = requests.get(f"{SUPABASE_URL.rstrip('/')}/auth/v1/user", headers=headers_me)
+        if r_me.status_code != 200:
+            print(f"Supabase auth error in onboarding_status: {r_me.status_code} - {r_me.text}")
+            raise HTTPException(status_code=401, detail="Unable to fetch user from token")
+        email = (r_me.json() or {}).get("email")
+        if not email:
+            print(f"No email found in Supabase user response: {r_me.json()}")
+            raise HTTPException(status_code=400, detail="No email in Supabase user response")
 
         headers_sb = {
             "apikey": SUPABASE_KEY,
