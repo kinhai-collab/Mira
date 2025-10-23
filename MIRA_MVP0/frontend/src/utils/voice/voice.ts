@@ -3,7 +3,7 @@ export async function playVoice(text: string) {
 	try {
 		const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
 		const res = await fetch(
-			`${apiBase}/voice?text=${encodeURIComponent(text)}`
+			`${apiBase}/api/voice?text=${encodeURIComponent(text)}`
 		);
 		if (!res.ok) throw new Error("Voice API failed");
 

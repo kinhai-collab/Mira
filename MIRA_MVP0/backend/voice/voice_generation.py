@@ -48,6 +48,10 @@ async def generate_voice(text: str = "Hello from Mira!"):
 
         # Combine all chunks into one binary MP3 blob
         audio_bytes = b"".join(list(audio_stream))
+        
+        # Validate that we got audio data
+        if not audio_bytes:
+            raise HTTPException(status_code=500, detail="No audio data received from ElevenLabs")
 
         # Return as stream response (works with frontend fetch)
         return StreamingResponse(iter([audio_bytes]), media_type="audio/mpeg")
