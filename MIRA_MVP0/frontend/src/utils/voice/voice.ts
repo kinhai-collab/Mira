@@ -29,8 +29,37 @@ export async function playVoice(text: string) {
 		console.log("Audio data validation - looks like MP3:", isMP3);
 		console.log("First 16 bytes:", Array.from(uint8Array.slice(0, 16)).map(b => b.toString(16).padStart(2, '0')).join(' '));
 		
+		// If it doesn't look like MP3, try to decode as base64
+		let finalArrayBuffer = arrayBuffer;
+		if (!isMP3) {
+			console.log("Data doesn't look like MP3, checking if it's base64 encoded...");
+			try {
+				// Convert to string and check if it's base64
+				const text = new TextDecoder().decode(arrayBuffer);
+				if (/^[A-Za-z0-9+/]*={0,2}$/.test(text)) {
+					console.log("Data appears to be base64 encoded, attempting to decode...");
+					const decodedBytes = Uint8Array.from(atob(text), c => c.charCodeAt(0));
+					console.log("Decoded bytes length:", decodedBytes.length);
+					console.log("Decoded first 16 bytes:", Array.from(decodedBytes.slice(0, 16)).map(b => b.toString(16).padStart(2, '0')).join(' '));
+					
+					// Check if decoded data looks like MP3
+					const isDecodedMP3 = decodedBytes[0] === 0xFF && (decodedBytes[1] & 0xE0) === 0xE0 || // MP3 sync word
+					                   decodedBytes[0] === 0x49 && decodedBytes[1] === 0x44 && decodedBytes[2] === 0x33; // ID3 tag
+					
+					if (isDecodedMP3) {
+						console.log("✅ Decoded data looks like valid MP3!");
+						finalArrayBuffer = decodedBytes.buffer;
+					} else {
+						console.log("❌ Decoded data still doesn't look like MP3");
+					}
+				}
+			} catch (error) {
+				console.log("Base64 decode failed:", error);
+			}
+		}
+		
 		// Create blob with proper MIME type for MP3
-		const blob = new Blob([arrayBuffer], { type: "audio/mpeg" });
+		const blob = new Blob([finalArrayBuffer], { type: "audio/mpeg" });
 		const url = URL.createObjectURL(blob);
 		console.log("Audio blob URL created:", url);
 		
@@ -95,7 +124,7 @@ export async function playVoice(text: string) {
 				console.error("Audio failed to load within timeout");
 				// Try alternative approach with different MIME type
 				console.log("Trying alternative audio format...");
-				const altBlob = new Blob([arrayBuffer], { type: "audio/mp3" });
+				const altBlob = new Blob([finalArrayBuffer], { type: "audio/mp3" });
 				const altUrl = URL.createObjectURL(altBlob);
 				audio.src = altUrl;
 				console.log("Retrying with alternative format:", altUrl);
