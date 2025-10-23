@@ -78,7 +78,9 @@ async def sign_in(email: str = Form(...), password: str = Form(...)):
 # Gmail OAuth Integration
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
-    "https://www.googleapis.com/auth/gmail.send"
+    "https://www.googleapis.com/auth/gmail.send",
+    "https://www.googleapis.com/auth/calendar.events",
+    "https://www.googleapis.com/auth/userinfo.email"
 ]
 
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
