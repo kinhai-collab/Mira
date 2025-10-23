@@ -59,7 +59,10 @@ async def generate_voice(text: str = "Hello from Mira!"):
             media_type="audio/mpeg",
             headers={
                 "Content-Disposition": "inline",
-                "Cache-Control": "no-cache"
+                "Cache-Control": "no-cache",
+                "Content-Type": "audio/mpeg",
+                "Accept-Ranges": "bytes",
+                "Content-Length": str(len(audio_bytes))
             }
         )
 
