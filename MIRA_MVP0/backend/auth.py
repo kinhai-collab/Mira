@@ -3,12 +3,17 @@ from fastapi.responses import JSONResponse, RedirectResponse
 import requests
 import os
 from dotenv import load_dotenv
+from urllib.parse import urlencode
+from fastapi import Header
 from typing import Optional
 
 # Load environment variables
 load_dotenv()
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+REDIRECT_URI = os.getenv("REDIRECT_URI")
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise Exception("Missing Supabase credentials in .env file")
@@ -69,22 +74,81 @@ async def sign_in(email: str = Form(...), password: str = Form(...)):
         # Handle unexpected errors
         raise HTTPException(status_code=500, detail={"status": "error", "message": f"Error: {e}"})
 
+
+# Gmail OAuth Integration
+SCOPES = [
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.send",
+    "https://www.googleapis.com/auth/calendar.events",
+    "https://www.googleapis.com/auth/userinfo.email"
+]
+
+AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+TOKEN_URL = "https://oauth2.googleapis.com/token"
+
 # Google signup/in endpoint
 @router.get("/auth/google")
-def google_login():
-    # Redirect the user to Supabase's Google OAuth authorization URL
-    # Include the callback URL for the frontend
-    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip('/')
-    callback_url = frontend_url + "/auth/callback"
-    supabase_url = SUPABASE_URL.rstrip('/')
-    redirect_url = f"{supabase_url}/auth/v1/authorize?provider=google&redirect_to={callback_url}"
-    print(f"Google OAuth redirect URL: {redirect_url}")
-    return RedirectResponse(url=redirect_url)
+def google_oauth_start():
+    # Redirect user to Google Consent Screen
+    params = {
+        "client_id": CLIENT_ID,
+        "redirect_uri": REDIRECT_URI,
+        "response_type": "code",
+        "scope": " ".join(SCOPES),
+        "access_type": "offline",   # Request refresh token
+        "prompt": "consent"
+    }
+    url = f"{AUTH_URL}?{urlencode(params)}"
+    # Redirect user to Google's OAuth page
+    return RedirectResponse(url=url)
 
-# Note: The Google OAuth callback is handled directly by the frontend
-# at /auth/callback page, which extracts the token from the URL fragment
-# and stores it in localStorage. No backend callback endpoint is needed.
-    
+@router.get("/auth/google/callback")
+def google_oauth_callback(code: str = Query(...)):
+    # Exchange the authorization code for an access token
+    data = {
+        "code": code,
+        "client_id": CLIENT_ID,
+        "client_secret": CLIENT_SECRET,
+        "redirect_uri": REDIRECT_URI,
+        "grant_type": "authorization_code"
+    }
+
+    try:
+        res = requests.post(TOKEN_URL, data=data)
+        token_data = res.json()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error requesting access token: {str(e)}")
+
+    if "access_token" not in token_data:
+        raise HTTPException(status_code=400, detail="Failed to retrieve access token")
+
+    access_token = token_data["access_token"]
+
+    # Retrieve Gmail user info
+    try:
+        headers = {"Authorization": f"Bearer {access_token}"}
+        profile_res = requests.get("https://www.googleapis.com/gmail/v1/users/me/profile", headers=headers)
+        profile = profile_res.json()
+        email = profile.get("emailAddress")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error retrieving Gmail profile: {str(e)}")
+
+    # Sign up the user in Supabase
+    try:
+        supabase_url = f"{SUPABASE_URL.rstrip('/')}/auth/v1/signup"
+        headers_sup = {"apikey": SUPABASE_KEY, "Content-Type": "application/json"}
+        payload = {"email": email, "password": os.urandom(16).hex()}
+        requests.post(supabase_url, headers=headers_sup, json=payload)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error signing up in Supabase: {str(e)}")
+
+    # Redirect user to frontend onboarding
+    frontend_onboarding_url = "https://main.dd480r9y8ima.amplifyapp.com/onboarding/step1"
+    redirect = RedirectResponse(
+        url=f"{frontend_onboarding_url}?email={email}&access_token={access_token}"
+    )
+    return redirect
+
 @router.get("/me")
 def me(authorization: Optional[str] = Header(default=None)):
     if not authorization or not authorization.lower().startswith("bearer "):

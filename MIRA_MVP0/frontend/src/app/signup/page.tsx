@@ -14,8 +14,6 @@ export default function SignupPage() {
 	const [email, setEmail] = useState("");
 	const [password, setPassword] = useState("");
 	const [loading, setLoading] = useState(false);
-	const [error, setError] = useState("");
-	const isDev = process.env.NODE_ENV !== "production";
 
 	// Redirect if already authenticated
 	useEffect(() => {
@@ -27,9 +25,8 @@ export default function SignupPage() {
 
 	const handleSignup = async (e: React.FormEvent<HTMLFormElement>) => {
 		e.preventDefault();
-		if (isDev) console.log("Signup attempt:", { email, password });
+		console.log("Signup attempt:", { email, password });
 		setLoading(true);
-		setError(""); // Clear any existing errors
 
 		try {
 			const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
@@ -48,45 +45,33 @@ export default function SignupPage() {
 				const errorData = await res.json().catch(() => ({}));
 				console.error("Signup failed:", errorData);
 				const errorMessage = (errorData as { detail?: { message?: string } })?.detail?.message || "Signup failed";
-				setError(errorMessage);
+				alert(errorMessage);
 				setLoading(false);
 				return;
 			}
 
 			const data = await res.json().catch(() => ({}));
-			if (isDev) console.log("Signup success:", data);
+			console.log("Signup success:", data);
 			
 			// Save user information for onboarding and profile display
 			try { 
 				localStorage.setItem("mira_email", email);
 				localStorage.setItem("mira_provider", "email");
-				
-				// Store access token if provided in response
-				if (data.access_token) {
-					localStorage.setItem("access_token", data.access_token);
-					if (isDev) console.log("Signup: Stored access token");
-				}
-				
-				// Dispatch event to notify ProfileMenu component
-				window.dispatchEvent(new CustomEvent('userDataUpdated'));
-				
-				if (isDev) console.log("Signup: Stored user data:", { email, provider: "email" });
-			} catch (error) {
-				console.error("Failed to store user data during signup:", error);
-			}
+				// Note: User will complete profile info during onboarding
+			} catch {}
 			
 			alert("Signup successful!");
 			router.push("/onboarding/step1");
 		} catch (err) {
 			console.error("Error during signup:", err);
-			setError("Something went wrong, please try again.");
+			alert("Something went wrong, please try again.");
 		} finally {
 			setLoading(false);
 		}
 	};
 
 	const handleGoogleSignup = () => {
-		if (isDev) console.log("Google signup clicked");
+		console.log("Google signup clicked");
 		const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
 		window.location.href = `${apiBase}/auth/google`;
 
@@ -149,20 +134,6 @@ export default function SignupPage() {
 							/>
 						</div>
 
-						{/* Error Message */}
-						{error && (
-							<div className="text-center">
-								<p className="text-[#d73333] text-lg font-normal leading-normal tracking-[0.09px]">
-									<span className="text-[#d73333]">This email is already registered.</span>
-									<span className="text-[#272829]"> Try to </span>
-									<a href="/login" className="font-bold text-[#272829] underline">
-										log in
-									</a>
-									<span className="text-[#272829]"> instead.</span>
-								</p>
-							</div>
-						)}
-
 						{/* Create Account Button */}
 					<button
 						type="submit"
@@ -199,6 +170,22 @@ export default function SignupPage() {
 				</div>
 			</main>
 
+			{/* Bottom Nav (Mobile only) */}
+			<div className="md:hidden fixed bottom-0 left-0 right-0 bg-[#F0ECF8] border-t border-gray-200 flex justify-around py-3">
+				{["Dashboard", "Settings", "Reminder", "Profile"].map((name, i) => (
+					<div
+						key={i}
+						onClick={() => {
+							if (name === "Dashboard") router.push("/dashboard");
+							else if (name === "Profile") router.push("/dashboard/profile");
+							else router.push(`/dashboard/${name.toLowerCase()}`);
+						}}
+						className="flex flex-col items-center text-gray-700"
+					>
+						<Icon name={name} size={20} />
+					</div>
+				))}
+			</div>
 		</div>
 	);
 }
