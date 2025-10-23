@@ -6,13 +6,17 @@ import { Icon } from "@/components/Icon";
 import { useRouter } from "next/navigation";
 
 import { useState, useEffect } from "react";
-import { extractTokenFromUrl, storeAuthToken, isAuthenticated, clearAuthTokens } from "@/utils/auth";
-
+import {
+	extractTokenFromUrl,
+	storeAuthToken,
+	isAuthenticated,
+	clearAuthTokens,
+} from "@/utils/auth";
 
 function MobileProfileMenu() {
 	const [open, setOpen] = useState(false);
 	const router = useRouter();
-
+	const [greeting, setGreeting] = useState<string>("Hey There!");
 	// Close when clicking outside
 	useEffect(() => {
 		const handleClickOutside = (e: MouseEvent) => {
@@ -26,13 +30,16 @@ function MobileProfileMenu() {
 	const handleLogout = () => {
 		console.log("Logout initiated from Dashboard");
 		clearAuthTokens();
-		
+
 		// Dispatch event to notify other components
-		window.dispatchEvent(new CustomEvent('userDataUpdated'));
-		
+		window.dispatchEvent(new CustomEvent("userDataUpdated"));
+
 		console.log("User logged out from Dashboard, redirecting to login...");
 		router.push("/login");
 	};
+
+	// Note: Greeting is now handled by the backend API in the sendSystemTime function
+	// This hardcoded greeting has been removed to prevent conflicts
 
 	return (
 		<div className="relative mobile-profile-menu flex flex-col items-center">
@@ -54,13 +61,13 @@ function MobileProfileMenu() {
 					<div className="px-4 pb-2 border-b border-gray-200">
 						<div className="flex flex-col gap-0.5 text-gray-700 text-sm">
 							<div className="flex items-center gap-2">
-							<Image
-								src="/Icons/Property 1=Profile.svg"
-								alt="User"
-								width={16}
-								height={16}
-								className="w-4 h-4 opacity-80"
-							/>
+								<Image
+									src="/Icons/Property 1=Profile.svg"
+									alt="User"
+									width={16}
+									height={16}
+									className="w-4 h-4 opacity-80"
+								/>
 								<span>miraisthbest@gmail.com</span>
 							</div>
 							<span className="pl-6 text-gray-500 text-xs">User NameF</span>
@@ -92,13 +99,13 @@ function MobileProfileMenu() {
 export default function Dashboard() {
 	const router = useRouter();
 	const [currentTime, setCurrentTime] = useState(new Date());
-	const [serverGreeting, setServerGreeting] = useState<string | null>(null);
+	const [serverGreeting] = useState<string | null>(null);
 	const [firstName] = useState<string | null>(null);
 
 	// Check authentication on mount
 	useEffect(() => {
 		if (!isAuthenticated()) {
-			router.push('/login');
+			router.push("/login");
 			return;
 		}
 	}, [router]);
@@ -112,73 +119,21 @@ export default function Dashboard() {
 		return () => clearInterval(timer);
 	}, []);
 
-	// Send system time to backend
+	// Handle OAuth callback token extraction (no greeting call to prevent double voice)
 	useEffect(() => {
-		const sendSystemTime = async () => {
-			try {
-				// First, check if there's a token in the URL (for OAuth callback)
-				const urlToken = extractTokenFromUrl();
-				if (urlToken) {
-					storeAuthToken(urlToken);
-					// Clear the URL hash after extracting the token
-					window.history.replaceState({}, document.title, window.location.pathname);
-					// Reload the page to refresh user data in all components
-					window.location.reload();
-					return;
-				}
-				
-				// Use full backend URL
-				const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
-				const endpoint = `${apiBase}/greeting`;
-
-				const formData = new URLSearchParams({
-					timestamp: new Date().toISOString(),
-					timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-					localTime: new Date().toLocaleString(),
-				});
-
-				// Read token from localStorage (if available)
-				let token: string | null = null;
-				try {
-					// Prefer 'access_token' if present, fallback to 'token'
-					token = localStorage.getItem("access_token") ?? localStorage.getItem("token");
-				} catch {}
-
-				const res = await fetch(endpoint, {
-					method: "POST",
-					headers: {
-						"Content-Type": "application/x-www-form-urlencoded",
-						...(token ? { Authorization: `Bearer ${token}` } : {}),
-					},
-					// Send URLSearchParams directly per request pattern
-					body: formData,
-				});
-
-				if (!res.ok) {
-					const errorData = await res.json().catch(() => ({}));
-					console.error("Failed to send system time:", errorData);
-					return;
-				}
-
-				const data = await res.json().catch(() => ({}));
-				console.log("System time sent successfully:", data);
-
-				// Display only the message from backend
-				if (data && data.message) {
-					setServerGreeting(String(data.message));
-				}
-			} catch (err) {
-				console.error("Error sending system time:", err);
-			}
-		};
-
-		// Send immediately on mount
-		sendSystemTime();
-
-		// Optional: Send periodically (e.g., every 5 minutes)
-		const interval = setInterval(sendSystemTime, 5 * 60 * 1000);
-
-		return () => clearInterval(interval);
+		const urlToken = extractTokenFromUrl();
+		if (urlToken) {
+			storeAuthToken(urlToken);
+			// Clear the URL hash after extracting the token
+			window.history.replaceState(
+				{},
+				document.title,
+				window.location.pathname
+			);
+			// Reload the page to refresh user data in all components
+			window.location.reload();
+			return;
+		}
 	}, []);
 
 	// Format time as needed

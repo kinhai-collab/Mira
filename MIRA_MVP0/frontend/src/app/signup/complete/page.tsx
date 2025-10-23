@@ -6,8 +6,8 @@ import { useRouter } from "next/navigation";
 export default function CompletePage() {
 	const router = useRouter();
 
-	const handleDashboard = () => {
-		router.push("/dashboard");
+	const handleHome = () => {
+		router.push("/");
 	};
 
 	return (
@@ -19,10 +19,10 @@ export default function CompletePage() {
 					dashboard.
 				</p>
 				<button
-					onClick={handleDashboard}
+					onClick={handleHome}
 					className="bg-black text-white px-6 py-2 rounded-full hover:opacity-90 transition w-full"
 				>
-					Go to Dashboard
+					Go to Home
 				</button>
 			</div>
 		</div>

@@ -18,7 +18,7 @@ export default function SignupPage() {
 	// Redirect if already authenticated
 	useEffect(() => {
 		if (isAuthenticated()) {
-			router.push('/dashboard');
+			router.push('/');
 		}
 	}, [router]);
 
