@@ -11,5 +11,8 @@
   "devDependencies": {
     "serverless": "^3.38.0",
     "serverless-python-requirements": "^6.0.0"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.76.1"
   }
 }

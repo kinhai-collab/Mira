@@ -5,14 +5,21 @@ import Image from "next/image";
 import { Icon } from "@/components/Icon";
 import { useRouter } from "next/navigation";
 
-import { useState, useEffect } from "react";
-import { extractTokenFromUrl, storeAuthToken, isAuthenticated, clearAuthTokens } from "@/utils/auth";
-
+import { useState, useEffect, useRef } from "react";
+import {
+	extractTokenFromUrl,
+	storeAuthToken,
+	isAuthenticated,
+	clearAuthTokens,
+} from "@/utils/auth";
+import { playVoice } from "@/utils/voice/voice";
+import { supabase } from "@/utils/supabaseClient";
 
 function MobileProfileMenu() {
 	const [open, setOpen] = useState(false);
 	const router = useRouter();
-
+	const [greeting, setGreeting] = useState<string>("Hey There!");
+	const hasPlayed = useRef(false);
 	// Close when clicking outside
 	useEffect(() => {
 		const handleClickOutside = (e: MouseEvent) => {
@@ -26,13 +33,21 @@ function MobileProfileMenu() {
 	const handleLogout = () => {
 		console.log("Logout initiated from Dashboard");
 		clearAuthTokens();
-		
+
 		// Dispatch event to notify other components
-		window.dispatchEvent(new CustomEvent('userDataUpdated'));
-		
+		window.dispatchEvent(new CustomEvent("userDataUpdated"));
+
 		console.log("User logged out from Dashboard, redirecting to login...");
 		router.push("/login");
 	};
+
+	useEffect(() => {
+		if (!hasPlayed.current) {
+			hasPlayed.current = true; // prevent second trigger
+			const greeting = "Good morning, Anusha!";
+			playVoice(greeting);
+		}
+	}, []);
 
 	return (
 		<div className="relative mobile-profile-menu flex flex-col items-center">
@@ -54,13 +69,13 @@ function MobileProfileMenu() {
 					<div className="px-4 pb-2 border-b border-gray-200">
 						<div className="flex flex-col gap-0.5 text-gray-700 text-sm">
 							<div className="flex items-center gap-2">
-							<Image
-								src="/Icons/Property 1=Profile.svg"
-								alt="User"
-								width={16}
-								height={16}
-								className="w-4 h-4 opacity-80"
-							/>
+								<Image
+									src="/Icons/Property 1=Profile.svg"
+									alt="User"
+									width={16}
+									height={16}
+									className="w-4 h-4 opacity-80"
+								/>
 								<span>miraisthbest@gmail.com</span>
 							</div>
 							<span className="pl-6 text-gray-500 text-xs">User NameF</span>
@@ -98,7 +113,7 @@ export default function Dashboard() {
 	// Check authentication on mount
 	useEffect(() => {
 		if (!isAuthenticated()) {
-			router.push('/login');
+			router.push("/login");
 			return;
 		}
 	}, [router]);
@@ -121,14 +136,20 @@ export default function Dashboard() {
 				if (urlToken) {
 					storeAuthToken(urlToken);
 					// Clear the URL hash after extracting the token
-					window.history.replaceState({}, document.title, window.location.pathname);
+					window.history.replaceState(
+						{},
+						document.title,
+						window.location.pathname
+					);
 					// Reload the page to refresh user data in all components
 					window.location.reload();
 					return;
 				}
-				
+
 				// Use full backend URL
-				const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+				const apiBase = (
+					process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+				).replace(/\/+$/, "");
 				const endpoint = `${apiBase}/greeting`;
 
 				const formData = new URLSearchParams({
@@ -141,7 +162,9 @@ export default function Dashboard() {
 				let token: string | null = null;
 				try {
 					// Prefer 'access_token' if present, fallback to 'token'
-					token = localStorage.getItem("access_token") ?? localStorage.getItem("token");
+					token =
+						localStorage.getItem("access_token") ??
+						localStorage.getItem("token");
 				} catch {}
 
 				const res = await fetch(endpoint, {
@@ -155,8 +178,7 @@ export default function Dashboard() {
 				});
 
 				if (!res.ok) {
-					const errorData = await res.json().catch(() => ({}));
-					console.error("Failed to send system time:", errorData);
+					console.warn("System time endpoint not available; skipping update.");
 					return;
 				}
 
