@@ -7,6 +7,15 @@ import { useRouter } from "next/navigation";
 import { Icon } from "@/components/Icon";
 import { useState, useEffect } from "react";
 import { isAuthenticated } from "@/utils/auth";
+import { createClient } from "@supabase/supabase-js";
+
+// You must have these in your .env.local
+// NEXT_PUBLIC_SUPABASE_URL=...
+// NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL as string,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string
+);
 
 export default function LoginPage() {
 	const router = useRouter();
@@ -89,13 +98,29 @@ export default function LoginPage() {
 		}
 	};
 
-	const handleGoogleLogin = () => {
-		console.log("Google login clicked");
-		const apiBase = (
-			process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
-		).replace(/\/+$/, "");
-		window.location.href = `${apiBase}/auth/google`;
-	};
+	const handleGoogleLogin = async () => {
+    console.log("Google login clicked");
+    try {
+      await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          // Ask ONLY for calendar events scopes we need
+          scopes:
+            "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly",
+          // Ensure Google issues a refresh token (so backend can call Calendar later)
+          queryParams: {
+            access_type: "offline",
+            prompt: "consent",
+          },
+          // After Google OAuth, come back to this route on your site
+          redirectTo: `${window.location.origin}/auth/callback`,
+        },
+      });
+    } catch (e) {
+      console.error("Google OAuth error:", e);
+      alert("Google sign-in failed. Please try again.");
+    }
+  };
 
 	return (
 		<div className="flex flex-col md:flex-row h-screen bg-gradient-to-b from-[#D9B8FF] via-[#E8C9F8] to-[#F6D7F8] text-gray-800">
