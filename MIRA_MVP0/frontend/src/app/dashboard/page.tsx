@@ -70,7 +70,7 @@ function MobileProfileMenu() {
 								/>
 								<span>miraisthbest@gmail.com</span>
 							</div>
-							<span className="pl-6 text-gray-500 text-xs">User NameF</span>
+							<span className="pl-6 text-gray-500 text-xs">User Name</span>
 						</div>
 					</div>
 
@@ -125,11 +125,7 @@ export default function Dashboard() {
 		if (urlToken) {
 			storeAuthToken(urlToken);
 			// Clear the URL hash after extracting the token
-			window.history.replaceState(
-				{},
-				document.title,
-				window.location.pathname
-			);
+			window.history.replaceState({}, document.title, window.location.pathname);
 			// Reload the page to refresh user data in all components
 			window.location.reload();
 			return;

@@ -31,10 +31,10 @@ function MobileProfileMenu() {
 	const handleLogout = () => {
 		console.log("Logout initiated from Sidebar for user:", userData);
 		clearAuthTokens();
-		
+
 		// Dispatch event to notify other components
-		window.dispatchEvent(new CustomEvent('userDataUpdated'));
-		
+		window.dispatchEvent(new CustomEvent("userDataUpdated"));
+
 		console.log("User logged out from Sidebar, redirecting to login...");
 		router.push("/login");
 	};
@@ -69,22 +69,26 @@ function MobileProfileMenu() {
 					<div className="px-4 pb-2 border-b border-gray-200">
 						<div className="flex flex-col gap-0.5 text-gray-700 text-sm">
 							<div className="flex items-center gap-2">
-							{userData?.picture ? (
-								<Image
-									src={userData.picture}
-									alt="User"
-									width={16}
-									height={16}
-									className="w-4 h-4 rounded-full object-cover"
-								/>
+								{userData?.picture ? (
+									<Image
+										src={userData.picture}
+										alt="User"
+										width={16}
+										height={16}
+										className="w-4 h-4 rounded-full object-cover"
+									/>
 								) : (
 									<div className="w-4 h-4 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white font-medium text-xs">
-										{userData?.fullName?.charAt(0) || userData?.email?.charAt(0) || 'U'}
+										{userData?.fullName?.charAt(0) ||
+											userData?.email?.charAt(0) ||
+											"U"}
 									</div>
 								)}
-								<span>{userData?.email || 'No email'}</span>
+								<span>{userData?.email || "No email"}</span>
 							</div>
-							<span className="pl-6 text-gray-500 text-xs">{userData?.fullName || 'No name'}</span>
+							<span className="pl-6 text-gray-500 text-xs">
+								{userData?.fullName || "No name"}
+							</span>
 						</div>
 					</div>
 
