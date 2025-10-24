@@ -1,6 +1,8 @@
+/** @format */
+
 // Utility functions for authentication
 
-import { AppRouterInstance } from 'next/dist/shared/lib/app-router-context.shared-runtime';
+import { AppRouterInstance } from "next/dist/shared/lib/app-router-context.shared-runtime";
 
 export interface UserData {
 	email: string;
@@ -12,11 +14,11 @@ export interface UserData {
 }
 
 export function extractTokenFromUrl(): string | null {
-	if (typeof window === 'undefined') return null;
-	
+	if (typeof window === "undefined") return null;
+
 	const hash = window.location.hash;
 	if (!hash) return null;
-	
+
 	const params = new URLSearchParams(hash.substring(1)); // Remove the # character
 	return params.get("access_token");
 }
@@ -26,38 +28,41 @@ export function extractUserDataFromToken(token: string): UserData | null {
 		console.log("Extracting user data from token...");
 		console.log("Token length:", token.length);
 		console.log("Token starts with:", token.substring(0, 50));
-		
+
 		// Check if token is a JWT (has dots)
-		if (!token.includes('.')) {
+		if (!token.includes(".")) {
 			console.log("Token is not a JWT format, skipping extraction");
 			return null;
 		}
-		
-		const parts = token.split('.');
+
+		const parts = token.split(".");
 		if (parts.length !== 3) {
 			console.log("Token doesn't have 3 parts, invalid JWT format");
 			return null;
 		}
-		
+
 		const payload = JSON.parse(atob(parts[1]));
 		console.log("Token payload:", payload);
-		
+
 		const userData: UserData = {
-			email: payload.email || '',
+			email: payload.email || "",
 		};
 
 		// Extract Google OAuth data from user_metadata
 		if (payload.user_metadata) {
 			console.log("User metadata found:", payload.user_metadata);
-			userData.fullName = payload.user_metadata.full_name || 
-								payload.user_metadata.name || 
-								payload.user_metadata.display_name ||
-								(payload.user_metadata.given_name && payload.user_metadata.family_name ? 
-								 `${payload.user_metadata.given_name} ${payload.user_metadata.family_name}` : null);
-			userData.picture = payload.user_metadata.avatar_url || 
-							  payload.user_metadata.picture || 
-							  payload.user_metadata.photo_url;
-			userData.provider = payload.user_metadata.provider || 'google';
+			userData.fullName =
+				payload.user_metadata.full_name ||
+				payload.user_metadata.name ||
+				payload.user_metadata.display_name ||
+				(payload.user_metadata.given_name && payload.user_metadata.family_name
+					? `${payload.user_metadata.given_name} ${payload.user_metadata.family_name}`
+					: null);
+			userData.picture =
+				payload.user_metadata.avatar_url ||
+				payload.user_metadata.picture ||
+				payload.user_metadata.photo_url;
+			userData.provider = payload.user_metadata.provider || "google";
 		}
 
 		// Extract app metadata
@@ -78,8 +83,9 @@ export function extractUserDataFromToken(token: string): UserData | null {
 
 		// If no full name from metadata, try to construct from email
 		if (!userData.fullName && userData.email) {
-			const emailPrefix = userData.email.split('@')[0];
-			userData.fullName = emailPrefix.charAt(0).toUpperCase() + emailPrefix.slice(1);
+			const emailPrefix = userData.email.split("@")[0];
+			userData.fullName =
+				emailPrefix.charAt(0).toUpperCase() + emailPrefix.slice(1);
 		}
 
 		console.log("Final extracted user data:", userData);
@@ -92,32 +98,36 @@ export function extractUserDataFromToken(token: string): UserData | null {
 }
 
 export function storeAuthToken(token: string): void {
-	if (typeof window === 'undefined') return;
-	
+	if (typeof window === "undefined") return;
+
 	console.log("Storing auth token:", token.substring(0, 20) + "...");
 	localStorage.setItem("access_token", token);
-	
+
 	// Extract and store user data
 	const userData = extractUserDataFromToken(token);
 	console.log("Extracted user data:", userData);
-	
+
 	if (userData) {
 		localStorage.setItem("mira_email", userData.email);
+
 		if (userData.fullName) {
 			localStorage.setItem("mira_full_name", userData.fullName);
+			localStorage.setItem("mira_username", userData.fullName); // 🟣 added
 		}
+
 		if (userData.picture) {
 			localStorage.setItem("mira_profile_picture", userData.picture);
 		}
+
 		if (userData.provider) {
 			localStorage.setItem("mira_provider", userData.provider);
 		}
-		
+
 		console.log("Stored user data in localStorage:", {
 			email: userData.email,
 			fullName: userData.fullName,
 			picture: userData.picture,
-			provider: userData.provider
+			provider: userData.provider,
 		});
 	} else {
 		console.warn("Could not extract user data from token");
@@ -125,25 +135,25 @@ export function storeAuthToken(token: string): void {
 }
 
 export function getStoredToken(): string | null {
-	if (typeof window === 'undefined') return null;
-	
+	if (typeof window === "undefined") return null;
+
 	return localStorage.getItem("access_token") ?? localStorage.getItem("token");
 }
 
 export function getStoredUserData(): UserData | null {
-	if (typeof window === 'undefined') return null;
-	
+	if (typeof window === "undefined") return null;
+
 	const email = localStorage.getItem("mira_email");
 	if (!email) return null;
 
 	const userData: UserData = { email };
-	
+
 	const fullName = localStorage.getItem("mira_full_name");
 	if (fullName) userData.fullName = fullName;
-	
+
 	const picture = localStorage.getItem("mira_profile_picture");
 	if (picture) userData.picture = picture;
-	
+
 	const provider = localStorage.getItem("mira_provider");
 	if (provider) userData.provider = provider;
 
@@ -151,35 +161,38 @@ export function getStoredUserData(): UserData | null {
 }
 
 export function clearAuthTokens(): void {
-	if (typeof window === 'undefined') return;
-	
+	if (typeof window === "undefined") return;
+
 	console.log("Clearing all auth tokens and user data...");
-	
+
 	// Clear all authentication tokens
 	localStorage.removeItem("access_token");
 	localStorage.removeItem("token");
-	
+
 	// Clear all user data
 	localStorage.removeItem("mira_email");
 	localStorage.removeItem("mira_full_name");
 	localStorage.removeItem("mira_profile_picture");
 	localStorage.removeItem("mira_provider");
-	
+
 	// Clear any additional OAuth data that might be stored
 	localStorage.removeItem("mira_first_name");
 	localStorage.removeItem("mira_last_name");
-	
+
 	console.log("All auth data cleared from localStorage");
 }
 
 export function isAuthenticated(): boolean {
-	if (typeof window === 'undefined') return false;
-	
+	if (typeof window === "undefined") return false;
+
 	const token = getStoredToken();
 	return !!token;
 }
 
-export function requireAuth(router: AppRouterInstance, redirectTo: string = '/login'): boolean {
+export function requireAuth(
+	router: AppRouterInstance,
+	redirectTo: string = "/login"
+): boolean {
 	if (!isAuthenticated()) {
 		router.push(redirectTo);
 		return false;
@@ -190,30 +203,35 @@ export function requireAuth(router: AppRouterInstance, redirectTo: string = '/lo
 export async function refreshUserData(): Promise<UserData | null> {
 	const token = getStoredToken();
 	if (!token) return null;
-	
+
 	try {
-		const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+		const apiBase = (
+			process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+		).replace(/\/+$/, "");
 		const response = await fetch(`${apiBase}/me`, {
 			headers: { Authorization: `Bearer ${token}` },
 		});
-		
+
 		if (!response.ok) return null;
-		
+
 		const me = await response.json();
 		const userData: UserData = {
-			email: me.email || '',
-			fullName: me.user_metadata?.full_name || 
-					 me.user_metadata?.name || 
-					 me.user_metadata?.display_name ||
-					 (me.user_metadata?.given_name && me.user_metadata?.family_name ? 
-					  `${me.user_metadata.given_name} ${me.user_metadata.family_name}` : null),
-			picture: me.user_metadata?.avatar_url || 
-					me.user_metadata?.picture || 
-					me.user_metadata?.photo_url ||
-					me.avatar_url,
-			provider: me.app_metadata?.provider || 'google'
+			email: me.email || "",
+			fullName:
+				me.user_metadata?.full_name ||
+				me.user_metadata?.name ||
+				me.user_metadata?.display_name ||
+				(me.user_metadata?.given_name && me.user_metadata?.family_name
+					? `${me.user_metadata.given_name} ${me.user_metadata.family_name}`
+					: null),
+			picture:
+				me.user_metadata?.avatar_url ||
+				me.user_metadata?.picture ||
+				me.user_metadata?.photo_url ||
+				me.avatar_url,
+			provider: me.app_metadata?.provider || "google",
 		};
-		
+
 		// Update localStorage with fresh data
 		if (userData.email) {
 			localStorage.setItem("mira_email", userData.email);
@@ -226,11 +244,11 @@ export async function refreshUserData(): Promise<UserData | null> {
 			if (userData.provider) {
 				localStorage.setItem("mira_provider", userData.provider);
 			}
-			
+
 			// Dispatch event to notify components
-			window.dispatchEvent(new CustomEvent('userDataUpdated'));
+			window.dispatchEvent(new CustomEvent("userDataUpdated"));
 		}
-		
+
 		return userData;
 	} catch (error) {
 		console.error("Failed to refresh user data:", error);

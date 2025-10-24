@@ -16,7 +16,7 @@ import {
 function MobileProfileMenu() {
 	const [open, setOpen] = useState(false);
 	const router = useRouter();
-	const [greeting, setGreeting] = useState<string>("Hey There!");
+
 	// Close when clicking outside
 	useEffect(() => {
 		const handleClickOutside = (e: MouseEvent) => {
@@ -100,7 +100,9 @@ export default function Dashboard() {
 	const router = useRouter();
 	const [currentTime, setCurrentTime] = useState(new Date());
 	const [serverGreeting] = useState<string | null>(null);
-	const [firstName] = useState<string | null>(null);
+
+	const [firstName, setFirstName] = useState<string | null>(null);
+	const [greeting, setGreeting] = useState<string>("");
 
 	// Check authentication on mount
 	useEffect(() => {
@@ -149,6 +151,23 @@ export default function Dashboard() {
 		return "Good Evening";
 	};
 
+	// 🟣 Load user name from localStorage and personalize greeting
+	useEffect(() => {
+		const storedName =
+			localStorage.getItem("mira_username") ||
+			localStorage.getItem("mira_full_name") ||
+			localStorage.getItem("user_name") ||
+			"there";
+
+		const hour = new Date().getHours();
+		let timeGreeting = "Good Evening";
+		if (hour < 12) timeGreeting = "Good Morning";
+		else if (hour < 18) timeGreeting = "Good Afternoon";
+
+		const first = storedName.split(" ")[0]; // only first name
+		setFirstName(first);
+		setGreeting(`${timeGreeting}, ${first}!`);
+	}, []);
 	return (
 		<div className="flex flex-col md:flex-row h-screen bg-[#F8F8FB] text-gray-800">
 			{/* Main Content */}

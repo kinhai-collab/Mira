@@ -16,7 +16,8 @@ export default function Home() {
 	const router = useRouter();
 	const [input, setInput] = useState("");
 	const [isListening, setIsListening] = useState(true);
-	const [greeting, setGreeting] = useState<string>("Good Morning, Bob!");
+	const [greeting, setGreeting] = useState<string>("");
+
 	const greetingCalledRef = useRef(false);
 
 	useEffect(() => {
@@ -80,7 +81,26 @@ export default function Home() {
 
 			if (greetingCalledRef.current) return;
 			greetingCalledRef.current = true;
-			playVoice(greeting);
+
+			// 🟣 Get user name from localStorage or API
+			// 🟣 Wait a short moment to ensure localStorage is ready
+			setTimeout(() => {
+				const userName =
+					localStorage.getItem("mira_username") ||
+					localStorage.getItem("mira_full_name") ||
+					localStorage.getItem("user_name") ||
+					"there";
+
+				const hour = new Date().getHours();
+				let timeGreeting = "Good Evening";
+				if (hour < 12) timeGreeting = "Good Morning";
+				else if (hour < 18) timeGreeting = "Good Afternoon";
+
+				// Optional: show only first name
+				const firstName = userName.split(" ")[0];
+				setGreeting(`${timeGreeting}, ${firstName}!`);
+				playVoice(`${timeGreeting}, ${firstName}!`);
+			}, 300);
 		};
 		init();
 	}, []);
@@ -106,7 +126,7 @@ export default function Home() {
 				<div className="relative flex flex-col items-center mt-16 sm:mt-20">
 					<div className="w-32 h-32 sm:w-44 sm:h-44 rounded-full bg-gradient-to-br from-[#C4A0FF] via-[#E1B5FF] to-[#F5C5E5] shadow-[0_0_80px_15px_rgba(210,180,255,0.45)] animate-pulse"></div>
 					{/* Greeting Bubble */}
-					<div className="absolute top-[30%] right-[-200px] group">
+					<div className="absolute top-[35%] right-[-250px] group">
 						<div className="relative bg-white px-5 py-2.5 border border-[#E4D9FF] shadow-[0_4px_20px_rgba(180,150,255,0.25)]">
 							{/* Text */}
 							<p className="text-[#2F2F2F] text-sm sm:text-base tracking-tight">
