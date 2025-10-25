@@ -19,7 +19,7 @@ export default function ConditionalSidebar() {
 		"/signup",
 		"/onboarding",
 		"/auth",
-		"/landing", // ✅ added
+		"/landing",
 	];
 
 	const current = normalize(pathname);
@@ -54,7 +54,7 @@ export function shouldShowSidebar(pathname: string): boolean {
 		"/signup",
 		"/onboarding",
 		"/auth",
-		"/landing", // ✅ added
+		"/landing",
 	];
 
 	const current = normalize(pathname);
