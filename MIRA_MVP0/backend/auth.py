@@ -9,6 +9,7 @@ from typing import Optional
 load_dotenv()
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise Exception("Missing Supabase credentials in .env file")
@@ -85,6 +86,53 @@ def google_login():
 # at /auth/callback page, which extracts the token from the URL fragment
 # and stores it in localStorage. No backend callback endpoint is needed.
     
+@router.delete("/delete_user")
+def delete_user(authorization: Optional[str] = Header(default=None)):
+    """
+    Deletes the authenticated user's account from Supabase Auth.
+    Requires Authorization: Bearer <user_access_token> header.
+    """
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+
+    # Extract the actual token value from the header
+    token = authorization.split(" ", 1)[1].strip()
+
+    # Get user info from Supabase using the provided access token
+    headers_user = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {token}"
+    }
+    user_response = requests.get(f"{SUPABASE_URL.rstrip('/')}/auth/v1/user", headers=headers_user)
+
+    if user_response.status_code != 200:
+        raise HTTPException(status_code=user_response.status_code, detail=user_response.json())
+
+    # Extract the user ID from the Supabase response
+    user_id = user_response.json().get("id")
+    if not user_id:
+        raise HTTPException(status_code=400, detail="Unable to retrieve user ID")
+
+    headers_admin = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    # Send DELETE request to Supabase Admin API to remove the user
+    delete_url = f"{SUPABASE_URL.rstrip('/')}/auth/v1/admin/users/{user_id}"
+    delete_response = requests.delete(delete_url, headers=headers_admin)
+
+    # Supabase returns status 204 (No Content) or sometimes 200 with empty body when deletion is successful
+    if delete_response.status_code in [200, 204]:
+        return {"status": "success", "message": "User deleted successfully"}
+    else:
+        try:
+            err = delete_response.json()
+        except Exception:
+            err = {"error": delete_response.text or "Unknown error"}
+        raise HTTPException(status_code=delete_response.status_code, detail=err)
+
 @router.get("/me")
 def me(authorization: Optional[str] = Header(default=None)):
     if not authorization or not authorization.lower().startswith("bearer "):
