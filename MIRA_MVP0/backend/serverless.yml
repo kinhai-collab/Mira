@@ -2,15 +2,19 @@ service: mira-backend
 
 provider:
   name: aws
-  runtime: python3.9
-  region: us-east-1
+  runtime: python3.11
+  region: us-east-2
   stage: ${opt:stage, 'dev'}
   environment:
     STAGE: ${self:provider.stage}
     SUPABASE_URL: https://oxozhsomntvuyrurfzre.supabase.co/
     SUPABASE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im94b3poc29tbnR2dXlydXJmenJlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA0NjczNDAsImV4cCI6MjA3NjA0MzM0MH0.kXO2FS3sTV3jpT1A8dzr0sr8Md2VM80dbG2uzOnG6_c
-    FRONTEND_URL: https://main.d3k2oig02afj8c.amplifyapp.com
-  
+    FRONTEND_URL: https://main.dd480r9y8ima.amplifyapp.com
+    GOOGLE_CLIENT_ID: 870122693339-shb1lkd2n3ttilqbf01dp8ft9p049cdd.apps.googleusercontent.com
+    GOOGLE_CLIENT_SECRET: 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wh
+    REDIRECT_URI: https://ytm2meewyf.execute-api.us-east-2.amazonaws.com/${self:provider.stage}/gmail/auth/callback
+    ELEVENLABS_API_KEY: sk_51ea0fad38f8a7c13f3572f7885bce862f06285ce62818a5
+    ELEVENLABS_VOICE_ID: jqcCZkN6Knx8BJ5TBdYR  
 plugins:
   - serverless-python-requirements
 
@@ -61,3 +65,4 @@ package:
     - __pycache__/**
     - "*.pyc"
     - "*.pyo"
+    - voice_test.py

@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { Icon } from "@/components/Icon";
 import { useState, useEffect } from "react";
 import { isAuthenticated } from "@/utils/auth";
+<<<<<<< HEAD
 import { createClient } from "@supabase/supabase-js";
 
 // You must have these in your .env.local
@@ -16,6 +17,9 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL as string,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string
 );
+=======
+import { supabase } from "@/utils/supabaseClient";
+>>>>>>> c582cd3d3464c1e02ff8e0c14569c81bb9c54466
 
 export default function LoginPage() {
 	const router = useRouter();
@@ -27,7 +31,7 @@ export default function LoginPage() {
 	// Redirect if already authenticated
 	useEffect(() => {
 		if (isAuthenticated()) {
-			router.push('/dashboard');
+			router.push('/');
 		}
 	}, [router]);
 
@@ -84,13 +88,55 @@ export default function LoginPage() {
 					if (userData.user_metadata?.avatar_url) {
 						localStorage.setItem("mira_profile_picture", userData.user_metadata.avatar_url);
 					}
+					
+					console.log("Login: Fetched additional profile data:", {
+						fullName: userData.user_metadata?.full_name,
+						avatar: userData.user_metadata?.avatar_url
+					});
 				}
-			} catch {
+			} catch (error) {
 				// Continue without additional profile data
-				console.log("Could not fetch additional profile data");
+				console.log("Could not fetch additional profile data:", error);
 			}
 			
-			router.push("/dashboard");
+			// Dispatch event again after fetching additional data
+			window.dispatchEvent(new CustomEvent('userDataUpdated'));
+			
+			// Check onboarding status before redirecting
+			try {
+				console.log("Checking onboarding status for email:", userEmail);
+				const onboardingRes = await fetch(`${apiBase}/onboarding_status?email=${encodeURIComponent(userEmail)}`, {
+					headers: {
+						"Authorization": `Bearer ${data.access_token}`,
+						"Content-Type": "application/json"
+					}
+				});
+				
+				console.log("Onboarding status response:", onboardingRes.status, onboardingRes.statusText);
+				
+				if (onboardingRes.ok) {
+					const onboardingData = await onboardingRes.json();
+					const onboarded = !!onboardingData?.onboarded;
+					console.log("Onboarding status data:", onboardingData);
+					console.log("User onboarded:", onboarded);
+					
+					if (!onboarded) {
+						console.log("User not onboarded, redirecting to onboarding");
+						router.push("/onboarding/step1");
+					} else {
+						console.log("User onboarded, redirecting to home");
+						router.push("/");
+					}
+				} else {
+					const errorText = await onboardingRes.text();
+					console.log("Onboarding status check failed:", onboardingRes.status, errorText);
+					console.log("Could not check onboarding status, redirecting to home");
+					router.push("/");
+				}
+			} catch (error) {
+				console.log("Error checking onboarding status:", error);
+				router.push("/");
+			}
 		} catch {
 			alert("Login failed. Please check your credentials.");
 		} finally {
@@ -99,6 +145,7 @@ export default function LoginPage() {
 	};
 
 	const handleGoogleLogin = async () => {
+<<<<<<< HEAD
     console.log("Google login clicked");
     try {
       await supabase.auth.signInWithOAuth({
@@ -121,6 +168,26 @@ export default function LoginPage() {
       alert("Google sign-in failed. Please try again.");
     }
   };
+=======
+		console.log("Google login clicked");
+		try {
+			const { data, error } = await supabase.auth.signInWithOAuth({
+				provider: 'google',
+				options: {
+					redirectTo: `${window.location.origin}/auth/callback`
+				}
+			});
+			
+			if (error) {
+				console.error("Google OAuth error:", error);
+				alert("Google login failed. Please try again.");
+			}
+		} catch (err) {
+			console.error("Error during Google login:", err);
+			alert("Something went wrong with Google login. Please try again.");
+		}
+	};
+>>>>>>> c582cd3d3464c1e02ff8e0c14569c81bb9c54466
 
 	return (
 		<div className="flex flex-col md:flex-row h-screen bg-gradient-to-b from-[#D9B8FF] via-[#E8C9F8] to-[#F6D7F8] text-gray-800">
@@ -206,22 +273,6 @@ export default function LoginPage() {
 				</div>
 			</main>
 
-			{/* Bottom Nav (Mobile only) */}
-			<div className="md:hidden fixed bottom-0 left-0 right-0 bg-[#F0ECF8] border-t border-gray-200 flex justify-around py-3">
-				{["Dashboard", "Settings", "Reminder", "Profile"].map((name, i) => (
-					<div
-						key={i}
-						onClick={() => {
-							if (name === "Dashboard") router.push("/dashboard");
-							else if (name === "Profile") router.push("/dashboard/profile");
-							else router.push(`/dashboard/${name.toLowerCase()}`);
-						}}
-						className="flex flex-col items-center text-gray-700"
-					>
-						<Icon name={name} size={20} />
-					</div>
-				))}
-			</div>
 		</div>
 	);
 }
