@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { Icon } from "@/components/Icon";
 import { useState, useEffect } from "react";
 import { isAuthenticated } from "@/utils/auth";
+import { supabase } from "@/utils/supabaseClient";
 
 export default function LoginPage() {
 	const router = useRouter();
@@ -131,12 +132,24 @@ export default function LoginPage() {
 		}
 	};
 
-	const handleGoogleLogin = () => {
+	const handleGoogleLogin = async () => {
 		console.log("Google login clicked");
-		const apiBase = (
-			process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
-		).replace(/\/+$/, "");
-		window.location.href = `${apiBase}/auth/google`;
+		try {
+			const { data, error } = await supabase.auth.signInWithOAuth({
+				provider: 'google',
+				options: {
+					redirectTo: `${window.location.origin}/auth/callback`
+				}
+			});
+			
+			if (error) {
+				console.error("Google OAuth error:", error);
+				alert("Google login failed. Please try again.");
+			}
+		} catch (err) {
+			console.error("Error during Google login:", err);
+			alert("Something went wrong with Google login. Please try again.");
+		}
 	};
 
 	return (

@@ -4,8 +4,6 @@ from elevenlabs import ElevenLabs
 client = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
 voice_id = os.getenv("ELEVENLABS_VOICE_ID")
 
-print(f"🎤 Using voice: {voice_id}")
-
 try:
     # Request TTS with Zara's voice
     response = client.text_to_speech.convert(
@@ -22,8 +20,5 @@ try:
     with open(output_path, "wb") as f:
         f.write(audio_bytes)
 
-    print(f"✅ Audio saved: {output_path} ({len(audio_bytes)} bytes)")
-    print("🎧 Try playing it with: open voice_test.mp3")
-
 except Exception as e:
-    print("❌ Error:", e)
+    pass
