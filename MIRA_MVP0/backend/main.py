@@ -9,6 +9,7 @@ from greetings import router as greetings_router
 from gmail_events import router as gmail_events
 
 from voice.voice_generation import router as voice_router
+from settings import router as settings
 app = FastAPI()
 
 # Middleware
@@ -29,7 +30,7 @@ app.include_router(auth_router)
 app.include_router(greetings_router)
 app.include_router(gmail_events)
 app.include_router(voice_router, prefix="/api")
-
+app.include_router(settings)
 # Simple HTML Page for manual testing
 
 @app.get("/envcheck")
