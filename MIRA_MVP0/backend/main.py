@@ -7,12 +7,16 @@ from fastapi.responses import HTMLResponse
 from auth import router as auth_router 
 from greetings import router as greetings_router
 from voice.voice_generation import router as voice_router
+from settings import router as settings
 app = FastAPI()
 
 # Middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[
+        "http://localhost:3000",
+        "https://main.dd480r9y8ima.amplifyapp.com"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -23,7 +27,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(greetings_router)
 app.include_router(voice_router, prefix="/api")
-
+app.include_router(settings)
 # Simple HTML Page for manual testing
 
 @app.get("/envcheck")

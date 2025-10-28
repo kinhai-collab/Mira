@@ -9,6 +9,7 @@ from typing import Optional
 load_dotenv()
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise Exception("Missing Supabase credentials in .env file")
@@ -78,12 +79,60 @@ def google_login():
     callback_url = frontend_url + "/auth/callback"
     supabase_url = SUPABASE_URL.rstrip('/')
     redirect_url = f"{supabase_url}/auth/v1/authorize?provider=google&redirect_to={callback_url}"
+    print(f"Google OAuth redirect URL: {redirect_url}")
     return RedirectResponse(url=redirect_url)
 
 # Note: The Google OAuth callback is handled directly by the frontend
 # at /auth/callback page, which extracts the token from the URL fragment
 # and stores it in localStorage. No backend callback endpoint is needed.
     
+@router.delete("/delete_user")
+def delete_user(authorization: Optional[str] = Header(default=None)):
+    """
+    Deletes the authenticated user's account from Supabase Auth.
+    Requires Authorization: Bearer <user_access_token> header.
+    """
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+
+    # Extract the actual token value from the header
+    token = authorization.split(" ", 1)[1].strip()
+
+    # Get user info from Supabase using the provided access token
+    headers_user = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {token}"
+    }
+    user_response = requests.get(f"{SUPABASE_URL.rstrip('/')}/auth/v1/user", headers=headers_user)
+
+    if user_response.status_code != 200:
+        raise HTTPException(status_code=user_response.status_code, detail=user_response.json())
+
+    # Extract the user ID from the Supabase response
+    user_id = user_response.json().get("id")
+    if not user_id:
+        raise HTTPException(status_code=400, detail="Unable to retrieve user ID")
+
+    headers_admin = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    # Send DELETE request to Supabase Admin API to remove the user
+    delete_url = f"{SUPABASE_URL.rstrip('/')}/auth/v1/admin/users/{user_id}"
+    delete_response = requests.delete(delete_url, headers=headers_admin)
+
+    # Supabase returns status 204 (No Content) or sometimes 200 with empty body when deletion is successful
+    if delete_response.status_code in [200, 204]:
+        return {"status": "success", "message": "User deleted successfully"}
+    else:
+        try:
+            err = delete_response.json()
+        except Exception:
+            err = {"error": delete_response.text or "Unknown error"}
+        raise HTTPException(status_code=delete_response.status_code, detail=err)
+
 @router.get("/me")
 def me(authorization: Optional[str] = Header(default=None)):
     if not authorization or not authorization.lower().startswith("bearer "):
@@ -92,9 +141,21 @@ def me(authorization: Optional[str] = Header(default=None)):
     headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {token}"}
     try:
         r = requests.get(f"{SUPABASE_URL.rstrip('/')}/auth/v1/user", headers=headers)
-        return JSONResponse(status_code=r.status_code, content=r.json())
+        if r.status_code == 200:
+            return JSONResponse(status_code=200, content=r.json())
+        else:
+            # Log the error for debugging
+            print(f"Supabase auth error: {r.status_code} - {r.text}")
+            try:
+                error_data = r.json()
+                raise HTTPException(status_code=r.status_code, detail=error_data)
+            except:
+                raise HTTPException(status_code=r.status_code, detail={"error": r.text})
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error: {e}")
+        print(f"Unexpected error in /me endpoint: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @router.post("/profile_update")
 def profile_update(
@@ -273,6 +334,7 @@ def onboarding_status(
     Response: {"email": "...", "onboarded": true/false}
     """
     try:
+        # If no email provided, get it from the token
         if not email:
             if not authorization or not authorization.lower().startswith("bearer "):
                 raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
@@ -280,9 +342,11 @@ def onboarding_status(
             headers_me = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {token}"}
             r_me = requests.get(f"{SUPABASE_URL.rstrip('/')}/auth/v1/user", headers=headers_me)
             if r_me.status_code != 200:
+                print(f"Supabase auth error in onboarding_status: {r_me.status_code} - {r_me.text}")
                 raise HTTPException(status_code=401, detail="Unable to fetch user from token")
             email = (r_me.json() or {}).get("email")
             if not email:
+                print(f"No email found in Supabase user response: {r_me.json()}")
                 raise HTTPException(status_code=400, detail="No email in Supabase user response")
 
         headers_sb = {
@@ -294,6 +358,7 @@ def onboarding_status(
             headers=headers_sb,
             params={"select": "email", "email": f"eq.{email}"},
         )
+        print(f"Onboarding query response: {r.status_code} - {r.text}")
         if r.status_code != 200:
             try:
                 err = r.json()
@@ -302,6 +367,7 @@ def onboarding_status(
             raise HTTPException(status_code=r.status_code, detail=err)
 
         rows = r.json() or []
+        print(f"Onboarding rows found: {len(rows)} for email: {email}")
         return {"email": email, "onboarded": len(rows) > 0}
     except HTTPException:
         raise
