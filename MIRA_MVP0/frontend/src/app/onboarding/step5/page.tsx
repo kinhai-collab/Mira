@@ -8,7 +8,18 @@ import { FaBell, FaMicrophone, FaBolt } from "react-icons/fa";
 
 export default function OnboardingStep5() {
 	const router = useRouter();
-	const [permissions] = useState([]);
+	const [permissions, setPermissions] = useState({
+		pushNotifications: true,
+		microphoneAccess: false,
+		wakeWordDetection: false
+	});
+
+	const togglePermission = (permission: keyof typeof permissions) => {
+		setPermissions(prev => ({
+			...prev,
+			[permission]: !prev[permission]
+		}));
+	};
 
 	const handleFinish = async () => {
 		try {
@@ -145,20 +156,24 @@ export default function OnboardingStep5() {
 								icon: <FaBell size={18} />,
 								title: "Push Notification",
 								desc: "Get notified about important emails and reminders",
+								key: "pushNotifications" as keyof typeof permissions
 							},
 							{
 								icon: <FaMicrophone size={18} />,
 								title: "Microphone Access",
 								desc: "Use voice commands to interact with Mira",
+								key: "microphoneAccess" as keyof typeof permissions
 							},
 							{
 								icon: <FaBolt size={18} />,
 								title: "Wake Word Detection",
 								desc: "Activate Mira with your voice",
+								key: "wakeWordDetection" as keyof typeof permissions
 							},
-						].map(({ icon, title, desc }, i) => (
+						].map(({ icon, title, desc, key }, i) => (
 							<div
 								key={i}
+								onClick={() => togglePermission(key)}
 								className="flex flex-col sm:flex-row sm:items-center sm:justify-between border border-gray-300 rounded-lg px-4 py-3 hover:shadow-md transition cursor-pointer"
 							>
 								<div className="flex items-center gap-3 mb-2 sm:mb-0">
@@ -170,7 +185,19 @@ export default function OnboardingStep5() {
 										<p className="text-sm text-gray-500">{desc}</p>
 									</div>
 								</div>
-								<div className="w-5 h-5 border border-gray-400 rounded-full"></div>
+								<div 
+									className={`w-5 h-5 border-2 rounded-full transition-colors ${
+										permissions[key] 
+											? 'bg-purple-500 border-purple-500' 
+											: 'border-gray-400'
+									}`}
+								>
+									{permissions[key] && (
+										<div className="w-full h-full flex items-center justify-center">
+											<div className="w-2 h-2 bg-white rounded-full"></div>
+										</div>
+									)}
+								</div>
 							</div>
 						))}
 					</div>

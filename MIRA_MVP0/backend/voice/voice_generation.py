@@ -17,10 +17,8 @@ def get_elevenlabs_client():
                 raise HTTPException(status_code=500, detail="Voice service unavailable: ELEVENLABS_API_KEY not configured")
             client = ElevenLabs(api_key=api_key)
         except ImportError as e:
-            print(f"Failed to import elevenlabs: {e}")
             raise HTTPException(status_code=500, detail="Voice service unavailable: elevenlabs package not available")
         except Exception as e:
-            print(f"Failed to initialize ElevenLabs client: {e}")
             raise HTTPException(status_code=500, detail="Voice service unavailable: failed to initialize client")
     return client
 
@@ -57,5 +55,4 @@ async def generate_voice(text: str = "Hello from Mira!"):
         return StreamingResponse(iter([audio_bytes]), media_type="audio/mpeg")
 
     except Exception as e:
-        print("Error generating voice:", e)
         raise HTTPException(status_code=500, detail=f"Voice generation failed: {e}")

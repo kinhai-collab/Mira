@@ -78,7 +78,7 @@ export default function SettingsPage() {
 		timeZone: 'UTC-5 (Eastern Time)',
 		voice: 'Default',
 		pushNotifications: true,
-		microphoneAccess: true,
+		microphoneAccess: false,
 		wakeWordDetection: false,
 		emailAccess: true,
 		calendarAccess: true,
@@ -92,6 +92,9 @@ export default function SettingsPage() {
 		state: '',
 		postalCode: ''
 	});
+	const [onboardingData, setOnboardingData] = useState<any>(null);
+	const [connectedEmails, setConnectedEmails] = useState<string[]>([]);
+	const [connectedCalendars, setConnectedCalendars] = useState<string[]>([]);
 
 	// Check authentication on mount and load user data
 	useEffect(() => {
@@ -100,6 +103,7 @@ export default function SettingsPage() {
 			return;
 		}
 		loadUserData();
+		loadOnboardingData();
 	}, [router]);
 
 	// Load user data from localStorage
@@ -117,16 +121,82 @@ export default function SettingsPage() {
 		}
 	};
 
+	// Load onboarding data from backend
+	const loadOnboardingData = async () => {
+		try {
+			const token = getStoredToken();
+			if (!token) return;
+
+			const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+			const email = userData?.email || localStorage.getItem("mira_email") || "";
+			
+			if (!email) return;
+
+			const response = await fetch(`${apiBase}/onboarding_data?email=${encodeURIComponent(email)}`, {
+				headers: {
+					'Authorization': `Bearer ${token}`,
+					'Content-Type': 'application/json'
+				}
+			});
+
+			if (response.ok) {
+				const data = await response.json();
+				if (data.onboarded && data.data) {
+					setOnboardingData(data.data);
+					
+					// Update connected services
+					if (data.data.connectedEmails) {
+						setConnectedEmails(data.data.connectedEmails);
+					}
+					if (data.data.connectedCalendars) {
+						setConnectedCalendars(data.data.connectedCalendars);
+					}
+					
+					// Update permissions
+					setFormData(prev => ({
+						...prev,
+						pushNotifications: data.data.pushNotifications ?? true,
+						microphoneAccess: data.data.microphoneAccess ?? false,
+						wakeWordDetection: data.data.wakeWordDetection ?? false
+					}));
+				}
+			}
+		} catch (error) {
+			console.error('Failed to load onboarding data:', error);
+		}
+	};
+
 	// Listen for user data updates (from Google OAuth or manual signup/login)
 	useEffect(() => {
 		const handleUserDataUpdate = () => {
 			console.log('User data updated, reloading...');
 			loadUserData();
+			loadOnboardingData();
 		};
 
 		window.addEventListener('userDataUpdated', handleUserDataUpdate);
 		return () => window.removeEventListener('userDataUpdated', handleUserDataUpdate);
 	}, []);
+
+	// Handle Gmail disconnection
+	const handleGmailDisconnect = async () => {
+		try {
+			// Remove Gmail access token from localStorage
+			localStorage.removeItem("gmail_access_token");
+			localStorage.removeItem("gmail_email");
+			
+			// Update connected emails state
+			setConnectedEmails(prev => prev.filter(email => email !== "Gmail"));
+			
+			// Save the updated state
+			await handleSave();
+			
+			alert("Gmail disconnected successfully");
+		} catch (error) {
+			console.error('Failed to disconnect Gmail:', error);
+			alert('Failed to disconnect Gmail');
+		}
+	};
 
 	const tabs = [
 		{ id: 'profile' as TabType, label: 'Profile' },
@@ -150,45 +220,90 @@ export default function SettingsPage() {
 			}
 
 			const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
-			const payload = {
-				firstName: formData.firstName?.trim() || undefined,
-				middleName: formData.middleName?.trim() || undefined,
-				lastName: formData.lastName?.trim() || undefined,
-				fullName: [formData.firstName?.trim(), formData.lastName?.trim()].filter(Boolean).join(' ') || undefined,
-				// picture can be wired when Change Picture is implemented
-			};
+			
+			// Handle different save operations based on active tab
+			if (activeTab === 'profile') {
+				const payload = {
+					firstName: formData.firstName?.trim() || undefined,
+					middleName: formData.middleName?.trim() || undefined,
+					lastName: formData.lastName?.trim() || undefined,
+					fullName: [formData.firstName?.trim(), formData.lastName?.trim()].filter(Boolean).join(' ') || undefined,
+					// picture can be wired when Change Picture is implemented
+				};
 
-			const res = await fetch(`${apiBase}/profile_update`, {
-				method: 'POST',
-				headers: {
-					'Authorization': `Bearer ${token}`,
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify(payload)
-			});
+				const res = await fetch(`${apiBase}/profile_update`, {
+					method: 'POST',
+					headers: {
+						'Authorization': `Bearer ${token}`,
+						'Content-Type': 'application/json'
+					},
+					body: JSON.stringify(payload)
+				});
 
-			const data = await res.json().catch(() => ({}));
-			if (!res.ok) {
-				const message = data?.detail?.message || data?.message || 'Failed to save profile';
-				alert(message);
-				return;
+				const data = await res.json().catch(() => ({}));
+				if (!res.ok) {
+					const message = data?.detail?.message || data?.message || 'Failed to save profile';
+					alert(message);
+					return;
+				}
+
+				// Update localStorage for immediate UI reflect
+				try {
+					const fullName = payload.fullName || '';
+					if (fullName) localStorage.setItem('mira_full_name', fullName);
+					// If backend returns avatar/full name, prefer that
+					const returned = data?.user || {};
+					const meta = returned?.user_metadata || returned?.user?.user_metadata || {};
+					if (meta.full_name) localStorage.setItem('mira_full_name', meta.full_name);
+					if (meta.avatar_url) localStorage.setItem('mira_profile_picture', meta.avatar_url);
+					window.dispatchEvent(new CustomEvent('userDataUpdated'));
+				} catch {}
+
+				alert('Profile saved');
+			} else if (activeTab === 'privacy' || activeTab === 'notifications') {
+				// Save privacy/notification settings
+				const email = userData?.email || localStorage.getItem("mira_email") || "";
+				if (!email) {
+					alert('Email not found. Please log in again.');
+					return;
+				}
+
+				const payload = {
+					email,
+					step1: onboardingData?.step1 || {},
+					step2: onboardingData?.step2 || {},
+					step3: { connectedEmails },
+					step4: { connectedCalendars },
+					step5: { 
+						permissions: {
+							pushNotifications: formData.pushNotifications,
+							microphoneAccess: formData.microphoneAccess,
+							wakeWordDetection: formData.wakeWordDetection
+						}
+					},
+				};
+
+				const res = await fetch(`${apiBase}/onboarding_save`, {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json'
+					},
+					body: JSON.stringify(payload)
+				});
+
+				const data = await res.json().catch(() => ({}));
+				if (!res.ok) {
+					const message = data?.detail?.message || data?.message || 'Failed to save settings';
+					alert(message);
+					return;
+				}
+
+				alert('Settings saved');
+			} else {
+				alert('Settings saved');
 			}
-
-			// Update localStorage for immediate UI reflect
-			try {
-				const fullName = payload.fullName || '';
-				if (fullName) localStorage.setItem('mira_full_name', fullName);
-				// If backend returns avatar/full name, prefer that
-				const returned = data?.user || {};
-				const meta = returned?.user_metadata || returned?.user?.user_metadata || {};
-				if (meta.full_name) localStorage.setItem('mira_full_name', meta.full_name);
-				if (meta.avatar_url) localStorage.setItem('mira_profile_picture', meta.avatar_url);
-				window.dispatchEvent(new CustomEvent('userDataUpdated'));
-			} catch {}
-
-			alert('Profile saved');
 		} catch (e) {
-			console.error('Failed to save profile:', e);
+			console.error('Failed to save:', e);
 			alert('Something went wrong while saving.');
 		}
 	};
@@ -435,9 +550,29 @@ export default function SettingsPage() {
 									<Image src="/Icons/image 4.png" alt="Gmail" width={24} height={24} />
 								</div>
 								<span className="text-lg text-gray-700">Gmail</span>
+								{connectedEmails.includes("Gmail") && (
+									<span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">
+										Connected
+									</span>
+								)}
 							</div>
-							<button className="px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-100 transition-colors">
-								Connect
+							<button 
+								onClick={() => {
+									if (connectedEmails.includes("Gmail")) {
+										handleGmailDisconnect();
+									} else {
+										// Handle connect
+										const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+										window.location.href = `${apiBase}/gmail/auth`;
+									}
+								}}
+								className={`px-4 py-2 rounded-lg text-sm transition-colors ${
+									connectedEmails.includes("Gmail")
+										? "bg-red-100 text-red-700 hover:bg-red-200"
+										: "bg-gray-50 border border-gray-300 text-gray-700 hover:bg-gray-100"
+								}`}
+							>
+								{connectedEmails.includes("Gmail") ? "Disconnect" : "Connect"}
 							</button>
 						</div>
 
@@ -447,9 +582,17 @@ export default function SettingsPage() {
 									<Image src="/Icons/image 5.png" alt="Outlook" width={24} height={24} />
 								</div>
 								<span className="text-lg text-gray-700">Outlook</span>
+								{connectedEmails.includes("Outlook") && (
+									<span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">
+										Connected
+									</span>
+								)}
 							</div>
-							<button className="px-4 py-2 bg-purple-100 rounded-lg text-sm text-gray-700">
-								Connected
+							<button 
+								onClick={() => alert("Outlook integration coming soon!")}
+								className="px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+							>
+								Connect
 							</button>
 						</div>
 
@@ -459,8 +602,16 @@ export default function SettingsPage() {
 									<Image src="/Icons/image 6.png" alt="Microsoft 365" width={24} height={24} />
 								</div>
 								<span className="text-lg text-gray-700">Microsoft 365</span>
+								{connectedEmails.includes("Microsoft 365") && (
+									<span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">
+										Connected
+									</span>
+								)}
 							</div>
-							<button className="px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-100 transition-colors">
+							<button 
+								onClick={() => alert("Microsoft 365 integration coming soon!")}
+								className="px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+							>
 								Connect
 							</button>
 						</div>
@@ -477,9 +628,17 @@ export default function SettingsPage() {
 									<Image src="/Icons/image 7.png" alt="Google Calendar" width={24} height={24} />
 								</div>
 								<span className="text-lg text-gray-700">Google Calendar</span>
+								{connectedCalendars.includes("Google Calendar") && (
+									<span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">
+										Connected
+									</span>
+								)}
 							</div>
-							<button className="px-4 py-2 bg-purple-100 rounded-lg text-sm text-gray-700">
-								Connected
+							<button 
+								onClick={() => alert("Google Calendar integration coming soon!")}
+								className="px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+							>
+								Connect
 							</button>
 						</div>
 
@@ -489,8 +648,16 @@ export default function SettingsPage() {
 									<Image src="/Icons/image 5.png" alt="Outlook Calendar" width={24} height={24} />
 								</div>
 								<span className="text-lg text-gray-700">Outlook Calendar</span>
+								{connectedCalendars.includes("Outlook Calendar") && (
+									<span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">
+										Connected
+									</span>
+								)}
 							</div>
-							<button className="px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-100 transition-colors">
+							<button 
+								onClick={() => alert("Outlook Calendar integration coming soon!")}
+								className="px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+							>
 								Connect
 							</button>
 						</div>
@@ -501,8 +668,16 @@ export default function SettingsPage() {
 									<Image src="/Icons/image 6.png" alt="Microsoft Calendar" width={24} height={24} />
 								</div>
 								<span className="text-lg text-gray-700">Microsoft Calendar</span>
+								{connectedCalendars.includes("Microsoft Calendar") && (
+									<span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">
+										Connected
+									</span>
+								)}
 							</div>
-							<button className="px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-100 transition-colors">
+							<button 
+								onClick={() => alert("Microsoft Calendar integration coming soon!")}
+								className="px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+							>
 								Connect
 							</button>
 						</div>
@@ -513,8 +688,16 @@ export default function SettingsPage() {
 									<Image src="/Icons/image 8.png" alt="Exchange Calendar" width={24} height={24} />
 								</div>
 								<span className="text-lg text-gray-700">Exchange Calendar</span>
+								{connectedCalendars.includes("Exchange Calendar") && (
+									<span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">
+										Connected
+									</span>
+								)}
 							</div>
-							<button className="px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-100 transition-colors">
+							<button 
+								onClick={() => alert("Exchange Calendar integration coming soon!")}
+								className="px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+							>
 								Connect
 							</button>
 						</div>
