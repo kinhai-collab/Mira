@@ -11,35 +11,29 @@ import {
 	isAuthenticated,
 } from "@/utils/auth";
 import { playVoice } from "@/utils/voice/voice";
-import { supabase } from "@/utils/supabaseClient";
 
 export default function Home() {
 	const router = useRouter();
 	const [input, setInput] = useState("");
-	const [isThinking, setIsThinking] = useState(false);
-	const [steps, setSteps] = useState<string[]>([]);
-	const [greeting, setGreeting] = useState<string>("Hey There!");
-	const greetingCalledRef = useRef(false); // Ref to persist across re-renders
+	const [isListening, setIsListening] = useState(true);
+	const [greeting, setGreeting] = useState<string>("");
 
-	// Check authentication and fetch greeting from backend on mount
+	const greetingCalledRef = useRef(false);
+
 	useEffect(() => {
-		const initializeApp = async () => {
-			// First, check if there's a token in the URL (for OAuth callback)
+		const init = async () => {
 			const urlToken = extractTokenFromUrl();
 			if (urlToken) {
 				storeAuthToken(urlToken);
-				// Clear the URL hash after extracting the token
 				window.history.replaceState(
 					{},
 					document.title,
 					window.location.pathname
 				);
-				// Reload the page to refresh user data in all components
 				window.location.reload();
 				return;
 			}
 
-			// Check if user is authenticated
 			if (!isAuthenticated()) {
 				router.push("/login");
 				return;
@@ -47,25 +41,33 @@ export default function Home() {
 
 			// Check onboarding status as a fallback (in case user landed here directly)
 			try {
-				const token = localStorage.getItem("access_token") ?? localStorage.getItem("token");
+				const token =
+					localStorage.getItem("access_token") ?? localStorage.getItem("token");
 				if (token) {
-					const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+					const apiBase = (
+						process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+					).replace(/\/+$/, "");
 					const email = localStorage.getItem("mira_email");
-					
+
 					if (email) {
-						const onboardingRes = await fetch(`${apiBase}/onboarding_status?email=${encodeURIComponent(email)}`, {
-							headers: {
-								"Authorization": `Bearer ${token}`,
-								"Content-Type": "application/json"
+						const onboardingRes = await fetch(
+							`${apiBase}/onboarding_status?email=${encodeURIComponent(email)}`,
+							{
+								headers: {
+									Authorization: `Bearer ${token}`,
+									"Content-Type": "application/json",
+								},
 							}
-						});
-						
+						);
+
 						if (onboardingRes.ok) {
 							const onboardingData = await onboardingRes.json();
 							const onboarded = !!onboardingData?.onboarded;
-							
+
 							if (!onboarded) {
-								console.log("User not onboarded, redirecting to onboarding from home page");
+								console.log(
+									"User not onboarded, redirecting to onboarding from home page"
+								);
 								router.push("/onboarding/step1");
 								return;
 							}
@@ -77,298 +79,159 @@ export default function Home() {
 				// Continue to normal flow if check fails
 			}
 
-			// Only call greeting API once
 			if (greetingCalledRef.current) return;
 			greetingCalledRef.current = true;
 
-			let token: string | null = null;
-			try {
-				token =
-					localStorage.getItem("access_token") ?? localStorage.getItem("token");
-			} catch {}
-			try {
-				const apiBase = (
-					process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
-				).replace(/\/+$/, "");
-				const res = await fetch(`${apiBase}/greeting`, {
-					method: "POST",
-					headers: {
-						"Content-Type": "application/x-www-form-urlencoded",
-						...(token ? { Authorization: `Bearer ${token}` } : {}),
-					},
-					body: new URLSearchParams({
-						timestamp: new Date().toISOString(),
-						timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-						localTime: new Date().toLocaleString(),
-					}),
-				});
-				if (!res.ok) return;
-				const data = await res.json().catch(() => ({}));
-				if (data && data.message) {
-					const message = String(data.message);
-					console.log("Setting greeting and playing voice:", message);
-					setGreeting(message);
-					playVoice(message); // Trigger voice playback
-				}
-			} catch {}
+			// 🟣 Get user name from localStorage or API
+			// 🟣 Wait a short moment to ensure localStorage is ready
+			setTimeout(() => {
+				const userName =
+					localStorage.getItem("mira_username") ||
+					localStorage.getItem("mira_full_name") ||
+					localStorage.getItem("user_name") ||
+					"there";
+
+				const hour = new Date().getHours();
+				let timeGreeting = "Good Evening";
+				if (hour < 12) timeGreeting = "Good Morning";
+				else if (hour < 18) timeGreeting = "Good Afternoon";
+
+				// Optional: show only first name
+				const firstName = userName.split(" ")[0];
+				setGreeting(`${timeGreeting}, ${firstName}!`);
+				playVoice(`${timeGreeting}, ${firstName}!`);
+			}, 300);
 		};
-		initializeApp();
-	}, []); // Remove router dependency to prevent multiple calls
-
-	// Note: Greeting is now handled by the backend API in the initializeApp function above
-	// This Supabase greeting system has been removed to prevent conflicts
-
-	// Animate steps
-	useEffect(() => {
-		if (isThinking) {
-			const reasoningSteps = [
-				"Analyzed your calendar for today",
-				"Prioritized 3 urgent emails",
-				"Suggested optimal meeting time",
-				"Processing daily brief...",
-			];
-			let index = 0;
-			const interval = setInterval(() => {
-				if (index < reasoningSteps.length) {
-					setSteps((prev) => [...prev, reasoningSteps[index]]);
-					index++;
-				} else clearInterval(interval);
-			}, 1000);
-			return () => clearInterval(interval);
-		} else setSteps([]);
-	}, [isThinking]);
-
-	const handleSubmit = (e: React.FormEvent) => {
-		e.preventDefault();
-		if (!input.trim()) return;
-		setIsThinking(true);
-		setInput("");
-	};
-
-	const handleExample = (text: string) => {
-		setInput(text);
-		setIsThinking(true);
-	};
-	function MobileProfileMenu() {
-		const [open, setOpen] = useState(false);
-		const router = useRouter();
-
-		// Close when clicking outside
-		useEffect(() => {
-			const handleClickOutside = (e: MouseEvent) => {
-				const target = e.target as HTMLElement;
-				if (!target.closest(".mobile-profile-menu")) setOpen(false);
-			};
-			document.addEventListener("mousedown", handleClickOutside);
-			return () =>
-				document.removeEventListener("mousedown", handleClickOutside);
-		}, []);
-
-		const handleLogout = () => {
-			localStorage.removeItem("token");
-			router.push("/login");
-		};
-
-		return (
-			<div className="relative mobile-profile-menu flex flex-col items-center">
-				{/* Profile Icon */}
-				<button
-					onClick={() => setOpen(!open)}
-					className={`flex items-center justify-center w-11 h-11 rounded-lg border border-gray-100 shadow-sm bg-white transition-all ${
-						open ? "bg-gray-100" : "hover:shadow-md"
-					}`}
-				>
-					<Icon name="Profile" size={22} />
-				</button>
-				{/* Popup */}
-				{open && (
-					<div
-						className="absolute bottom-[70px] right-[-60px] w-56 bg-white border border-gray-200 rounded-2xl shadow-xl py-2 animate-fadeIn z-50"
-						style={{ transform: "translateX(-20%)" }}
-					>
-						<div className="px-4 pb-2 border-b border-gray-200">
-							<div className="flex flex-col gap-0.5 text-gray-700 text-sm">
-								<div className="flex items-center gap-2">
-									<Image
-										src="/Icons/Property 1=Profile.svg"
-										alt="User"
-										width={16}
-										height={16}
-										className="opacity-80"
-									/>
-									<span>miraisthbest@gmail.com</span>
-								</div>
-								<span className="pl-6 text-gray-500 text-xs">User NameF</span>
-							</div>
-						</div>
-
-						<button
-							onClick={() => alert("Switch account coming soon!")}
-							className="flex items-center gap-3 w-full px-4 py-2 text-sm rounded-md hover:bg-[#f7f4fb] transition text-gray-700"
-						>
-							<Icon name="SwitchAccount" size={18} />
-							Switch account
-						</button>
-
-						<hr className="my-1 border-gray-200" />
-
-						<button
-							onClick={handleLogout}
-							className="flex items-center gap-3 w-full px-4 py-2 text-sm text-grey-600 hover:bg-grey-50 rounded-md transition"
-						>
-							<Icon name="Logout" size={18} />
-							Log out
-						</button>
-					</div>
-				)}
-			</div>
-		);
-	}
+		init();
+	}, []);
 
 	return (
-		<div className="flex flex-col md:flex-row h-screen bg-[#F8F8FB] text-gray-800 overflow-hidden">
+		<div className="flex flex-col min-h-screen bg-[#F8F8FB] text-gray-800 overflow-hidden">
 			{/* Main Section */}
-			<main className="flex-1 flex flex-col items-center justify-center px-4 sm:px-6 md:px-10 relative overflow-y-auto pb-20 md:pb-0">
-				{/* Top icons */}
-				<div className="absolute top-4 sm:top-6 md:top-8 right-6 sm:right-10">
-					<div className="p-3 rounded-full bg-white border border-gray-100 shadow-sm hover:shadow-md transition cursor-pointer">
-						<Icon name="VoiceOn" size={20} />
+			<main className="flex-1 flex flex-col items-center justify-center px-4 sm:px-6 md:px-8 relative overflow-y-auto pb-20 md:pb-0">
+				{/* Top bar */}
+				<div className="absolute top-4 sm:top-6 left-4 sm:left-10 flex flex-wrap items-center gap-2 sm:gap-3 text-xs sm:text-sm">
+					<span className="font-medium text-gray-800">Wed, Oct 15</span>
+					<div className="flex items-center gap-1 px-2 sm:px-3 py-1 border border-gray-200 rounded-full bg-white/40 backdrop-blur-sm">
+						<Icon name="Location" size={16} className="text-gray-600" />
+						<span className="text-gray-700 font-medium">New York</span>
 					</div>
-				</div>
-
-				{/* Weather indicator */}
-				<div className="absolute top-4 sm:top-6 md:top-8 left-6 sm:left-10 flex items-center gap-2">
-					<Icon name="Sun" size={20} className="text-yellow-500" />
-					<span className="text-gray-600 text-sm font-medium">78°</span>
+					<div className="flex items-center gap-1 px-2 sm:px-3 py-1 border border-gray-200 rounded-full bg-white/40 backdrop-blur-sm">
+						<Icon name="Sun" size={16} className="text-yellow-500" />
+						<span className="text-gray-700 font-medium">20°</span>
+					</div>
 				</div>
 
 				{/* Orb + Greeting */}
-				<div className="relative mb-10 sm:mb-12 flex flex-col items-center">
-					<div className="relative w-32 sm:w-40 md:w-48 h-32 sm:h-40 md:h-48 rounded-full bg-gradient-to-br from-[#C4A0FF] via-[#E1B5FF] to-[#F5C5E5] shadow-[0_0_80px_15px_rgba(210,180,255,0.45)] animate-pulse"></div>
-					<div className="absolute top-[15%] right-[-100px] sm:right-[-130px] md:right-[-150px] bg-white/90 px-4 sm:px-6 py-1.5 sm:py-2 rounded-full shadow-[0_4px_25px_rgba(200,150,255,0.45)] text-gray-800 font-medium text-sm sm:text-[15px] leading-tight whitespace-nowrap backdrop-blur-sm border border-white/40">
-						<span className="opacity-70">{greeting}</span>
+				<div className="relative flex flex-col items-center mt-16 sm:mt-20">
+					<div className="w-32 h-32 sm:w-44 sm:h-44 rounded-full bg-gradient-to-br from-[#C4A0FF] via-[#E1B5FF] to-[#F5C5E5] shadow-[0_0_80px_15px_rgba(210,180,255,0.45)] animate-pulse"></div>
+					{/* Greeting Bubble */}
+					<div className="absolute top-[35%] right-[-250px] group">
+						<div className="relative bg-white px-5 py-2.5 border border-[#E4D9FF] shadow-[0_4px_20px_rgba(180,150,255,0.25)]">
+							{/* Text */}
+							<p className="text-[#2F2F2F] text-sm sm:text-base tracking-tight">
+								{greeting}
+							</p>
+
+							{/* Tail */}
+							<div className="absolute left-[-7px] top-1/2 -translate-y-1/2 w-3 h-3 bg-white border-l border-[#E4D9FF] rotate-45"></div>
+						</div>
 					</div>
 				</div>
 
 				{/* Input Section */}
-				<form
-					onSubmit={handleSubmit}
-					className="relative w-full max-w-md sm:max-w-2xl md:max-w-3xl flex flex-col items-center"
-				>
-					<div className="absolute inset-0 rounded-xl bg-gradient-to-r from-[#f4aaff] via-[#d9b8ff] to-[#bfa3ff] opacity-95 blur-[1.5px] shadow-[0_0_25px_ rgba(200,150,255,0.35)]"></div>
+				<div className="relative mt-10 sm:mt-14 w-full max-w-md sm:max-w-xl flex flex-col items-center">
+					{/* Gradient border */}
+					<div className="absolute inset-0 rounded-xl bg-gradient-to-r from-[#f4aaff] via-[#d9b8ff] to-[#bfa3ff] opacity-95 blur-[1.5px]"></div>
+
 					<div className="relative flex items-center rounded-xl bg-white px-4 sm:px-5 py-2 sm:py-2.5 w-full">
 						<input
 							type="text"
 							value={input}
 							onChange={(e) => setInput(e.target.value)}
-							placeholder="Ask anything..."
-							className="flex-1 px-3 sm:px-6 py-2.5 bg-transparent text-gray-700 placeholder-gray-400 rounded-l-xl focus:outline-none font-medium text-sm sm:text-base"
+							placeholder={
+								isListening ? "I'm listening..." : "Type your request..."
+							}
+							className="flex-1 px-3 sm:px-4 py-1.5 sm:py-2 bg-transparent text-gray-700 placeholder-gray-400 rounded-l-xl focus:outline-none font-medium text-sm sm:text-base"
 						/>
 						<button
-							type="submit"
-							className="flex items-center justify-center w-10 sm:w-11 h-10 sm:h-11 rounded-full bg-white border border-gray-200 shadow-sm hover:shadow-md transition"
+							type="button"
+							className="flex items-center justify-center w-9 sm:w-10 h-9 sm:h-10 rounded-full bg-white border border-gray-200 shadow-sm hover:shadow-md transition"
 						>
-							<Icon name="Send" size={18} />
+							<Icon name="Send" size={16} />
 						</button>
 					</div>
-				</form>
+				</div>
 
-				{/* Reasoning or Examples */}
-				{!isThinking ? (
-					<div className="w-full max-w-md sm:max-w-2xl md:max-w-3xl mt-8 text-left px-1 sm:px-0">
-						<h3 className="text-gray-800 font-medium mb-4 text-[15px] sm:text-[17px]">
-							Get started with an example below
-						</h3>
-
-						<div className="flex flex-wrap gap-3 sm:gap-4">
-							{[
-								"Give me my daily brief",
-								"Organize my calendar for today",
-								"Send an email to customers",
-							].map((example, i) => (
-								<button
-									key={i}
-									onClick={() => handleExample(example)}
-									className="px-4 sm:px-6 py-2 bg-white text-gray-800 font-medium rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition text-sm sm:text-base"
-								>
-									{example}
-								</button>
-							))}
-						</div>
+				{/* Example Prompts */}
+				<div className="mt-8 sm:mt-10 w-full max-w-md sm:max-w-xl text-left">
+					<p className="text-gray-600 font-normal mb-3 text-[12px] sm:text-[13.5px]">
+						Or start with an example below
+					</p>
+					<div className="flex flex-wrap gap-2 sm:gap-2.5">
+						{[
+							"How’s my day looking?",
+							"Summarize today’s tasks.",
+							"What meetings do I have today?",
+							"What reminders do I have today?",
+							"Wrap up my day.",
+						].map((example, i) => (
+							<button
+								key={i}
+								className="px-3 sm:px-3.5 py-1 sm:py-1.5 bg-white border border-gray-200 rounded-full shadow-sm hover:shadow-md transition text-gray-700 text-[12.5px] sm:text-[13.5px] font-normal"
+							>
+								{example}
+							</button>
+						))}
 					</div>
-				) : (
-					<div className="w-full max-w-md sm:max-w-2xl md:max-w-3xl mt-8 text-left px-1 sm:px-0">
-						<div className="bg-white rounded-2xl shadow-md border border-gray-100 p-4 sm:p-6">
-							<h4 className="font-semibold text-gray-800 mb-4 sm:mb-5 flex items-center gap-2 text-sm sm:text-base">
-								<div className="w-3 h-3 rounded-full bg-[#7C5BFF] animate-pulse"></div>
-								Mira’s Reasoning…
-							</h4>
+				</div>
 
-							<ul className="space-y-3 pl-4 sm:pl-6 border-l-[3px] border-[#7C5BFF]">
-								{steps.map((step, i) => {
-									const isLast = i === steps.length - 1;
-									return (
-										<li
-											key={i}
-											className="flex items-start gap-3 text-[13px] sm:text-[15px] font-medium text-gray-700"
-										>
-											<div
-												className={`flex-shrink-0 mt-[2px] w-5 h-5 rounded-full flex items-center justify-center ${
-													isLast
-														? "border border-gray-300 text-gray-400"
-														: "bg-[#7C5BFF]/10 border border-[#7C5BFF] text-[#7C5BFF]"
-												}`}
-											>
-												<svg
-													xmlns="http://www.w3.org/2000/svg"
-													viewBox="0 0 24 24"
-													fill="none"
-													stroke="currentColor"
-													strokeWidth="2.5"
-													strokeLinecap="round"
-													strokeLinejoin="round"
-													className={`w-3.5 h-3.5 ${
-														isLast ? "opacity-50" : "opacity-100"
-													}`}
-												>
-													<polyline points="20 6 9 17 4 12" />
-												</svg>
-											</div>
-											<span
-												className={`leading-tight ${
-													isLast ? "text-gray-400 italic" : "text-gray-800"
-												}`}
-											>
-												{step}
-											</span>
-										</li>
-									);
-								})}
-							</ul>
-						</div>
+				{/* Mic & Keyboard Toggle */}
+				<div className="mt-10 sm:mt-12 flex items-center justify-center">
+					<div className="relative w-[130px] sm:w-[150px] h-[32px] sm:h-[36px] border border-[#000] bg-white rounded-full p-[3px] shadow-[0_1px_4px_rgba(0,0,0,0.08)] flex items-center justify-between transition-all duration-300">
+						{/* Sliding Pill */}
+						<div
+							className={`absolute top-[2px] left-[4px] h-[27px] sm:h-[30px] w-[60px] sm:w-[68px] bg-[#2F2F2F] rounded-full transition-transform duration-300 ease-in-out ${
+								isListening
+									? "translate-x-0"
+									: "translate-x-[63px] sm:translate-x-[72px]"
+							}`}
+						></div>
+
+						{/* Mic Button */}
+						<button
+							onClick={() => setIsListening(true)}
+							className="relative z-10 flex items-center justify-center w-1/2 h-full"
+						>
+							<Image
+								src="/Icons/Property 1=Mic.svg"
+								alt="Mic Icon"
+								width={15}
+								height={15}
+								className={`transition-all duration-200 ${
+									isListening ? "invert brightness-0" : "brightness-0"
+								}`}
+							/>
+						</button>
+
+						{/* Keyboard Button */}
+						<button
+							onClick={() => setIsListening(false)}
+							className="relative z-10 flex items-center justify-center w-1/2 h-full"
+						>
+							<Image
+								src="/Icons/Property 1=Keyboard.svg"
+								alt="Keyboard Icon"
+								width={15}
+								height={15}
+								className={`transition-all duration-200 ${
+									!isListening ? "invert brightness-0" : "brightness-0"
+								}`}
+							/>
+						</button>
 					</div>
-				)}
+				</div>
 			</main>
-
-			{/* Bottom Nav (Mobile only) */}
-
-			<div className="md:hidden fixed bottom-0 left-0 right-0 bg-[#F0ECF8] border-t border-gray-200 flex justify-around items-center py-3 z-50">
-				{["Dashboard", "Settings", "Reminder"].map((name, i) => (
-					<button
-						key={i}
-						onClick={() => {
-							if (name === "Dashboard") router.push("/dashboard");
-							else router.push(`/dashboard/${name.toLowerCase()}`);
-						}}
-						className="flex items-center justify-center w-11 h-11 rounded-xl bg-white shadow-sm hover:bg-gray-100 transition-all active:bg-gray-200"
-					>
-						<Icon name={name} size={22} className="text-gray-700" />
-					</button>
-				))}
-
-				{/* ✅ Profile icon with same style */}
-				<MobileProfileMenu />
-			</div>
 		</div>
 	);
 }

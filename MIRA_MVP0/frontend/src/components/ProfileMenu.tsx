@@ -5,7 +5,12 @@ import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { Icon } from "@/components/Icon";
-import { clearAuthTokens, getStoredUserData, UserData, refreshUserData } from "@/utils/auth";
+import {
+	clearAuthTokens,
+	getStoredUserData,
+	UserData,
+	refreshUserData,
+} from "@/utils/auth";
 
 export default function ProfileMenu() {
 	const [open, setOpen] = useState(false);
@@ -30,17 +35,22 @@ export default function ProfileMenu() {
 		const loadUserData = async () => {
 			let storedUserData = getStoredUserData();
 			console.log("ProfileMenu: Loading user data:", storedUserData);
-			
+
 			// If no user data is stored, try to refresh from backend
-			if (!storedUserData || (!storedUserData.fullName && !storedUserData.picture)) {
-				console.log("ProfileMenu: No user data found, attempting to refresh from backend");
+			if (
+				!storedUserData ||
+				(!storedUserData.fullName && !storedUserData.picture)
+			) {
+				console.log(
+					"ProfileMenu: No user data found, attempting to refresh from backend"
+				);
 				const refreshedData = await refreshUserData();
 				if (refreshedData) {
 					storedUserData = refreshedData;
 					console.log("ProfileMenu: Refreshed user data:", storedUserData);
 				}
 			}
-			
+
 			setUserData(storedUserData);
 		};
 
@@ -49,23 +59,23 @@ export default function ProfileMenu() {
 
 		// Listen for storage changes (when user data is updated)
 		const handleStorageChange = (e: StorageEvent) => {
-			if (e.key && e.key.startsWith('mira_')) {
+			if (e.key && e.key.startsWith("mira_")) {
 				loadUserData();
 			}
 		};
 
-		window.addEventListener('storage', handleStorageChange);
+		window.addEventListener("storage", handleStorageChange);
 
 		// Also listen for custom events (for same-tab updates)
 		const handleUserDataUpdate = () => {
 			loadUserData();
 		};
 
-		window.addEventListener('userDataUpdated', handleUserDataUpdate);
+		window.addEventListener("userDataUpdated", handleUserDataUpdate);
 
 		return () => {
-			window.removeEventListener('storage', handleStorageChange);
-			window.removeEventListener('userDataUpdated', handleUserDataUpdate);
+			window.removeEventListener("storage", handleStorageChange);
+			window.removeEventListener("userDataUpdated", handleUserDataUpdate);
 		};
 	}, []);
 
@@ -73,10 +83,10 @@ export default function ProfileMenu() {
 		console.log("Logout initiated for user:", userData);
 		setShowLogoutModal(false);
 		clearAuthTokens();
-		
+
 		// Dispatch event to notify other components
-		window.dispatchEvent(new CustomEvent('userDataUpdated'));
-		
+		window.dispatchEvent(new CustomEvent("userDataUpdated"));
+
 		console.log("User logged out, redirecting to login...");
 		router.push("/login");
 	};
@@ -103,7 +113,9 @@ export default function ProfileMenu() {
 						/>
 					) : (
 						<div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white font-medium text-sm">
-							{userData?.fullName?.charAt(0) || userData?.email?.charAt(0) || 'U'}
+							{userData?.fullName?.charAt(0) ||
+								userData?.email?.charAt(0) ||
+								"U"}
 						</div>
 					)}
 				</button>
@@ -114,23 +126,25 @@ export default function ProfileMenu() {
 						<div className="px-4 pb-2 border-b border-gray-200">
 							<div className="flex flex-col gap-0.5 text-gray-700 text-sm">
 								<div className="flex items-center gap-2">
-							{userData?.picture ? (
-								<Image
-									src={userData.picture}
-									alt="User"
-									width={16}
-									height={16}
-									className="w-4 h-4 rounded-full object-cover"
-								/>
+									{userData?.picture ? (
+										<Image
+											src={userData.picture}
+											alt="User"
+											width={16}
+											height={16}
+											className="w-4 h-4 rounded-full object-cover"
+										/>
 									) : (
 										<div className="w-4 h-4 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white font-medium text-xs">
-											{userData?.fullName?.charAt(0) || userData?.email?.charAt(0) || 'U'}
+											{userData?.fullName?.charAt(0) ||
+												userData?.email?.charAt(0) ||
+												"U"}
 										</div>
 									)}
-									<span>{userData?.email || 'No email'}</span>
+									<span>{userData?.email || "No email"}</span>
 								</div>
 								<span className="pl-6 text-gray-500 text-xs">
-									{userData?.fullName || 'No name'}
+									{userData?.fullName || "No name"}
 								</span>
 							</div>
 						</div>
@@ -139,27 +153,32 @@ export default function ProfileMenu() {
 							onClick={() => router.push("/switch-account")}
 							className="flex items-center gap-3 w-full px-4 py-2 mt-2 text-sm hover:bg-gray-50 rounded-md transition"
 						>
-								<Image
-									src="/Icons/Property 1=SwitchAccount.svg"
-									alt="Switch account"
-									width={16}
-									height={16}
-									className="w-4 h-4 opacity-80"
-								/>
+							<Icon name="SwitchAccount" size={20} />
+
 							<span>Switch account</span>
+						</button>
+
+						<button
+							onClick={() => alert("Delete account coming soon!")}
+							className="flex items-center gap-3 w-full px-4 py-2 text-sm rounded-md hover:bg-[#f7f4fb] transition text-red-700"
+						>
+							<span className="text-red-700">
+								<Icon name="Profile" size={18} />
+							</span>
+							Delete account
 						</button>
 
 						<button
 							onClick={() => setShowLogoutModal(true)}
 							className="flex items-center gap-3 w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-md transition"
 						>
-								<Image
-									src="/Icons/Property 1=LogOut.svg"
-									alt="Logout"
-									width={16}
-									height={16}
-									className="w-4 h-4 opacity-80"
-								/>
+							<Image
+								src="/Icons/Property 1=LogOut.svg"
+								alt="Logout"
+								width={16}
+								height={16}
+								className="w-4 h-4 opacity-80"
+							/>
 							<span>Log out</span>
 						</button>
 					</div>
@@ -203,7 +222,7 @@ export default function ProfileMenu() {
 						<p className="text-sm text-gray-600 mb-6">
 							You log out Mira as <br />
 							<span className="font-medium text-gray-800">
-								{userData?.email || 'Unknown user'}
+								{userData?.email || "Unknown user"}
 							</span>
 						</p>
 
