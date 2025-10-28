@@ -6,7 +6,13 @@ const nextConfig: NextConfig = {
 	output: 'export',
 	trailingSlash: true,
 	images: {
-		unoptimized: true
+		unoptimized: true,
+		// Allow loading avatars from Google
+		domains: [
+			"lh3.googleusercontent.com",
+			"lh4.googleusercontent.com",
+			"lh5.googleusercontent.com"
+		]
 	},
 	outputFileTracingRoot: __dirname,
 	// Note: rewrites are not supported with static export

@@ -15,6 +15,7 @@ provider:
     REDIRECT_URI: https://ytm2meewyf.execute-api.us-east-2.amazonaws.com/${self:provider.stage}/gmail/auth/callback
     ELEVENLABS_API_KEY: sk_51ea0fad38f8a7c13f3572f7885bce862f06285ce62818a5
     ELEVENLABS_VOICE_ID: jqcCZkN6Knx8BJ5TBdYR  
+    SUPABASE_SERVICE_ROLE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im94b3poc29tbnR2dXlydXJmenJlIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MDQ2NzM0MCwiZXhwIjoyMDc2MDQzMzQwfQ.xDiiiOl2DJpBnVDDMPOMSo_hs1dI_JKbDDViWD5XufU
 plugins:
   - serverless-python-requirements
 
