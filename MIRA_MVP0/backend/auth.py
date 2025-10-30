@@ -13,6 +13,8 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+
 # Dynamic redirect URI based on environment
 def get_redirect_uri():
     # Check if we're running in AWS Lambda
@@ -23,6 +25,15 @@ def get_redirect_uri():
         return os.getenv("REDIRECT_URI") or "http://localhost:8000/gmail/auth/callback"
 
 REDIRECT_URI = get_redirect_uri()
+
+# Redirect user back to onboarding step 3 with Gmail access token
+def get_frontend_url():
+        # Check if we're running in AWS Lambda
+        if os.getenv("AWS_LAMBDA_FUNCTION_NAME"):
+            return os.getenv("FRONTEND_URL", "https://main.dd480r9y8ima.amplifyapp.com")
+        else:
+            # Local development
+            return os.getenv("FRONTEND_URL", "http://localhost:3000")
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise Exception("Missing Supabase credentials in .env file")
@@ -144,15 +155,6 @@ def gmail_oauth_callback(code: str = Query(...)):
         email = profile.get("emailAddress")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving Gmail profile: {str(e)}")
-
-    # Redirect user back to onboarding step 3 with Gmail access token
-    def get_frontend_url():
-        # Check if we're running in AWS Lambda
-        if os.getenv("AWS_LAMBDA_FUNCTION_NAME"):
-            return os.getenv("FRONTEND_URL", "https://main.dd480r9y8ima.amplifyapp.com")
-        else:
-            # Local development
-            return os.getenv("FRONTEND_URL", "http://localhost:3000")
     
     frontend_url = get_frontend_url()
     frontend_onboarding_url = f"{frontend_url}/onboarding/step3"
@@ -160,6 +162,90 @@ def gmail_oauth_callback(code: str = Query(...)):
         url=f"{frontend_onboarding_url}?gmail_connected=true&access_token={access_token}&email={email}"
     )
     return redirect
+
+# Microsoft settings
+MICROSOFT_CLIENT_ID = os.getenv("MICROSOFT_CLIENT_ID")
+MICROSOFT_CLIENT_SECRET = os.getenv("MICROSOFT_CLIENT_SECRET")
+MICROSOFT_REDIRECT_URI = os.getenv("MICROSOFT_REDIRECT_URI", "http://localhost:8000/microsoft/auth/callback")
+MICROSOFT_AUTH_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
+MICROSOFT_TOKEN_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
+MICROSOFT_SCOPES = [
+    "User.Read",
+    "Calendars.ReadWrite",
+    "Mail.Read"
+]
+
+# --- Helpers ---
+def get_microsoft_access_token(code: str) -> str:
+    # Exchange authorization code for access token
+    data = {
+        "client_id": MICROSOFT_CLIENT_ID,
+        "scope": " ".join(MICROSOFT_SCOPES),
+        "code": code,
+        "redirect_uri": MICROSOFT_REDIRECT_URI,
+        "grant_type": "authorization_code",
+        "client_secret": MICROSOFT_CLIENT_SECRET
+    }
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    res = requests.post(MICROSOFT_TOKEN_URL, data=data, headers=headers)
+    token = res.json().get("access_token")
+    print("Microsoft_access_token: ", token)
+    if not token:
+        raise HTTPException(status_code=400, detail="Failed to get access token")
+    return token
+
+def get_microsoft_user_email(access_token: str) -> str:
+    # Fetch user's email from Microsoft Graph API
+    headers = {"Authorization": f"Bearer {access_token}"}
+    profile = requests.get("https://graph.microsoft.com/v1.0/me", headers=headers).json()
+    return profile.get("mail") or profile.get("userPrincipalName")
+
+def upsert_supabase_user(email: str):
+    # Add or update user in Supabase
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {"email": email, "email_confirm": True}
+    res = requests.post(f"{SUPABASE_URL}/auth/v1/admin/users", json=payload, headers=headers)
+    # Currently no error handling for this request
+
+@router.get("/microsoft/auth")
+def microsoft_oauth_start():
+    # Start OAuth flow by redirecting to Microsoft login
+    params = {
+        "client_id": MICROSOFT_CLIENT_ID,
+        "response_type": "code",
+        "redirect_uri": MICROSOFT_REDIRECT_URI,
+        "response_mode": "query",
+        "scope": " ".join(MICROSOFT_SCOPES),
+        "prompt": "consent"
+    }
+    url = f"{MICROSOFT_AUTH_URL}?{urlencode(params)}"
+    return RedirectResponse(url=url)
+
+@router.get("/microsoft/auth/callback")
+def microsoft_oauth_callback(code: str = Query(...)):
+    # Handle callback from Microsoft OAuth
+    access_token = get_microsoft_access_token(code)
+    email = get_microsoft_user_email(access_token)
+    upsert_supabase_user(email)
+    frontend_url = get_frontend_url()
+    frontend_onboarding_url = f"{frontend_url}/onboarding/step3?ms_connected=true&email={email}"
+
+    # Set access token as HttpOnly cookie
+    response = RedirectResponse(url=frontend_onboarding_url)
+    response.set_cookie(
+        key="ms_access_token",
+        value=access_token,
+        httponly=True,
+        secure=True,   
+        samesite="lax"
+    )
+
+    return response
+
 
 @router.get("/me")
 def me(authorization: Optional[str] = Header(default=None)):
