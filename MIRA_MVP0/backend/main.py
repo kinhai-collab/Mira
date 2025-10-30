@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse
 from auth import router as auth_router 
 from greetings import router as greetings_router
 from gmail_events import router as gmail_events
-
+from outlook_events import router as outlook_events
 from voice.voice_generation import router as voice_router
 from settings import router as settings
 from Google_Calendar_API import register_google_calendar
@@ -33,7 +33,7 @@ app.include_router(gmail_events)
 app.include_router(voice_router, prefix="/api")
 app.include_router(settings)
 register_google_calendar(app)
-# Simple HTML Page for manual testing
+app.include_router(outlook_events)
 
 @app.get("/envcheck")
 async def env_check():
