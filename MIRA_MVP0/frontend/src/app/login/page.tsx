@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { Icon } from "@/components/Icon";
 import { useState, useEffect } from "react";
 import { isAuthenticated } from "@/utils/auth";
+import { supabase } from "@/utils/supabaseClient";
 
 export default function LoginPage() {
 	const router = useRouter();
@@ -18,7 +19,7 @@ export default function LoginPage() {
 	// Redirect if already authenticated
 	useEffect(() => {
 		if (isAuthenticated()) {
-			router.push('/dashboard');
+			router.push('/');
 		}
 	}, [router]);
 
@@ -89,7 +90,41 @@ export default function LoginPage() {
 			// Dispatch event again after fetching additional data
 			window.dispatchEvent(new CustomEvent('userDataUpdated'));
 			
-			router.push("/dashboard");
+			// Check onboarding status before redirecting
+			try {
+				console.log("Checking onboarding status for email:", userEmail);
+				const onboardingRes = await fetch(`${apiBase}/onboarding_status?email=${encodeURIComponent(userEmail)}`, {
+					headers: {
+						"Authorization": `Bearer ${data.access_token}`,
+						"Content-Type": "application/json"
+					}
+				});
+				
+				console.log("Onboarding status response:", onboardingRes.status, onboardingRes.statusText);
+				
+				if (onboardingRes.ok) {
+					const onboardingData = await onboardingRes.json();
+					const onboarded = !!onboardingData?.onboarded;
+					console.log("Onboarding status data:", onboardingData);
+					console.log("User onboarded:", onboarded);
+					
+					if (!onboarded) {
+						console.log("User not onboarded, redirecting to onboarding");
+						router.push("/onboarding/step1");
+					} else {
+						console.log("User onboarded, redirecting to home");
+						router.push("/");
+					}
+				} else {
+					const errorText = await onboardingRes.text();
+					console.log("Onboarding status check failed:", onboardingRes.status, errorText);
+					console.log("Could not check onboarding status, redirecting to home");
+					router.push("/");
+				}
+			} catch (error) {
+				console.log("Error checking onboarding status:", error);
+				router.push("/");
+			}
 		} catch {
 			alert("Login failed. Please check your credentials.");
 		} finally {
@@ -97,12 +132,24 @@ export default function LoginPage() {
 		}
 	};
 
-	const handleGoogleLogin = () => {
+	const handleGoogleLogin = async () => {
 		console.log("Google login clicked");
-		const apiBase = (
-			process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
-		).replace(/\/+$/, "");
-		window.location.href = `${apiBase}/auth/google`;
+		try {
+			const { data, error } = await supabase.auth.signInWithOAuth({
+				provider: 'google',
+				options: {
+					redirectTo: `${window.location.origin}/auth/callback`
+				}
+			});
+			
+			if (error) {
+				console.error("Google OAuth error:", error);
+				alert("Google login failed. Please try again.");
+			}
+		} catch (err) {
+			console.error("Error during Google login:", err);
+			alert("Something went wrong with Google login. Please try again.");
+		}
 	};
 
 	return (

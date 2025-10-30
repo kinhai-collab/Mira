@@ -66,6 +66,7 @@ yarn-error.log*
 .serverless/
 .serverless_plugins/
 .serverless_plugins/
+serverless.yml
 
 # AWS
 .aws/

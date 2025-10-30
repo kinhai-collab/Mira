@@ -3,12 +3,37 @@ from fastapi.responses import JSONResponse, RedirectResponse
 import requests
 import os
 from dotenv import load_dotenv
+from urllib.parse import urlencode
+from fastapi import Header
 from typing import Optional
 
 # Load environment variables
 load_dotenv()
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+
+# Dynamic redirect URI based on environment
+def get_redirect_uri():
+    # Check if we're running in AWS Lambda
+    if os.getenv("AWS_LAMBDA_FUNCTION_NAME"):
+        return os.getenv("REDIRECT_URI") or "https://ytm2meewyf.execute-api.us-east-2.amazonaws.com/dev/gmail/auth/callback"
+    else:
+        # Local development
+        return os.getenv("REDIRECT_URI") or "http://localhost:8000/gmail/auth/callback"
+
+REDIRECT_URI = get_redirect_uri()
+
+# Redirect user back to onboarding step 3 with Gmail access token
+def get_frontend_url():
+        # Check if we're running in AWS Lambda
+        if os.getenv("AWS_LAMBDA_FUNCTION_NAME"):
+            return os.getenv("FRONTEND_URL", "https://main.dd480r9y8ima.amplifyapp.com")
+        else:
+            # Local development
+            return os.getenv("FRONTEND_URL", "http://localhost:3000")
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise Exception("Missing Supabase credentials in .env file")
@@ -69,21 +94,159 @@ async def sign_in(email: str = Form(...), password: str = Form(...)):
         # Handle unexpected errors
         raise HTTPException(status_code=500, detail={"status": "error", "message": f"Error: {e}"})
 
-# Google signup/in endpoint
-@router.get("/auth/google")
-def google_login():
-    # Redirect the user to Supabase's Google OAuth authorization URL
-    # Include the callback URL for the frontend
-    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip('/')
-    callback_url = frontend_url + "/auth/callback"
-    supabase_url = SUPABASE_URL.rstrip('/')
-    redirect_url = f"{supabase_url}/auth/v1/authorize?provider=google&redirect_to={callback_url}"
-    return RedirectResponse(url=redirect_url)
 
-# Note: The Google OAuth callback is handled directly by the frontend
-# at /auth/callback page, which extracts the token from the URL fragment
-# and stores it in localStorage. No backend callback endpoint is needed.
+# Gmail OAuth Integration
+SCOPES = [
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.send",
+    "https://www.googleapis.com/auth/calendar.events",
+    "https://www.googleapis.com/auth/userinfo.email"
+]
+
+AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+TOKEN_URL = "https://oauth2.googleapis.com/token"
+
+# Gmail Integration OAuth endpoint (separate from user authentication)
+@router.get("/gmail/auth")
+def gmail_oauth_start():
+    # Redirect user to Google Consent Screen
+    params = {
+        "client_id": CLIENT_ID,
+        "redirect_uri": REDIRECT_URI,
+        "response_type": "code",
+        "scope": " ".join(SCOPES),
+        "access_type": "offline",   # Request refresh token
+        "prompt": "consent"
+    }
+    url = f"{AUTH_URL}?{urlencode(params)}"
+    # Redirect user to Google's OAuth page
+    return RedirectResponse(url=url)
+
+@router.get("/gmail/auth/callback")
+def gmail_oauth_callback(code: str = Query(...)):
+    # Exchange the authorization code for an access token
+    data = {
+        "code": code,
+        "client_id": CLIENT_ID,
+        "client_secret": CLIENT_SECRET,
+        "redirect_uri": REDIRECT_URI,
+        "grant_type": "authorization_code"
+    }
+
+    try:
+        res = requests.post(TOKEN_URL, data=data)
+        token_data = res.json()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error requesting access token: {str(e)}")
+
+    if "access_token" not in token_data:
+        error_msg = token_data.get("error_description", "Unknown error")
+        if "invalid_client" in str(token_data):
+            error_msg = f"OAuth client configuration error. Please check your Google Cloud Console OAuth client settings. Make sure the redirect URI '{REDIRECT_URI}' is added to your OAuth client's authorized redirect URIs."
+        raise HTTPException(status_code=400, detail=f"Failed to retrieve access token: {error_msg}")
+
+    access_token = token_data["access_token"]
+
+    # Retrieve Gmail user info
+    try:
+        headers = {"Authorization": f"Bearer {access_token}"}
+        profile_res = requests.get("https://www.googleapis.com/gmail/v1/users/me/profile", headers=headers)
+        profile = profile_res.json()
+        email = profile.get("emailAddress")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error retrieving Gmail profile: {str(e)}")
     
+    frontend_url = get_frontend_url()
+    frontend_onboarding_url = f"{frontend_url}/onboarding/step3"
+    redirect = RedirectResponse(
+        url=f"{frontend_onboarding_url}?gmail_connected=true&access_token={access_token}&email={email}"
+    )
+    return redirect
+
+# Microsoft settings
+MICROSOFT_CLIENT_ID = os.getenv("MICROSOFT_CLIENT_ID")
+MICROSOFT_CLIENT_SECRET = os.getenv("MICROSOFT_CLIENT_SECRET")
+MICROSOFT_REDIRECT_URI = os.getenv("MICROSOFT_REDIRECT_URI", "http://localhost:8000/microsoft/auth/callback")
+MICROSOFT_AUTH_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
+MICROSOFT_TOKEN_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
+MICROSOFT_SCOPES = [
+    "User.Read",
+    "Calendars.ReadWrite",
+    "Mail.Read"
+]
+
+# --- Helpers ---
+def get_microsoft_access_token(code: str) -> str:
+    # Exchange authorization code for access token
+    data = {
+        "client_id": MICROSOFT_CLIENT_ID,
+        "scope": " ".join(MICROSOFT_SCOPES),
+        "code": code,
+        "redirect_uri": MICROSOFT_REDIRECT_URI,
+        "grant_type": "authorization_code",
+        "client_secret": MICROSOFT_CLIENT_SECRET
+    }
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    res = requests.post(MICROSOFT_TOKEN_URL, data=data, headers=headers)
+    token = res.json().get("access_token")
+    print("Microsoft_access_token: ", token)
+    if not token:
+        raise HTTPException(status_code=400, detail="Failed to get access token")
+    return token
+
+def get_microsoft_user_email(access_token: str) -> str:
+    # Fetch user's email from Microsoft Graph API
+    headers = {"Authorization": f"Bearer {access_token}"}
+    profile = requests.get("https://graph.microsoft.com/v1.0/me", headers=headers).json()
+    return profile.get("mail") or profile.get("userPrincipalName")
+
+def upsert_supabase_user(email: str):
+    # Add or update user in Supabase
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {"email": email, "email_confirm": True}
+    res = requests.post(f"{SUPABASE_URL}/auth/v1/admin/users", json=payload, headers=headers)
+    # Currently no error handling for this request
+
+@router.get("/microsoft/auth")
+def microsoft_oauth_start():
+    # Start OAuth flow by redirecting to Microsoft login
+    params = {
+        "client_id": MICROSOFT_CLIENT_ID,
+        "response_type": "code",
+        "redirect_uri": MICROSOFT_REDIRECT_URI,
+        "response_mode": "query",
+        "scope": " ".join(MICROSOFT_SCOPES),
+        "prompt": "consent"
+    }
+    url = f"{MICROSOFT_AUTH_URL}?{urlencode(params)}"
+    return RedirectResponse(url=url)
+
+@router.get("/microsoft/auth/callback")
+def microsoft_oauth_callback(code: str = Query(...)):
+    # Handle callback from Microsoft OAuth
+    access_token = get_microsoft_access_token(code)
+    email = get_microsoft_user_email(access_token)
+    upsert_supabase_user(email)
+    frontend_url = get_frontend_url()
+    frontend_onboarding_url = f"{frontend_url}/onboarding/step3?ms_connected=true&email={email}"
+
+    # Set access token as HttpOnly cookie
+    response = RedirectResponse(url=frontend_onboarding_url)
+    response.set_cookie(
+        key="ms_access_token",
+        value=access_token,
+        httponly=True,
+        secure=True,   
+        samesite="lax"
+    )
+
+    return response
+
+
 @router.get("/me")
 def me(authorization: Optional[str] = Header(default=None)):
     if not authorization or not authorization.lower().startswith("bearer "):
@@ -92,9 +255,18 @@ def me(authorization: Optional[str] = Header(default=None)):
     headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {token}"}
     try:
         r = requests.get(f"{SUPABASE_URL.rstrip('/')}/auth/v1/user", headers=headers)
-        return JSONResponse(status_code=r.status_code, content=r.json())
+        if r.status_code == 200:
+            return JSONResponse(status_code=200, content=r.json())
+        else:
+            try:
+                error_data = r.json()
+                raise HTTPException(status_code=r.status_code, detail=error_data)
+            except:
+                raise HTTPException(status_code=r.status_code, detail={"error": r.text})
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @router.post("/profile_update")
 def profile_update(
@@ -174,21 +346,28 @@ def profile_update(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {e}")
 
-# Trailing-slash alias to avoid 405 when client sends /profile_update/
-@router.post("/profile_update/")
-def profile_update_alias(
-    payload: dict = Body(...),
-    authorization: Optional[str] = Header(default=None)
-):
-    return profile_update(payload=payload, authorization=authorization)
 
 # Test endpoint to verify server is working
 @router.get("/test")
 def test():
     return {"status": "ok", "message": "Server is running"}
 
+# Debug endpoint to check environment variables
+@router.get("/debug/env")
+def debug_env():
+    return {
+        "CLIENT_ID": CLIENT_ID,
+        "CLIENT_SECRET_SET": bool(CLIENT_SECRET),
+        "REDIRECT_URI": REDIRECT_URI,
+        "SUPABASE_URL": SUPABASE_URL,
+        "SUPABASE_KEY_SET": bool(SUPABASE_KEY),
+        "TOKEN_URL": TOKEN_URL,
+        "AUTH_URL": AUTH_URL
+    }
+
 # Handle CORS preflight for profile_update
 @router.options("/profile_update")
+@router.options("/profile_update/")
 def profile_update_options():
     return JSONResponse(
         status_code=200,
@@ -273,6 +452,7 @@ def onboarding_status(
     Response: {"email": "...", "onboarded": true/false}
     """
     try:
+        # If no email provided, get it from the token
         if not email:
             if not authorization or not authorization.lower().startswith("bearer "):
                 raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
@@ -303,6 +483,56 @@ def onboarding_status(
 
         rows = r.json() or []
         return {"email": email, "onboarded": len(rows) > 0}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {e}")
+
+@router.get("/onboarding_data")
+def get_onboarding_data(
+    email: Optional[str] = Query(None),
+    authorization: Optional[str] = Header(default=None),
+):
+    """
+    Returns the full onboarding data for the given email.
+    If email is not provided, we derive it from the Supabase auth token in the Authorization header.
+    Response: Full onboarding data including permissions, connected services, etc.
+    """
+    try:
+        # If no email provided, get it from the token
+        if not email:
+            if not authorization or not authorization.lower().startswith("bearer "):
+                raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+            token = authorization.split(" ", 1)[1].strip()
+            headers_me = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {token}"}
+            r_me = requests.get(f"{SUPABASE_URL.rstrip('/')}/auth/v1/user", headers=headers_me)
+            if r_me.status_code != 200:
+                raise HTTPException(status_code=401, detail="Unable to fetch user from token")
+            email = (r_me.json() or {}).get("email")
+            if not email:
+                raise HTTPException(status_code=400, detail="No email in Supabase user response")
+
+        headers_sb = {
+            "apikey": SUPABASE_KEY,
+            "Authorization": f"Bearer {SUPABASE_KEY}",
+        }
+        r = requests.get(
+            f"{SUPABASE_URL.rstrip('/')}/rest/v1/onboarding",
+            headers=headers_sb,
+            params={"select": "*", "email": f"eq.{email}"},
+        )
+        if r.status_code != 200:
+            try:
+                err = r.json()
+            except Exception:
+                err = {"error": r.text}
+            raise HTTPException(status_code=r.status_code, detail=err)
+
+        rows = r.json() or []
+        if len(rows) > 0:
+            return {"email": email, "onboarded": True, "data": rows[0]}
+        else:
+            return {"email": email, "onboarded": False, "data": None}
     except HTTPException:
         raise
     except Exception as e:

@@ -2,14 +2,70 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Icon } from "@/components/Icon";
 import { FcGoogle } from "react-icons/fc";
 import { FaMicrosoft } from "react-icons/fa";
 
 export default function OnboardingStep3() {
 	const router = useRouter();
-	const [connectedEmails] = useState([]);
+	const [connectedEmails, setConnectedEmails] = useState<string[]>([]);
+	const [connecting, setConnecting] = useState<string | null>(null);
+
+	// Check for Gmail connection status on component mount
+	useEffect(() => {
+		// Check URL parameters for Gmail OAuth callback
+		const urlParams = new URLSearchParams(window.location.search);
+		const gmailConnected = urlParams.get("gmail_connected");
+		const gmailAccessToken = urlParams.get("access_token");
+		const gmailEmail = urlParams.get("email");
+
+		if (gmailConnected === "true" && gmailAccessToken && gmailEmail) {
+			// Store Gmail access token
+			localStorage.setItem("gmail_access_token", gmailAccessToken);
+			localStorage.setItem("gmail_email", gmailEmail);
+			
+			// Add Gmail to connected emails
+			setConnectedEmails(prev => {
+				if (!prev.includes("Gmail")) {
+					return [...prev, "Gmail"];
+				}
+				return prev;
+			});
+
+			// Clear URL parameters
+			window.history.replaceState({}, document.title, window.location.pathname);
+			
+			// Show success message
+			alert(`Gmail connected successfully! Email: ${gmailEmail}`);
+		} else {
+			// Check if user has Gmail access token (indicating successful connection)
+			const gmailToken = localStorage.getItem("gmail_access_token");
+			if (gmailToken && !connectedEmails.includes("Gmail")) {
+				setConnectedEmails(prev => [...prev, "Gmail"]);
+			}
+		}
+	}, [connectedEmails]);
+
+	const handleGmailConnect = async () => {
+		setConnecting("Gmail");
+		try {
+			const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+			window.location.href = `${apiBase}/gmail/auth`;
+		} catch (error) {
+			console.error("Error connecting Gmail:", error);
+			alert("Failed to connect Gmail. Please try again.");
+			setConnecting(null);
+		}
+	};
+
+	const handleOutlookConnect = () => {
+		alert("Outlook integration coming soon!");
+	};
+
+	const handleMicrosoft365Connect = () => {
+		alert("Microsoft 365 integration coming soon!");
+	};
 
 	const handleContinue = () => {
 		try {
@@ -54,16 +110,25 @@ export default function OnboardingStep3() {
 					{/* Email Provider Options */}
 					<div className="space-y-4">
 						{[
-							{ icon: <FcGoogle size={22} />, name: "Gmail" },
+							{ 
+								icon: <FcGoogle size={22} />, 
+								name: "Gmail", 
+								onClick: handleGmailConnect,
+								connected: connectedEmails.includes("Gmail")
+							},
 							{
 								icon: <FaMicrosoft size={22} color="#0078D4" />,
 								name: "Outlook",
+								onClick: handleOutlookConnect,
+								connected: connectedEmails.includes("Outlook")
 							},
 							{
 								icon: <FaMicrosoft size={22} color="#F25022" />,
 								name: "Microsoft 365",
+								onClick: handleMicrosoft365Connect,
+								connected: connectedEmails.includes("Microsoft 365")
 							},
-						].map(({ icon, name }, i) => (
+						].map(({ icon, name, onClick, connected }, i) => (
 							<div
 								key={i}
 								className="flex flex-col sm:flex-row sm:items-center sm:justify-between border border-gray-300 rounded-lg px-4 py-3 hover:shadow-md transition cursor-pointer"
@@ -73,9 +138,18 @@ export default function OnboardingStep3() {
 									<p className="font-medium text-gray-800 text-[15px]">
 										{name}
 									</p>
+									{connected && (
+										<span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">
+											Connected
+										</span>
+									)}
 								</div>
-								<button className="text-sm text-purple-600 font-medium">
-									Connect
+								<button 
+									onClick={onClick}
+									disabled={connecting === name || connected}
+									className="text-sm text-purple-600 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+								>
+									{connecting === name ? "Connecting..." : connected ? "Connected" : "Connect"}
 								</button>
 							</div>
 						))}
