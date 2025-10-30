@@ -6,6 +6,8 @@ requests==2.32.5
 
 mangum==0.17.0
 awslambdaric==2.0.4
+openai
+pygame
 elevenlabs==2.18.0
 
 
