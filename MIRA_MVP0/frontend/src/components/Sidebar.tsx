@@ -22,10 +22,26 @@ function MobileProfileMenu() {
 		return () => document.removeEventListener("mousedown", handleClickOutside);
 	}, []);
 
-	// Load user data on component mount
+	// Load user data on component mount and listen for updates
 	useEffect(() => {
-		const storedUserData = getStoredUserData();
-		setUserData(storedUserData);
+		const loadUserData = () => {
+			const storedUserData = getStoredUserData();
+			setUserData(storedUserData);
+		};
+
+		// Load initial data
+		loadUserData();
+
+		// Listen for user data updates
+		const handleUserDataUpdate = () => {
+			loadUserData();
+		};
+
+		window.addEventListener('userDataUpdated', handleUserDataUpdate);
+		
+		return () => {
+			window.removeEventListener('userDataUpdated', handleUserDataUpdate);
+		};
 	}, []);
 
 	const handleLogout = () => {

@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { isAuthenticated, getStoredUserData, UserData, getStoredToken } from "@/utils/auth";
+import { isAuthenticated, getStoredUserData, UserData, getValidToken } from "@/utils/auth";
 import { ChevronDown, Sun, MapPin, Bell, Check } from "lucide-react";
 
 // Custom Checkbox Component (Square for Notifications)
@@ -98,12 +98,16 @@ export default function SettingsPage() {
 
 	// Check authentication on mount and load user data
 	useEffect(() => {
-		if (!isAuthenticated()) {
-			router.push('/login');
-			return;
-		}
-		loadUserData();
-		loadOnboardingData();
+		const loadAllData = async () => {
+			if (!isAuthenticated()) {
+				router.push('/login');
+				return;
+			}
+			loadUserData();
+			await loadOnboardingData();
+			await loadUserSettings();
+		};
+		loadAllData();
 	}, [router]);
 
 	// Load user data from localStorage
@@ -124,7 +128,7 @@ export default function SettingsPage() {
 	// Load onboarding data from backend
 	const loadOnboardingData = async () => {
 		try {
-			const token = getStoredToken();
+			const token = await getValidToken();
 			if (!token) return;
 
 			const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
@@ -144,21 +148,20 @@ export default function SettingsPage() {
 				if (data.onboarded && data.data) {
 					setOnboardingData(data.data);
 					
-					// Update connected services
-					if (data.data.connectedEmails) {
-						setConnectedEmails(data.data.connectedEmails);
-					}
-					if (data.data.connectedCalendars) {
-						setConnectedCalendars(data.data.connectedCalendars);
-					}
+					// Don't update connected services from onboarding data
+					// They should only come from user_profile table via loadUserSettings
+					// This prevents onboarding data from overwriting user's saved disconnections
 					
-					// Update permissions
-					setFormData(prev => ({
-						...prev,
-						pushNotifications: data.data.pushNotifications ?? true,
-						microphoneAccess: data.data.microphoneAccess ?? false,
-						wakeWordDetection: data.data.wakeWordDetection ?? false
-					}));
+					// Update permissions (only if not already set from user_settings)
+					// We prioritize user_settings over onboarding data
+					if (!formData.pushNotifications && !formData.microphoneAccess && !formData.wakeWordDetection) {
+						setFormData(prev => ({
+							...prev,
+							pushNotifications: data.data.pushNotifications ?? true,
+							microphoneAccess: data.data.microphoneAccess ?? false,
+							wakeWordDetection: data.data.wakeWordDetection ?? false
+						}));
+					}
 				}
 			}
 		} catch (error) {
@@ -166,35 +169,273 @@ export default function SettingsPage() {
 		}
 	};
 
+	// Load user settings from user_profile table
+	const loadUserSettings = async () => {
+		try {
+			const token = await getValidToken();
+			if (!token) return;
+
+			const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+			
+			const response = await fetch(`${apiBase}/user_settings`, {
+				headers: {
+					'Authorization': `Bearer ${token}`,
+					'Content-Type': 'application/json'
+				},
+				credentials: 'include' // Include cookies (needed for ms_access_token cookie)
+			});
+
+			if (response.ok) {
+				const result = await response.json();
+				if (result.status === 'success' && result.data) {
+					const settings = result.data;
+					
+					// Update profile fields first (so they take priority over localStorage data)
+					if (settings.firstName || settings.lastName || settings.middleName) {
+						setFormData(prev => ({
+							...prev,
+							firstName: settings.firstName || prev.firstName,
+							middleName: settings.middleName || prev.middleName,
+							lastName: settings.lastName || prev.lastName
+						}));
+					}
+					
+					// Update preferences
+					if (settings.language || settings.time_zone || settings.voice) {
+						setFormData(prev => ({
+							...prev,
+							language: settings.language || prev.language,
+							timeZone: settings.time_zone || prev.timeZone,
+							voice: settings.voice || prev.voice
+						}));
+					}
+					
+					// Update notifications
+					if (settings.pushNotifications !== undefined || settings.microphoneAccess !== undefined || settings.wakeWordDetection !== undefined) {
+						setFormData(prev => ({
+							...prev,
+							pushNotifications: settings.pushNotifications ?? prev.pushNotifications,
+							microphoneAccess: settings.microphoneAccess ?? prev.microphoneAccess,
+							wakeWordDetection: settings.wakeWordDetection ?? prev.wakeWordDetection
+						}));
+					}
+					
+					// Update connected services
+					if (settings.connectedEmails) {
+						setConnectedEmails(settings.connectedEmails);
+					}
+					if (settings.connectedCalendars) {
+						setConnectedCalendars(settings.connectedCalendars);
+					}
+					
+					// Update subscription
+					if (settings.subscriptionPlan || settings.cardName || settings.cardNumber) {
+						setFormData(prev => ({
+							...prev,
+							selectedPlan: settings.subscriptionPlan || prev.selectedPlan,
+							cardName: settings.cardName || prev.cardName,
+							cardNumber: settings.cardNumber || prev.cardNumber,
+							expDate: settings.expDate || prev.expDate,
+							cvv: settings.cvv || prev.cvv,
+							address: settings.address || prev.address,
+							city: settings.city || prev.city,
+							state: settings.state || prev.state,
+							postalCode: settings.postalCode || prev.postalCode
+						}));
+					}
+				}
+			}
+		} catch (error) {
+			console.error('Failed to load user settings:', error);
+		}
+	};
+
 	// Listen for user data updates (from Google OAuth or manual signup/login)
 	useEffect(() => {
-		const handleUserDataUpdate = () => {
+		const handleUserDataUpdate = async () => {
 			console.log('User data updated, reloading...');
 			loadUserData();
-			loadOnboardingData();
+			await loadOnboardingData();
+			await loadUserSettings();
 		};
 
 		window.addEventListener('userDataUpdated', handleUserDataUpdate);
 		return () => window.removeEventListener('userDataUpdated', handleUserDataUpdate);
 	}, []);
 
-	// Handle Gmail disconnection
+	// Handle OAuth callbacks (Gmail and Outlook) - update local state but don't auto-save
+	useEffect(() => {
+		const handleOAuthCallback = async () => {
+			const urlParams = new URLSearchParams(window.location.search);
+			const gmailConnected = urlParams.get("gmail_connected");
+			const gmailAccessToken = urlParams.get("access_token");
+			const gmailEmail = urlParams.get("email");
+			const msConnected = urlParams.get("ms_connected");
+			const msEmail = urlParams.get("email");
+			const calendarConnected = urlParams.get("calendar");
+			const calendarStatus = urlParams.get("status");
+			const returnTo = urlParams.get("return_to");
+
+			// Handle Google Calendar callback FIRST (check this before Microsoft to avoid conflicts)
+			if (calendarConnected === "google" && calendarStatus === "connected") {
+				// Update local state immediately
+				setConnectedCalendars(prev => {
+					if (!prev.includes("Google Calendar")) {
+						return [...prev, "Google Calendar"];
+					}
+					return prev;
+				});
+
+				// Reload settings from backend to get accurate connection status
+				await loadUserSettings();
+
+				// Clear URL parameters before redirect
+				window.history.replaceState({}, document.title, window.location.pathname);
+				
+				// If coming from onboarding, redirect back
+				if (returnTo) {
+					window.location.href = decodeURIComponent(returnTo);
+					return;
+				}
+				
+				alert(`Google Calendar connected successfully! Don't forget to click Save to persist this connection.`);
+				return;
+			}
+			
+			// Handle Gmail callback
+			if (gmailConnected === "true" && gmailAccessToken && gmailEmail) {
+				localStorage.setItem("gmail_access_token", gmailAccessToken);
+				localStorage.setItem("gmail_email", gmailEmail);
+				
+				// Update local state immediately
+				setConnectedEmails(prev => {
+					if (!prev.includes("Gmail")) {
+						return [...prev, "Gmail"];
+					}
+					return prev;
+				});
+
+				// Reload settings from backend to sync other connection statuses (Outlook, calendars)
+				await loadUserSettings();
+
+				// Clear URL parameters before redirect
+				window.history.replaceState({}, document.title, window.location.pathname);
+				
+				// If coming from onboarding, redirect back
+				if (returnTo) {
+					window.location.href = decodeURIComponent(returnTo);
+					return;
+				}
+				
+				alert(`Gmail connected successfully! Email: ${gmailEmail}. Don't forget to click Save to persist this connection.`);
+				return;
+			}
+			
+			// Handle Microsoft/Outlook callback (only if not already handled above)
+			if (msConnected === "true" && msEmail) {
+				const purpose = urlParams.get("purpose");
+				
+				if (purpose === "calendar") {
+					// Update calendar connections
+					setConnectedCalendars(prev => {
+						if (!prev.includes("Outlook Calendar")) {
+							return [...prev, "Outlook Calendar"];
+						}
+						return prev;
+					});
+				} else {
+					// Update email connections
+					setConnectedEmails(prev => {
+						if (!prev.includes("Outlook")) {
+							return [...prev, "Outlook"];
+						}
+						return prev;
+					});
+				}
+
+				// Reload settings from backend to get accurate connection status
+				await loadUserSettings();
+
+				// Clear URL parameters before redirect
+				window.history.replaceState({}, document.title, window.location.pathname);
+				
+				// If coming from onboarding, redirect back
+				if (returnTo) {
+					window.location.href = decodeURIComponent(returnTo);
+					return;
+				}
+				
+				if (purpose === "calendar") {
+					alert(`Outlook Calendar connected successfully! Email: ${msEmail}. Don't forget to click Save to persist this connection.`);
+				} else {
+					alert(`Outlook connected successfully! Email: ${msEmail}. Don't forget to click Save to persist this connection.`);
+				}
+				return;
+			}
+		};
+
+		handleOAuthCallback();
+	}, []); // Run once on mount to handle OAuth callbacks
+
+	// Handle Gmail disconnection - update local state only, user must click Save
 	const handleGmailDisconnect = async () => {
 		try {
 			// Remove Gmail access token from localStorage
 			localStorage.removeItem("gmail_access_token");
 			localStorage.removeItem("gmail_email");
 			
-			// Update connected emails state
+			// Update connected emails state only - user must click Save to persist
 			setConnectedEmails(prev => prev.filter(email => email !== "Gmail"));
 			
-			// Save the updated state
-			await handleSave();
-			
-			alert("Gmail disconnected successfully");
+			alert("Gmail disconnected. Don't forget to click Save to persist this change.");
 		} catch (error) {
 			console.error('Failed to disconnect Gmail:', error);
 			alert('Failed to disconnect Gmail');
+		}
+	};
+
+	// Handle Outlook disconnection - update local state only, user must click Save
+	const handleOutlookDisconnect = async () => {
+		try {
+			// Note: Microsoft token is in HttpOnly cookie, we can't remove it from frontend
+			// The backend would need an endpoint to revoke it
+			// For now, just update local state
+			setConnectedEmails(prev => prev.filter(email => email !== "Outlook"));
+			
+			alert("Outlook disconnected. Don't forget to click Save to persist this change.");
+		} catch (error) {
+			console.error('Failed to disconnect Outlook:', error);
+			alert('Failed to disconnect Outlook');
+		}
+	};
+
+	// Handle Google Calendar disconnection - update local state only, user must click Save
+	const handleGoogleCalendarDisconnect = async () => {
+		try {
+			// Note: Google Calendar credentials are stored in backend database
+			// We can't remove them from frontend directly
+			// For now, just update local state - user must click Save to persist
+			setConnectedCalendars(prev => prev.filter(cal => cal !== "Google Calendar"));
+			
+			alert("Google Calendar disconnected. Don't forget to click Save to persist this change.");
+		} catch (error) {
+			console.error('Failed to disconnect Google Calendar:', error);
+			alert('Failed to disconnect Google Calendar');
+		}
+	};
+
+	// Handle Outlook Calendar disconnection - update local state only, user must click Save
+	const handleOutlookCalendarDisconnect = async () => {
+		try {
+			// Note: Microsoft token is in HttpOnly cookie, we can't remove it from frontend
+			// The backend would need an endpoint to revoke it
+			// For now, just update local state
+			setConnectedCalendars(prev => prev.filter(cal => cal !== "Outlook Calendar"));
+			
+			alert("Outlook Calendar disconnected. Don't forget to click Save to persist this change.");
+		} catch (error) {
+			console.error('Failed to disconnect Outlook Calendar:', error);
+			alert('Failed to disconnect Outlook Calendar');
 		}
 	};
 
@@ -212,9 +453,9 @@ export default function SettingsPage() {
 
 	const handleSave = async () => {
 		try {
-			const token = getStoredToken();
+			const token = await getValidToken();
 			if (!token) {
-				alert('Please log in again.');
+				alert('Your session has expired. Please log in again.');
 				router.push('/login');
 				return;
 			}
@@ -228,10 +469,10 @@ export default function SettingsPage() {
 					middleName: formData.middleName?.trim() || undefined,
 					lastName: formData.lastName?.trim() || undefined,
 					fullName: [formData.firstName?.trim(), formData.lastName?.trim()].filter(Boolean).join(' ') || undefined,
-					// picture can be wired when Change Picture is implemented
 				};
 
-				const res = await fetch(`${apiBase}/profile_update`, {
+				// Update auth.users user_metadata (for auth tokens)
+				let res = await fetch(`${apiBase}/profile_update`, {
 					method: 'POST',
 					headers: {
 						'Authorization': `Bearer ${token}`,
@@ -240,65 +481,324 @@ export default function SettingsPage() {
 					body: JSON.stringify(payload)
 				});
 
-				const data = await res.json().catch(() => ({}));
-				if (!res.ok) {
-					const message = data?.detail?.message || data?.message || 'Failed to save profile';
-					alert(message);
-					return;
-				}
-
-				// Update localStorage for immediate UI reflect
-				try {
-					const fullName = payload.fullName || '';
-					if (fullName) localStorage.setItem('mira_full_name', fullName);
-					// If backend returns avatar/full name, prefer that
-					const returned = data?.user || {};
-					const meta = returned?.user_metadata || returned?.user?.user_metadata || {};
-					if (meta.full_name) localStorage.setItem('mira_full_name', meta.full_name);
-					if (meta.avatar_url) localStorage.setItem('mira_profile_picture', meta.avatar_url);
-					window.dispatchEvent(new CustomEvent('userDataUpdated'));
-				} catch {}
-
-				alert('Profile saved');
-			} else if (activeTab === 'privacy' || activeTab === 'notifications') {
-				// Save privacy/notification settings
-				const email = userData?.email || localStorage.getItem("mira_email") || "";
-				if (!email) {
-					alert('Email not found. Please log in again.');
-					return;
-				}
-
-				const payload = {
-					email,
-					step1: onboardingData?.step1 || {},
-					step2: onboardingData?.step2 || {},
-					step3: { connectedEmails },
-					step4: { connectedCalendars },
-					step5: { 
-						permissions: {
-							pushNotifications: formData.pushNotifications,
-							microphoneAccess: formData.microphoneAccess,
-							wakeWordDetection: formData.wakeWordDetection
+				// If we get a 401 or token expired error, try refreshing the token and retry once
+				if (res.status === 401) {
+					try {
+						const errorData = await res.json().catch(() => ({}));
+						if (errorData?.detail?.error_code === 'token_expired' || errorData?.detail?.message?.includes('expired')) {
+							console.log('Token expired, attempting to refresh...');
+							const newToken = await getValidToken();
+							if (newToken) {
+								// Retry the request with the new token
+								res = await fetch(`${apiBase}/profile_update`, {
+									method: 'POST',
+									headers: {
+										'Authorization': `Bearer ${newToken}`,
+										'Content-Type': 'application/json'
+									},
+									body: JSON.stringify(payload)
+								});
+							}
 						}
-					},
+					} catch (refreshError) {
+						console.error('Error refreshing token:', refreshError);
+					}
+				}
+
+				if (!res.ok) {
+					let errorMessage = 'Failed to save profile';
+					try {
+						const errorData = await res.json();
+						errorMessage = errorData?.detail?.message || errorData?.message || errorData?.detail || JSON.stringify(errorData) || errorMessage;
+					} catch (e) {
+						errorMessage = `Failed to save profile (${res.status}: ${res.statusText})`;
+					}
+					console.error('Profile update error:', errorMessage);
+					
+					// If it's still an auth error after refresh attempt, redirect to login
+					if (res.status === 401) {
+						alert('Your session has expired. Please log in again.');
+						router.push('/login');
+						return;
+					}
+					
+					alert(errorMessage);
+					return;
+				}
+
+				const data = await res.json().catch(() => ({}));
+				
+				// Also update user_profile table
+				const email = userData?.email || localStorage.getItem("mira_email") || "";
+				if (email) {
+					const userProfilePayload = {
+						email: email,
+						firstName: formData.firstName?.trim() || 'User',
+						middleName: formData.middleName?.trim() || '',
+						lastName: formData.lastName?.trim() || ''
+					};
+					
+					// Save to user_profile table (don't wait for this)
+					fetch(`${apiBase}/user_profile_save`, {
+						method: 'POST',
+						headers: {
+							'Authorization': `Bearer ${token}`,
+							'Content-Type': 'application/json'
+						},
+						body: JSON.stringify(userProfilePayload)
+					}).catch(err => console.error('Failed to update user_profile table:', err));
+				}
+				
+				try {
+					// Update localStorage with new profile data
+					const fullName = payload.fullName || '';
+					if (fullName) {
+						localStorage.setItem('mira_full_name', fullName);
+					}
+					
+					// Extract user metadata from response
+					const returned = data?.user || {};
+					const meta = returned?.user_metadata || {};
+					if (meta.full_name) {
+						localStorage.setItem('mira_full_name', meta.full_name);
+					}
+					if (meta.avatar_url) {
+						localStorage.setItem('mira_profile_picture', meta.avatar_url);
+					}
+					
+					// Also update the onboarding data if available
+					if (email && onboardingData) {
+						// Update onboarding step2 with new name data
+						const onboardingPayload = {
+							email,
+							step1: onboardingData?.step1 || {},
+							step2: {
+								firstName: formData.firstName?.trim() || onboardingData?.step2?.firstName || '',
+								middleName: formData.middleName?.trim() || onboardingData?.step2?.middleName || '',
+								lastName: formData.lastName?.trim() || onboardingData?.step2?.lastName || '',
+							},
+							step3: { connectedEmails },
+							step4: { connectedCalendars },
+							step5: onboardingData?.step5 || { permissions: {} },
+						};
+						
+						// Save onboarding data in background (don't wait for it)
+						fetch(`${apiBase}/onboarding_save`, {
+							method: 'POST',
+							headers: {
+								'Content-Type': 'application/json'
+							},
+							body: JSON.stringify(onboardingPayload)
+						}).catch(err => console.error('Failed to update onboarding data:', err));
+					}
+					
+					// Dispatch event to notify other components
+					window.dispatchEvent(new CustomEvent('userDataUpdated'));
+					
+					// Reload user data
+					loadUserData();
+				} catch (err) {
+					console.error('Error updating local storage:', err);
+				}
+
+				alert('Profile saved successfully!');
+			} else if (activeTab === 'preferences') {
+				// Save preferences (language, timeZone, voice) to user_profile table
+				const payload = {
+					language: formData.language,
+					timeZone: formData.timeZone,
+					voice: formData.voice
 				};
 
-				const res = await fetch(`${apiBase}/onboarding_save`, {
+				let res = await fetch(`${apiBase}/user_preferences_save`, {
 					method: 'POST',
 					headers: {
+						'Authorization': `Bearer ${token}`,
 						'Content-Type': 'application/json'
 					},
 					body: JSON.stringify(payload)
 				});
 
+				// Handle token expiration
+				if (res.status === 401) {
+					const newToken = await getValidToken();
+					if (newToken) {
+						res = await fetch(`${apiBase}/user_preferences_save`, {
+							method: 'POST',
+							headers: {
+								'Authorization': `Bearer ${newToken}`,
+								'Content-Type': 'application/json'
+							},
+							body: JSON.stringify(payload)
+						});
+					}
+				}
+
 				const data = await res.json().catch(() => ({}));
 				if (!res.ok) {
-					const message = data?.detail?.message || data?.message || 'Failed to save settings';
+					const message = data?.detail?.message || data?.message || 'Failed to save preferences';
+					console.error('Preferences save error:', message);
+					if (res.status === 401) {
+						alert('Your session has expired. Please log in again.');
+						router.push('/login');
+						return;
+					}
 					alert(message);
 					return;
 				}
 
-				alert('Settings saved');
+				// Update local state
+				loadUserSettings();
+				alert('Preferences saved successfully!');
+			} else if (activeTab === 'notifications') {
+				// Save notification settings to user_profile table
+				const payload = {
+					pushNotifications: formData.pushNotifications,
+					microphoneAccess: formData.microphoneAccess,
+					wakeWordDetection: formData.wakeWordDetection
+				};
+
+				let res = await fetch(`${apiBase}/user_notifications_save`, {
+					method: 'POST',
+					headers: {
+						'Authorization': `Bearer ${token}`,
+						'Content-Type': 'application/json'
+					},
+					body: JSON.stringify(payload)
+				});
+
+				// Handle token expiration
+				if (res.status === 401) {
+					const newToken = await getValidToken();
+					if (newToken) {
+						res = await fetch(`${apiBase}/user_notifications_save`, {
+							method: 'POST',
+							headers: {
+								'Authorization': `Bearer ${newToken}`,
+								'Content-Type': 'application/json'
+							},
+							body: JSON.stringify(payload)
+						});
+					}
+				}
+
+				const data = await res.json().catch(() => ({}));
+				if (!res.ok) {
+					const message = data?.detail?.message || data?.message || 'Failed to save notification settings';
+					console.error('Notifications save error:', message);
+					if (res.status === 401) {
+						alert('Your session has expired. Please log in again.');
+						router.push('/login');
+						return;
+					}
+					alert(message);
+					return;
+				}
+
+				// Update local state
+				loadUserSettings();
+				alert('Notification settings saved successfully!');
+			} else if (activeTab === 'privacy') {
+				// Save privacy settings to user_profile table
+				const payload = {
+					connectedEmails: connectedEmails,
+					connectedCalendars: connectedCalendars
+				};
+
+				let res = await fetch(`${apiBase}/user_privacy_save`, {
+					method: 'POST',
+					headers: {
+						'Authorization': `Bearer ${token}`,
+						'Content-Type': 'application/json'
+					},
+					body: JSON.stringify(payload)
+				});
+
+				// Handle token expiration
+				if (res.status === 401) {
+					const newToken = await getValidToken();
+					if (newToken) {
+						res = await fetch(`${apiBase}/user_privacy_save`, {
+							method: 'POST',
+							headers: {
+								'Authorization': `Bearer ${newToken}`,
+								'Content-Type': 'application/json'
+							},
+							body: JSON.stringify(payload)
+						});
+					}
+				}
+
+				const data = await res.json().catch(() => ({}));
+				if (!res.ok) {
+					const message = data?.detail?.message || data?.message || 'Failed to save privacy settings';
+					console.error('Privacy save error:', message);
+					if (res.status === 401) {
+						alert('Your session has expired. Please log in again.');
+						router.push('/login');
+						return;
+					}
+					alert(message);
+					return;
+				}
+
+				// Update local state
+				loadUserSettings();
+				alert('Privacy settings saved successfully!');
+			} else if (activeTab === 'subscription') {
+				// Save subscription settings to user_profile table
+				const payload = {
+					selectedPlan: formData.selectedPlan,
+					cardName: formData.cardName?.trim() || '',
+					cardNumber: formData.cardNumber?.trim() || '',
+					expDate: formData.expDate?.trim() || '',
+					cvv: formData.cvv?.trim() || '',
+					address: formData.address?.trim() || '',
+					city: formData.city?.trim() || '',
+					state: formData.state?.trim() || '',
+					postalCode: formData.postalCode?.trim() || ''
+				};
+
+				let res = await fetch(`${apiBase}/user_subscription_save`, {
+					method: 'POST',
+					headers: {
+						'Authorization': `Bearer ${token}`,
+						'Content-Type': 'application/json'
+					},
+					body: JSON.stringify(payload)
+				});
+
+				// Handle token expiration
+				if (res.status === 401) {
+					const newToken = await getValidToken();
+					if (newToken) {
+						res = await fetch(`${apiBase}/user_subscription_save`, {
+							method: 'POST',
+							headers: {
+								'Authorization': `Bearer ${newToken}`,
+								'Content-Type': 'application/json'
+							},
+							body: JSON.stringify(payload)
+						});
+					}
+				}
+
+				const data = await res.json().catch(() => ({}));
+				if (!res.ok) {
+					const message = data?.detail?.message || data?.message || 'Failed to save subscription';
+					console.error('Subscription save error:', message);
+					if (res.status === 401) {
+						alert('Your session has expired. Please log in again.');
+						router.push('/login');
+						return;
+					}
+					alert(message);
+					return;
+				}
+
+				// Update local state
+				loadUserSettings();
+				alert('Subscription details saved successfully!');
 			} else {
 				alert('Settings saved');
 			}
@@ -561,7 +1061,7 @@ export default function SettingsPage() {
 									if (connectedEmails.includes("Gmail")) {
 										handleGmailDisconnect();
 									} else {
-										// Handle connect
+										// Handle connect - no return_to for settings page
 										const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
 										window.location.href = `${apiBase}/gmail/auth`;
 									}
@@ -589,14 +1089,27 @@ export default function SettingsPage() {
 								)}
 							</div>
 							<button 
-								onClick={() => alert("Outlook integration coming soon!")}
-								className="px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+								onClick={() => {
+									if (connectedEmails.includes("Outlook")) {
+										handleOutlookDisconnect();
+									} else {
+										const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+										// No return_to for settings page - user stays on settings
+										window.location.href = `${apiBase}/microsoft/auth`;
+									}
+								}}
+								className={`px-4 py-2 rounded-lg text-sm transition-colors ${
+									connectedEmails.includes("Outlook")
+										? "bg-red-100 text-red-700 hover:bg-red-200"
+										: "bg-gray-50 border border-gray-300 text-gray-700 hover:bg-gray-100"
+								}`}
 							>
-								Connect
+								{connectedEmails.includes("Outlook") ? "Disconnect" : "Connect"}
 							</button>
 						</div>
 
-						<div className="flex items-center justify-between px-6 py-4 bg-white rounded-lg border border-gray-400">
+						{/* Microsoft 365 - commented out as it's the same as Outlook */}
+						{/* <div className="flex items-center justify-between px-6 py-4 bg-white rounded-lg border border-gray-400">
 							<div className="flex items-center gap-5">
 								<div className="w-6 h-6 rounded flex items-center justify-center">
 									<Image src="/Icons/image 6.png" alt="Microsoft 365" width={24} height={24} />
@@ -609,12 +1122,15 @@ export default function SettingsPage() {
 								)}
 							</div>
 							<button 
-								onClick={() => alert("Microsoft 365 integration coming soon!")}
+								onClick={() => {
+									const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+									window.location.href = `${apiBase}/microsoft/auth`;
+								}}
 								className="px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-100 transition-colors"
 							>
 								Connect
 							</button>
-						</div>
+						</div> */}
 					</div>
 				</div>
 
@@ -635,10 +1151,32 @@ export default function SettingsPage() {
 								)}
 							</div>
 							<button 
-								onClick={() => alert("Google Calendar integration coming soon!")}
-								className="px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+								onClick={async () => {
+									if (connectedCalendars.includes("Google Calendar")) {
+										handleGoogleCalendarDisconnect();
+									} else {
+										try {
+											const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+											const token = localStorage.getItem("access_token") || localStorage.getItem("token");
+											if (!token) {
+												alert("Please log in first to connect Google Calendar.");
+												return;
+											}
+											// Pass token as query parameter so backend can extract user ID
+											window.location.href = `${apiBase}/google/calendar/oauth/start?token=${encodeURIComponent(token)}`;
+										} catch (error) {
+											console.error("Error connecting Google Calendar:", error);
+											alert("Failed to connect Google Calendar. Please try again.");
+										}
+									}
+								}}
+								className={`px-4 py-2 rounded-lg text-sm transition-colors ${
+									connectedCalendars.includes("Google Calendar")
+										? "bg-red-100 text-red-700 hover:bg-red-200"
+										: "bg-gray-50 border border-gray-300 text-gray-700 hover:bg-gray-100"
+								}`}
 							>
-								Connect
+								{connectedCalendars.includes("Google Calendar") ? "Disconnect" : "Connect"}
 							</button>
 						</div>
 
@@ -655,14 +1193,27 @@ export default function SettingsPage() {
 								)}
 							</div>
 							<button 
-								onClick={() => alert("Outlook Calendar integration coming soon!")}
-								className="px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+								onClick={() => {
+									if (connectedCalendars.includes("Outlook Calendar")) {
+										handleOutlookCalendarDisconnect();
+									} else {
+										const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+										// No return_to for settings page - user stays on settings
+										window.location.href = `${apiBase}/microsoft/auth?purpose=calendar`;
+									}
+								}}
+								className={`px-4 py-2 rounded-lg text-sm transition-colors ${
+									connectedCalendars.includes("Outlook Calendar")
+										? "bg-red-100 text-red-700 hover:bg-red-200"
+										: "bg-gray-50 border border-gray-300 text-gray-700 hover:bg-gray-100"
+								}`}
 							>
-								Connect
+								{connectedCalendars.includes("Outlook Calendar") ? "Disconnect" : "Connect"}
 							</button>
 						</div>
 
-						<div className="flex items-center justify-between px-6 py-4 bg-white rounded-lg border border-gray-400">
+						{/* Microsoft Calendar - commented out as it's the same as Outlook Calendar */}
+						{/* <div className="flex items-center justify-between px-6 py-4 bg-white rounded-lg border border-gray-400">
 							<div className="flex items-center gap-5">
 								<div className="w-6 h-6 rounded flex items-center justify-center">
 									<Image src="/Icons/image 6.png" alt="Microsoft Calendar" width={24} height={24} />
@@ -680,7 +1231,7 @@ export default function SettingsPage() {
 							>
 								Connect
 							</button>
-						</div>
+						</div> */}
 
 						<div className="flex items-center justify-between px-6 py-4 bg-white rounded-lg border border-gray-400">
 							<div className="flex items-center gap-5">

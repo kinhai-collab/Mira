@@ -153,20 +153,36 @@ export default function Dashboard() {
 
 	// 🟣 Load user name from localStorage and personalize greeting
 	useEffect(() => {
-		const storedName =
-			localStorage.getItem("mira_username") ||
-			localStorage.getItem("mira_full_name") ||
-			localStorage.getItem("user_name") ||
-			"there";
+		const updateGreeting = () => {
+			const storedName =
+				localStorage.getItem("mira_username") ||
+				localStorage.getItem("mira_full_name") ||
+				localStorage.getItem("user_name") ||
+				"there";
 
-		const hour = new Date().getHours();
-		let timeGreeting = "Good Evening";
-		if (hour < 12) timeGreeting = "Good Morning";
-		else if (hour < 18) timeGreeting = "Good Afternoon";
+			const hour = new Date().getHours();
+			let timeGreeting = "Good Evening";
+			if (hour < 12) timeGreeting = "Good Morning";
+			else if (hour < 18) timeGreeting = "Good Afternoon";
 
-		const first = storedName.split(" ")[0]; // only first name
-		setFirstName(first);
-		setGreeting(`${timeGreeting}, ${first}!`);
+			const first = storedName.split(" ")[0]; // only first name
+			setFirstName(first);
+			setGreeting(`${timeGreeting}, ${first}!`);
+		};
+
+		// Update greeting initially
+		updateGreeting();
+
+		// Listen for user data updates to refresh greeting
+		const handleUserDataUpdate = () => {
+			updateGreeting();
+		};
+
+		window.addEventListener('userDataUpdated', handleUserDataUpdate);
+		
+		return () => {
+			window.removeEventListener('userDataUpdated', handleUserDataUpdate);
+		};
 	}, []);
 	return (
 		<div className="flex flex-col md:flex-row h-screen bg-[#F8F8FB] text-gray-800">

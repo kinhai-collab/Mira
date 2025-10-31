@@ -10,7 +10,7 @@ import {
 	storeAuthToken,
 	isAuthenticated,
 } from "@/utils/auth";
-import { playVoice } from "@/utils/voice/voice";
+// import { playVoice } from "@/utils/voice/voice"; // Temporarily disabled
 
 export default function Home() {
 	const router = useRouter();
@@ -82,12 +82,12 @@ export default function Home() {
 			if (greetingCalledRef.current) return;
 			greetingCalledRef.current = true;
 
-			// 🟣 Get user name from localStorage or API
-			// 🟣 Wait a short moment to ensure localStorage is ready
+			// Get user name from localStorage (updated when profile is saved)
+			// The name is kept in sync via profile_update endpoint and localStorage
 			setTimeout(() => {
 				const userName =
-					localStorage.getItem("mira_username") ||
 					localStorage.getItem("mira_full_name") ||
+					localStorage.getItem("mira_username") ||
 					localStorage.getItem("user_name") ||
 					"there";
 
@@ -96,13 +96,43 @@ export default function Home() {
 				if (hour < 12) timeGreeting = "Good Morning";
 				else if (hour < 18) timeGreeting = "Good Afternoon";
 
-				// Optional: show only first name
-				const firstName = userName.split(" ")[0];
+				// Extract first name for personalized greeting
+				const firstName = userName !== "there" ? userName.split(" ")[0] : userName;
 				setGreeting(`${timeGreeting}, ${firstName}!`);
-				playVoice(`${timeGreeting}, ${firstName}!`);
+				// playVoice(`${timeGreeting}, ${firstName}!`); // Temporarily disabled
+				console.info(
+					"Greeting voice is temporarily disabled. Fallback greeting:",
+					`${timeGreeting}, ${firstName}!`
+				);
 			}, 300);
 		};
 		init();
+	}, []);
+
+	// Listen for user data updates to refresh greeting
+	useEffect(() => {
+		const handleUserDataUpdate = () => {
+			// Update greeting when user data changes (e.g., profile update)
+			const userName =
+				localStorage.getItem("mira_full_name") ||
+				localStorage.getItem("mira_username") ||
+				localStorage.getItem("user_name") ||
+				"there";
+
+			const hour = new Date().getHours();
+			let timeGreeting = "Good Evening";
+			if (hour < 12) timeGreeting = "Good Morning";
+			else if (hour < 18) timeGreeting = "Good Afternoon";
+
+			const firstName = userName !== "there" ? userName.split(" ")[0] : userName;
+			setGreeting(`${timeGreeting}, ${firstName}!`);
+		};
+
+		window.addEventListener('userDataUpdated', handleUserDataUpdate);
+		
+		return () => {
+			window.removeEventListener('userDataUpdated', handleUserDataUpdate);
+		};
 	}, []);
 
 	return (
