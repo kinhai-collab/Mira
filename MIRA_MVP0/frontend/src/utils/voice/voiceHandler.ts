@@ -1,14 +1,18 @@
 /** @format */
 import { stopVoice } from "./voice";
 
-let mediaRecorder: MediaRecorder | null = null;
-let audioChunks: BlobPart[] = [];
-let micStream: MediaStream | null = null;
+/* ---------------------- Global Mute Control ---------------------- */
+export let isMiraMuted = false;
 
-let isRecording = false;
-let isSpeaking = false;
-let userStopped = false;
-let silenceTimer: NodeJS.Timeout | null = null;
+export function setMiraMute(mute: boolean) {
+	isMiraMuted = mute;
+	console.log(`Mira mute state set to: ${mute}`);
+}
+
+/* ---------------------- Conversation Variables ---------------------- */
+let activeRecorder: MediaRecorder | null = null;
+let activeStream: MediaStream | null = null;
+let isConversationActive = false;
 
 let conversationHistory: { role: "user" | "assistant"; content: string }[] = [];
 
@@ -17,165 +21,139 @@ if (typeof window !== "undefined") {
 	if (stored) conversationHistory = JSON.parse(stored);
 }
 
-/**
- * Start Mira listening (mic capture → /api/voice → TTS playback)
- */
+/* ---------------------- Start Mira Voice ---------------------- */
 export async function startMiraVoice() {
 	try {
-		if (isRecording || isSpeaking || userStopped) return;
-		isRecording = true;
-		console.log("Mira listening...");
+		if (isConversationActive) {
+			console.log("Mira already active.");
+			return;
+		}
+		isConversationActive = true;
+		console.log("🎧 Conversation started.");
 
-		micStream = await navigator.mediaDevices.getUserMedia({
-			audio: {
-				echoCancellation: true,
-				noiseSuppression: true,
-				autoGainControl: true,
-				channelCount: 1,
-			},
-		});
-
-		mediaRecorder = new MediaRecorder(micStream);
-		audioChunks = [];
-
-		const SILENCE_TIMEOUT_MS = 3000;
-
-		mediaRecorder.ondataavailable = (event) => {
-			if (event.data.size > 0) audioChunks.push(event.data);
-			if (silenceTimer) clearTimeout(silenceTimer);
-
-			silenceTimer = setTimeout(() => {
-				if (isRecording && !isSpeaking) {
-					console.log("Silence timeout → stopping Mira.");
-					stopMiraVoice(false);
-				}
-			}, SILENCE_TIMEOUT_MS);
-		};
-
-		mediaRecorder.onstop = async () => {
-			if (!audioChunks.length || userStopped) return;
-
-			const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
-			const formData = new FormData();
-			formData.append("audio", audioBlob);
-			formData.append("history", JSON.stringify(conversationHistory));
-
-			console.log("Sending audio + history:", conversationHistory.length);
-			const res = await fetch("/api/voice", { method: "POST", body: formData });
-			if (!res.ok) {
-				console.error("Voice API failed", await res.text());
-				return;
+		while (isConversationActive) {
+			await recordOnce();
+			if (isConversationActive) {
+				await new Promise((res) => setTimeout(res, 600));
 			}
+		}
 
-			const data = await res.json();
-			const userInput = data.userText?.trim() || "";
-
-			if (!userInput || userInput.length < 3) {
-				console.log("Ignored short input.");
-				if (!userStopped) setTimeout(() => startMiraVoice(), 1500);
-				return;
-			}
-
-			if (
-				conversationHistory.length === 0 &&
-				!/(\bhey mira\b|\bhi mira\b|\bhello mira\b)/i.test(userInput)
-			) {
-				console.log("Ignored input without wake phrase.");
-				if (!userStopped) setTimeout(() => startMiraVoice(), 1500);
-				return;
-			}
-
-			if (/(\bstop\b|\bcancel\b|\bnever mind\b)/i.test(userInput)) {
-				console.log("Stop phrase detected.");
-				stopMiraVoice(true);
-				return;
-			}
-
-			const lastAssistant = conversationHistory
-				.filter((m) => m.role === "assistant")
-				.pop();
-			if (
-				lastAssistant &&
-				lastAssistant.content
-					.toLowerCase()
-					.replace(/[^\w\s]/g, "")
-					.includes(userInput.toLowerCase().replace(/[^\w\s]/g, ""))
-			) {
-				console.log("Echo detected — skipping.");
-				if (!userStopped) setTimeout(() => startMiraVoice(), 2000);
-				return;
-			}
-
-			conversationHistory.push({ role: "user", content: userInput });
-			if (data.text)
-				conversationHistory.push({ role: "assistant", content: data.text });
-			localStorage.setItem(
-				"mira_conversation",
-				JSON.stringify(conversationHistory)
-			);
-			console.log("Updated history:", conversationHistory);
-
-			// ---- Playback ----
-			if (data.audio) {
-				isSpeaking = true;
-				stopMiraVoice(false);
-
-				const audioData = atob(data.audio);
-				const arrayBuffer = new ArrayBuffer(audioData.length);
-				const view = new Uint8Array(arrayBuffer);
-				for (let i = 0; i < audioData.length; i++) {
-					view[i] = audioData.charCodeAt(i);
-				}
-
-				const blob = new Blob([view], { type: "audio/mpeg" });
-				const url = URL.createObjectURL(blob);
-				const audio = new Audio(url);
-
-				audio.play().catch((err) => console.error("Playback error:", err));
-				audio.onended = () => {
-					URL.revokeObjectURL(url);
-					isSpeaking = false;
-					console.log("Mira finished speaking.");
-					if (!userStopped) setTimeout(() => startMiraVoice(), 2000); // safe delayed re-listen
-				};
-			}
-		};
-
-		mediaRecorder.start();
-
-		// safety stop
-		setTimeout(() => {
-			if (isRecording && !isSpeaking) stopMiraVoice(false);
-		}, 8000);
+		console.log("🪞 Conversation loop ended.");
 	} catch (err) {
-		console.error("Voice start failed:", err);
-		isRecording = false;
+		console.error("Conversation error:", err);
+		isConversationActive = false;
 	}
 }
 
-/**
- * Stop Mira completely
- */
-export function stopMiraVoice(manual: boolean = true) {
-	try {
-		if (silenceTimer) clearTimeout(silenceTimer);
-		if (mediaRecorder && mediaRecorder.state !== "inactive") {
-			mediaRecorder.stop();
-		}
-		if (micStream) {
-			micStream.getTracks().forEach((t) => t.stop());
-			micStream = null;
-		}
+/* ---------------------- Stop Mira Voice ---------------------- */
+export function stopMiraVoice() {
+	isConversationActive = false;
 
-		isRecording = false;
-		if (manual) {
-			userStopped = true;
-			isSpeaking = false;
-		}
-
-		stopVoice();
-		console.log("Mira stopped listening/talking.");
-	} catch (err) {
-		console.error("Error stopping Mira voice:", err);
+	if (activeRecorder && activeRecorder.state === "recording") {
+		activeRecorder.stop();
 	}
+
+	if (activeStream) {
+		activeStream.getTracks().forEach((track) => track.stop());
+		activeStream = null;
+	}
+
+	stopVoice();
+	console.log("🛑 Conversation manually stopped.");
+}
+
+/* ---------------------- Record → Send → Play Cycle ---------------------- */
+async function recordOnce(): Promise<void> {
+	return new Promise<void>(async (resolve, reject) => {
+		try {
+			const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+			activeStream = stream;
+			activeRecorder = new MediaRecorder(stream, {
+				mimeType: "audio/webm;codecs=opus",
+			});
+
+			const chunks: BlobPart[] = [];
+
+			activeRecorder.ondataavailable = (event: BlobEvent) => {
+				if (event.data && event.data.size > 0) chunks.push(event.data);
+			};
+
+			activeRecorder.onstop = async () => {
+				const audioBlob = new Blob(chunks, { type: "audio/webm" });
+				console.log("🎙️ Segment recorded, size:", audioBlob.size);
+
+				// 💡 Skip short/silent audio (<10 KB)
+				if (audioBlob.size < 10000) {
+					console.warn(
+						"⚠️ Audio too short or silent — skipping Whisper request."
+					);
+					chunks.length = 0;
+					resolve();
+					return;
+				}
+
+				const formData = new FormData();
+				formData.append("audio", audioBlob, "user_input.webm");
+
+				try {
+					const res = await fetch("/api/voice", {
+						method: "POST",
+						body: formData,
+					});
+
+					if (!res.ok) {
+						console.error("❌ Voice API error:", res.status, res.statusText);
+						resolve();
+						return;
+					}
+
+					const data = await res.json();
+					console.log("🪞 Server response:", data);
+
+					if (data.text) {
+						conversationHistory.push({ role: "user", content: data.userText });
+						conversationHistory.push({ role: "assistant", content: data.text });
+						localStorage.setItem(
+							"mira_conversation",
+							JSON.stringify(conversationHistory)
+						);
+					}
+
+					// 🔊 Play TTS if available
+					if (data.audio) {
+						const audioBinary = atob(data.audio);
+						const arrayBuffer = new ArrayBuffer(audioBinary.length);
+						const view = new Uint8Array(arrayBuffer);
+						for (let i = 0; i < audioBinary.length; i++) {
+							view[i] = audioBinary.charCodeAt(i);
+						}
+						const blob = new Blob([view], { type: "audio/mpeg" });
+						const url = URL.createObjectURL(blob);
+						const audio = new Audio(url);
+						audio.play();
+					}
+				} catch (err) {
+					console.error("Voice pipeline error:", err);
+				}
+
+				chunks.length = 0; // clear memory
+				resolve();
+			};
+
+			// Start recording
+			activeRecorder.start();
+			console.log("🎧 Listening...");
+
+			// ⏱️ Auto-stop after 5 seconds
+			setTimeout(() => {
+				if (activeRecorder && activeRecorder.state === "recording") {
+					activeRecorder.stop();
+					stream.getTracks().forEach((track) => track.stop());
+				}
+			}, 5000);
+		} catch (err) {
+			console.error("Recording error:", err);
+			reject(err);
+		}
+	});
 }
