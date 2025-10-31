@@ -30,7 +30,8 @@ app.add_middleware(
 # Include routes
 app.include_router(auth_router)
 app.include_router(greetings_router)
-app.include_router(tts_router)app.include_router(gmail_events)
+app.include_router(tts_router)
+app.include_router(gmail_events)
 app.include_router(voice_router, prefix="/api")
 app.include_router(settings)
 register_google_calendar(app)
