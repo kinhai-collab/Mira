@@ -10,7 +10,7 @@ import {
 	storeAuthToken,
 	isAuthenticated,
 } from "@/utils/auth";
-import { playVoice } from "@/utils/voice/voice";
+import { startMiraVoice, stopMiraVoice } from "@/utils/voice/voiceHandler";
 
 export default function Home() {
 	const router = useRouter();
@@ -19,6 +19,12 @@ export default function Home() {
 	const [greeting, setGreeting] = useState<string>("");
 
 	const greetingCalledRef = useRef(false);
+
+	// ✅ Auto-start Mira when the page loads
+	useEffect(() => {
+		console.log("Initializing Mira...");
+		startMiraVoice(); // Mira begins listening automatically
+	}, []);
 
 	useEffect(() => {
 		const init = async () => {
@@ -39,7 +45,7 @@ export default function Home() {
 				return;
 			}
 
-			// Check onboarding status as a fallback (in case user landed here directly)
+			// Check onboarding status
 			try {
 				const token =
 					localStorage.getItem("access_token") ?? localStorage.getItem("token");
@@ -63,7 +69,6 @@ export default function Home() {
 						if (onboardingRes.ok) {
 							const onboardingData = await onboardingRes.json();
 							const onboarded = !!onboardingData?.onboarded;
-
 							if (!onboarded) {
 								console.log(
 									"User not onboarded, redirecting to onboarding from home page"
@@ -76,14 +81,12 @@ export default function Home() {
 				}
 			} catch (error) {
 				console.log("Error checking onboarding status on home page:", error);
-				// Continue to normal flow if check fails
 			}
 
+			// Greeting only once
 			if (greetingCalledRef.current) return;
 			greetingCalledRef.current = true;
 
-			// 🟣 Get user name from localStorage or API
-			// 🟣 Wait a short moment to ensure localStorage is ready
 			setTimeout(() => {
 				const userName =
 					localStorage.getItem("mira_username") ||
@@ -96,14 +99,12 @@ export default function Home() {
 				if (hour < 12) timeGreeting = "Good Morning";
 				else if (hour < 18) timeGreeting = "Good Afternoon";
 
-				// Optional: show only first name
 				const firstName = userName.split(" ")[0];
 				setGreeting(`${timeGreeting}, ${firstName}!`);
-				playVoice(`${timeGreeting}, ${firstName}!`);
 			}, 300);
 		};
 		init();
-	}, []);
+	}, [router]);
 
 	return (
 		<div className="flex flex-col min-h-screen bg-[#F8F8FB] text-gray-800 overflow-hidden">
@@ -128,12 +129,9 @@ export default function Home() {
 					{/* Greeting Bubble */}
 					<div className="absolute top-[35%] right-[-250px] group">
 						<div className="relative bg-white px-5 py-2.5 border border-[#E4D9FF] shadow-[0_4px_20px_rgba(180,150,255,0.25)]">
-							{/* Text */}
 							<p className="text-[#2F2F2F] text-sm sm:text-base tracking-tight">
 								{greeting}
 							</p>
-
-							{/* Tail */}
 							<div className="absolute left-[-7px] top-1/2 -translate-y-1/2 w-3 h-3 bg-white border-l border-[#E4D9FF] rotate-45"></div>
 						</div>
 					</div>
@@ -141,7 +139,6 @@ export default function Home() {
 
 				{/* Input Section */}
 				<div className="relative mt-10 sm:mt-14 w-full max-w-md sm:max-w-xl flex flex-col items-center">
-					{/* Gradient border */}
 					<div className="absolute inset-0 rounded-xl bg-gradient-to-r from-[#f4aaff] via-[#d9b8ff] to-[#bfa3ff] opacity-95 blur-[1.5px]"></div>
 
 					<div className="relative flex items-center rounded-xl bg-white px-4 sm:px-5 py-2 sm:py-2.5 w-full">
@@ -188,28 +185,36 @@ export default function Home() {
 
 				{/* Mic & Keyboard Toggle */}
 				<div className="mt-10 sm:mt-12 flex items-center justify-center">
-					<div className="relative w-[130px] sm:w-[150px] h-[32px] sm:h-[36px] border border-[#000] bg-white rounded-full p-[3px] shadow-[0_1px_4px_rgba(0,0,0,0.08)] flex items-center justify-between transition-all duration-300">
-						{/* Sliding Pill */}
-						<div
-							className={`absolute top-[2px] left-[4px] h-[27px] sm:h-[30px] w-[60px] sm:w-[68px] bg-[#2F2F2F] rounded-full transition-transform duration-300 ease-in-out ${
-								isListening
-									? "translate-x-0"
-									: "translate-x-[63px] sm:translate-x-[72px]"
-							}`}
-						></div>
-
+					<div className="relative w-[130px] sm:w-[150px] h-[36px] border border-[#000] bg-white rounded-full px-[6px] shadow-[0_1px_4px_rgba(0,0,0,0.08)] flex items-center justify-between">
 						{/* Mic Button */}
 						<button
-							onClick={() => setIsListening(true)}
-							className="relative z-10 flex items-center justify-center w-1/2 h-full"
+							onClick={() => {
+								const newState = !isListening;
+								setIsListening(newState);
+
+								if (newState) {
+									startMiraVoice();
+								} else {
+									stopMiraVoice();
+								}
+							}}
+							className={`flex items-center justify-center w-[60px] h-[28px] rounded-full border border-gray-200 transition-all duration-300 ${
+								isListening
+									? "bg-black hover:bg-gray-800"
+									: "bg-white hover:bg-gray-50"
+							}`}
 						>
 							<Image
-								src="/Icons/Property 1=Mic.svg"
-								alt="Mic Icon"
-								width={15}
-								height={15}
-								className={`transition-all duration-200 ${
-									isListening ? "invert brightness-0" : "brightness-0"
+								src={
+									isListening
+										? "/Icons/Property 1=Mic.svg"
+										: "/Icons/Property 1=MicOff.svg"
+								}
+								alt={isListening ? "Mic On" : "Mic Off"}
+								width={16}
+								height={16}
+								className={`transition-all duration-300 ${
+									isListening ? "invert" : "brightness-0"
 								}`}
 							/>
 						</button>
@@ -217,15 +222,19 @@ export default function Home() {
 						{/* Keyboard Button */}
 						<button
 							onClick={() => setIsListening(false)}
-							className="relative z-10 flex items-center justify-center w-1/2 h-full"
+							className={`flex items-center justify-center w-[60px] h-[28px] rounded-full border border-gray-200 transition-all duration-300 ${
+								!isListening
+									? "bg-black hover:bg-gray-800"
+									: "bg-white hover:bg-gray-50"
+							}`}
 						>
 							<Image
 								src="/Icons/Property 1=Keyboard.svg"
 								alt="Keyboard Icon"
-								width={15}
-								height={15}
-								className={`transition-all duration-200 ${
-									!isListening ? "invert brightness-0" : "brightness-0"
+								width={16}
+								height={16}
+								className={`transition-all duration-300 ${
+									!isListening ? "invert" : "brightness-0"
 								}`}
 							/>
 						</button>
