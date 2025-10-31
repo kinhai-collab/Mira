@@ -96,6 +96,10 @@ export default function SettingsPage() {
 	const [connectedEmails, setConnectedEmails] = useState<string[]>([]);
 	const [connectedCalendars, setConnectedCalendars] = useState<string[]>([]);
 
+	// Location state (defaults to New York)
+	const [location, setLocation] = useState<string>("New York");
+	const [isLocationLoading, setIsLocationLoading] = useState<boolean>(true);
+
 	// Check authentication on mount and load user data
 	useEffect(() => {
 		if (!isAuthenticated()) {
@@ -176,6 +180,66 @@ export default function SettingsPage() {
 
 		window.addEventListener('userDataUpdated', handleUserDataUpdate);
 		return () => window.removeEventListener('userDataUpdated', handleUserDataUpdate);
+	}, []);
+
+	// Added: get system/geolocation and reverse-geocode to a readable place name
+	useEffect(() => {
+		// Helper: IP-based fallback when geolocation is unavailable or denied
+		const ipFallback = async () => {
+			try {
+				const res = await fetch("https://ipapi.co/json/");
+				if (!res.ok) return;
+				const data = await res.json();
+				const city = data.city || data.region || data.region_code || data.country_name;
+				if (city) setLocation(city);
+			} catch (err) {
+				console.error("IP geolocation fallback error:", err);
+			} finally {
+				setIsLocationLoading(false);
+			}
+		};
+
+		if (!("geolocation" in navigator)) {
+			// Browser doesn't support navigator.geolocation — try IP fallback
+			ipFallback();
+			return;
+		}
+
+		const success = async (pos: GeolocationPosition) => {
+			try {
+				const { latitude, longitude } = pos.coords;
+				// Use OpenStreetMap Nominatim reverse geocoding (no key required)
+				const res = await fetch(
+					`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}`
+				);
+				if (!res.ok) {
+					// If reverse geocoding fails, fall back to IP-based lookup
+					await ipFallback();
+					return;
+				}
+				const data = await res.json();
+				const city =
+					data?.address?.city ||
+					data?.address?.town ||
+					data?.address?.village ||
+					data?.address?.state ||
+					data?.address?.county;
+				if (city) setLocation(city);
+			} catch (err) {
+				console.error("reverse geocode error:", err);
+				await ipFallback();
+			} finally {
+				setIsLocationLoading(false);
+			}
+		};
+
+		const error = async (err: GeolocationPositionError | any) => {
+			console.error("geolocation error:", err);
+			// On permission denied or other errors, try IP-based lookup
+			await ipFallback();
+		};
+
+		navigator.geolocation.getCurrentPosition(success, error, { timeout: 10000 });
 	}, []);
 
 	// Handle Gmail disconnection
@@ -953,7 +1017,7 @@ export default function SettingsPage() {
 					</div>
 					<div className="flex items-center gap-2 px-3 py-2 bg-white rounded-full border border-gray-200">
 						<MapPin className="w-4 h-4 text-gray-600" />
-						<span className="text-base text-gray-800">New York</span>
+						<span className="text-base text-gray-800">{isLocationLoading ? 'Detecting...' : location}</span>
 					</div>
 					<div className="flex items-center gap-2 px-3 py-2 bg-white rounded-full border border-gray-200">
 						<Sun className="w-6 h-6 text-yellow-500" />

@@ -119,3 +119,8 @@ async def user_subscription_save(
     data = {"subscriptionPlan": plan}
     result = save_user_data(uid, data)
     return {"message": "User subscription saved successfully!", "data": result}
+
+PRICE_ID_TO_PLAN = {
+    "price_1SNXMJBp8nbRsF692LLL8ISU": {"key": "premium", "name": "Premium Plan", "sku": "pro_monthly", "interval": "month"},
+    "price_1SNXLTBp8nbRsF69zdOqhYQG": {"key": "advanced", "name": "Advanced Plan", "interval": "month"},
+}

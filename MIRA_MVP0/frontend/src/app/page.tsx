@@ -22,7 +22,71 @@ export default function Home() {
 	const [isConversationActive, setIsConversationActive] = useState(false);
 	const [isMuted, setIsMuted] = useState(false);
 
+	// Added: dynamic location state (defaults to "New York")
+	const [location, setLocation] = useState<string>("New York");
+	const [isLocationLoading, setIsLocationLoading] = useState<boolean>(true);
+
 	const greetingCalledRef = useRef(false);
+
+	// Added: get system/geolocation and reverse-geocode to a readable place name
+	useEffect(() => {
+		// Helper: IP-based fallback when geolocation is unavailable or denied
+		const ipFallback = async () => {
+			try {
+				const res = await fetch("https://ipapi.co/json/");
+				if (!res.ok) return;
+				const data = await res.json();
+				const city = data.city || data.region || data.region_code || data.country_name;
+				if (city) setLocation(city);
+			} catch (err) {
+				console.error("IP geolocation fallback error:", err);
+			} finally {
+				setIsLocationLoading(false);
+			}
+		};
+
+		if (!("geolocation" in navigator)) {
+			// Browser doesn't support navigator.geolocation — try IP fallback
+			ipFallback();
+			return;
+		}
+
+		const success = async (pos: GeolocationPosition) => {
+			try {
+				const { latitude, longitude } = pos.coords;
+				// Use OpenStreetMap Nominatim reverse geocoding (no key required)
+				const res = await fetch(
+					`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}`
+				);
+				if (!res.ok) {
+					// If reverse geocoding fails, fall back to IP-based lookup
+					await ipFallback();
+					return;
+				}
+				const data = await res.json();
+				const city =
+					data?.address?.city ||
+					data?.address?.town ||
+					data?.address?.village ||
+					data?.address?.state ||
+					data?.address?.county;
+				if (city) setLocation(city);
+			} catch (err) {
+				console.error("reverse geocode error:", err);
+				await ipFallback();
+			} finally {
+				setIsLocationLoading(false);
+			}
+		};
+
+		const error = async (err: GeolocationPositionError | any) => {
+			console.error("geolocation error:", err);
+			// On permission denied or other errors, try IP-based lookup
+			await ipFallback();
+		};
+
+		navigator.geolocation.getCurrentPosition(success, error, { timeout: 10000 });
+	}, []);
 
 	const handleMicToggle = () => {
 		const newState = !isMicOn;
@@ -127,7 +191,9 @@ export default function Home() {
 					<span className="font-medium text-gray-800">Wed, Oct 15</span>
 					<div className="flex items-center gap-1 px-2 sm:px-3 py-1 border border-gray-200 rounded-full bg-white/40 backdrop-blur-sm">
 						<Icon name="Location" size={16} className="text-gray-600" />
-						<span className="text-gray-700 font-medium">New York</span>
+						<span className="text-gray-700 font-medium">
+							{isLocationLoading ? "Detecting..." : location}
+						</span>
 					</div>
 					<div className="flex items-center gap-1 px-2 sm:px-3 py-1 border border-gray-200 rounded-full bg-white/40 backdrop-blur-sm">
 						<Icon name="Sun" size={16} className="text-yellow-500" />
