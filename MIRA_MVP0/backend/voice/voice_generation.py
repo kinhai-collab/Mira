@@ -56,9 +56,9 @@ async def generate_voice(text: str = "Hello from Mira!"):
         if len(audio_bytes) >= 3:
             if (audio_bytes[0] == 0xFF and (audio_bytes[1] & 0xE0) == 0xE0) or \
                (audio_bytes[0] == 0x49 and audio_bytes[1] == 0x44 and audio_bytes[2] == 0x33):
-                print("✅ Audio data appears to be valid MP3")
+                print("Audio data appears to be valid MP3")
             else:
-                print("❌ Audio data does not appear to be valid MP3")
+                print("Audio data does not appear to be valid MP3")
                 print("This might be base64 encoded or in a different format")
                 
                 # Try to decode as base64 if it looks like base64
@@ -75,10 +75,10 @@ async def generate_voice(text: str = "Hello from Mira!"):
                         if len(decoded_bytes) >= 3:
                             if (decoded_bytes[0] == 0xFF and (decoded_bytes[1] & 0xE0) == 0xE0) or \
                                (decoded_bytes[0] == 0x49 and decoded_bytes[1] == 0x44 and decoded_bytes[2] == 0x33):
-                                print("✅ Decoded audio data appears to be valid MP3")
+                                print(" Decoded audio data appears to be valid MP3")
                                 audio_bytes = decoded_bytes
                             else:
-                                print("❌ Decoded data still doesn't look like MP3")
+                                print("Decoded data still doesn't look like MP3")
                 except Exception as e:
                     print(f"Base64 decode failed: {e}")
         
