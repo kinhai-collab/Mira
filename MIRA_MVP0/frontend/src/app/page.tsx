@@ -10,7 +10,11 @@ import {
 	storeAuthToken,
 	isAuthenticated,
 } from "@/utils/auth";
-import { startMiraVoice, stopMiraVoice, setMiraMute } from "@/utils/voice/voiceHandler";
+import {
+	startMiraVoice,
+	stopMiraVoice,
+	setMiraMute,
+} from "@/utils/voice/voiceHandler";
 
 export default function Home() {
 	const router = useRouter();
@@ -114,7 +118,8 @@ export default function Home() {
 				else if (hour < 18) timeGreeting = "Good Afternoon";
 
 				// Extract first name for personalized greeting
-				const firstName = userName !== "there" ? userName.split(" ")[0] : userName;
+				const firstName =
+					userName !== "there" ? userName.split(" ")[0] : userName;
 				setGreeting(`${timeGreeting}, ${firstName}!`);
 				// playVoice(`${timeGreeting}, ${firstName}!`); // Temporarily disabled
 				console.info(
@@ -141,14 +146,15 @@ export default function Home() {
 			if (hour < 12) timeGreeting = "Good Morning";
 			else if (hour < 18) timeGreeting = "Good Afternoon";
 
-			const firstName = userName !== "there" ? userName.split(" ")[0] : userName;
+			const firstName =
+				userName !== "there" ? userName.split(" ")[0] : userName;
 			setGreeting(`${timeGreeting}, ${firstName}!`);
 		};
 
-		window.addEventListener('userDataUpdated', handleUserDataUpdate);
-		
+		window.addEventListener("userDataUpdated", handleUserDataUpdate);
+
 		return () => {
-			window.removeEventListener('userDataUpdated', handleUserDataUpdate);
+			window.removeEventListener("userDataUpdated", handleUserDataUpdate);
 		};
 	}, []);
 
@@ -171,7 +177,10 @@ export default function Home() {
 				{/* Top-right: Morning Brief + Mute */}
 				<div className="absolute top-4 sm:top-6 right-4 sm:right-10 flex items-center gap-3 sm:gap-4">
 					{/* Morning Brief */}
-					<button className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 bg-[#FFF8E7] border border-[#FFE9B5] rounded-full text-sm font-medium text-[#B58B00] shadow-sm hover:shadow-md transition">
+					<button
+						onClick={() => router.push("/scenarios/morning-brief")}
+						className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 bg-[#FFF8E7] border border-[#FFE9B5] rounded-full text-sm font-medium text-[#B58B00] shadow-sm hover:shadow-md transition"
+					>
 						<Image
 							src="/Icons/Property 1=Sun.svg"
 							alt="Morning Brief"
