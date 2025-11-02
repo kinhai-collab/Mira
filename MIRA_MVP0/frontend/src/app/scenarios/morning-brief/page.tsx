@@ -29,6 +29,13 @@ export default function MorningBrief() {
 		}
 	}, [stage]);
 
+	// 🎙 Initialize voice when page mounts
+	useEffect(() => {
+		startMiraVoice();
+		setIsConversationActive(true);
+		return () => stopMiraVoice();
+	}, []);
+
 	return (
 		<div className="relative flex min-h-screen bg-[#F8F8FB] text-gray-800 overflow-hidden">
 			{/* Sidebar */}
@@ -121,19 +128,31 @@ export default function MorningBrief() {
 						<span>Morning Brief</span>
 					</button>
 
-					<button
-						className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 
-						bg-[#F5F5F5] border border-gray-200 rounded-full font-medium 
-						text-gray-700 shadow-sm hover:shadow-md transition"
-					>
-						<Image
-							src="/Icons/Property 1=VoiceOff.svg"
-							alt="Mute"
-							width={14}
-							height={14}
-						/>
-						<span>Mute</span>
-					</button>
+					{/* Mute toggle */}
+					{isConversationActive && (
+						<button
+							onClick={() => {
+								const muteState = !isMuted;
+								setIsMuted(muteState);
+								setMiraMute(muteState);
+							}}
+							className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 
+							bg-[#F5F5F5] border border-gray-200 rounded-full font-medium 
+							text-gray-700 shadow-sm hover:shadow-md transition"
+						>
+							<Image
+								src={
+									isMuted
+										? "/Icons/Property 1=VoiceOff.svg"
+										: "/Icons/Property 1=VoiceOn.svg"
+								}
+								alt={isMuted ? "Muted" : "Unmuted"}
+								width={14}
+								height={14}
+							/>
+							<span>{isMuted ? "Muted" : "Mute"}</span>
+						</button>
+					)}
 				</div>
 
 				{/* Orb */}
