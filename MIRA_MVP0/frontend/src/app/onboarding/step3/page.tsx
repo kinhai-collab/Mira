@@ -2,14 +2,111 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Icon } from "@/components/Icon";
 import { FcGoogle } from "react-icons/fc";
 import { FaMicrosoft } from "react-icons/fa";
 
 export default function OnboardingStep3() {
 	const router = useRouter();
-	const [connectedEmails] = useState([]);
+	const [connectedEmails, setConnectedEmails] = useState<string[]>([]);
+	const [connecting, setConnecting] = useState<string | null>(null);
+
+	// Check for Gmail and Outlook connection status on component mount
+	useEffect(() => {
+		// Check URL parameters for OAuth callbacks
+		const urlParams = new URLSearchParams(window.location.search);
+		const gmailConnected = urlParams.get("gmail_connected");
+		const gmailAccessToken = urlParams.get("access_token");
+		const gmailEmail = urlParams.get("email");
+		const msConnected = urlParams.get("ms_connected");
+		const msEmail = urlParams.get("email");
+
+		// Handle Gmail callback
+		if (gmailConnected === "true" && gmailAccessToken && gmailEmail) {
+			// Store Gmail access token
+			localStorage.setItem("gmail_access_token", gmailAccessToken);
+			localStorage.setItem("gmail_email", gmailEmail);
+			
+			// Add Gmail to connected emails (but don't auto-save - user must click Save)
+			setConnectedEmails(prev => {
+				if (!prev.includes("Gmail")) {
+					return [...prev, "Gmail"];
+				}
+				return prev;
+			});
+
+			// Clear URL parameters
+			window.history.replaceState({}, document.title, window.location.pathname);
+			
+			// Show success message
+			alert(`Gmail connected successfully! Email: ${gmailEmail}`);
+		} 
+		// Handle Microsoft/Outlook callback
+		else if (msConnected === "true" && msEmail) {
+			// Note: Microsoft access token is stored in HttpOnly cookie by backend
+			// We just mark Outlook as connected locally (but don't auto-save - user must click Save)
+			setConnectedEmails(prev => {
+				if (!prev.includes("Outlook")) {
+					return [...prev, "Outlook"];
+				}
+				return prev;
+			});
+
+			// Clear URL parameters
+			window.history.replaceState({}, document.title, window.location.pathname);
+			
+			// Show success message
+			alert(`Outlook connected successfully! Email: ${msEmail}`);
+		} else {
+			// Check if user has existing connections (indicating successful connection)
+			const gmailToken = localStorage.getItem("gmail_access_token");
+			if (gmailToken && !connectedEmails.includes("Gmail")) {
+				setConnectedEmails(prev => [...prev, "Gmail"]);
+			}
+			// For Outlook, we can't check localStorage (token in cookie), but we can check if user was redirected here
+			// The connection state will be maintained through the onboarding flow
+		}
+	}, [connectedEmails]);
+
+	const handleGmailConnect = async () => {
+		setConnecting("Gmail");
+		try {
+			const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+			// Pass return_to so settings page redirects back here after OAuth
+			window.location.href = `${apiBase}/gmail/auth?return_to=${encodeURIComponent(window.location.href)}`;
+		} catch (error) {
+			console.error("Error connecting Gmail:", error);
+			alert("Failed to connect Gmail. Please try again.");
+			setConnecting(null);
+		}
+	};
+
+	const handleOutlookConnect = async () => {
+		setConnecting("Outlook");
+		try {
+			const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+			// Pass return_to so settings page redirects back here after OAuth
+			window.location.href = `${apiBase}/microsoft/auth?return_to=${encodeURIComponent(window.location.href)}`;
+		} catch (error) {
+			console.error("Error connecting Outlook:", error);
+			alert("Failed to connect Outlook. Please try again.");
+			setConnecting(null);
+		}
+	};
+
+	const handleMicrosoft365Connect = async () => {
+		setConnecting("Microsoft 365");
+		try {
+			const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+			// Pass return_to so settings page redirects back here after OAuth
+			window.location.href = `${apiBase}/microsoft/auth?return_to=${encodeURIComponent(window.location.href)}`;
+		} catch (error) {
+			console.error("Error connecting Microsoft 365:", error);
+			alert("Failed to connect Microsoft 365. Please try again.");
+			setConnecting(null);
+		}
+	};
 
 	const handleContinue = () => {
 		try {
@@ -54,16 +151,26 @@ export default function OnboardingStep3() {
 					{/* Email Provider Options */}
 					<div className="space-y-4">
 						{[
-							{ icon: <FcGoogle size={22} />, name: "Gmail" },
+							{ 
+								icon: <FcGoogle size={22} />, 
+								name: "Gmail", 
+								onClick: handleGmailConnect,
+								connected: connectedEmails.includes("Gmail")
+							},
 							{
 								icon: <FaMicrosoft size={22} color="#0078D4" />,
 								name: "Outlook",
+								onClick: handleOutlookConnect,
+								connected: connectedEmails.includes("Outlook")
 							},
-							{
-								icon: <FaMicrosoft size={22} color="#F25022" />,
-								name: "Microsoft 365",
-							},
-						].map(({ icon, name }, i) => (
+							// Microsoft 365 - commented out as it's the same as Outlook
+							// {
+							// 	icon: <FaMicrosoft size={22} color="#F25022" />,
+							// 	name: "Microsoft 365",
+							// 	onClick: handleMicrosoft365Connect,
+							// 	connected: connectedEmails.includes("Microsoft 365")
+							// },
+						].map(({ icon, name, onClick, connected }, i) => (
 							<div
 								key={i}
 								className="flex flex-col sm:flex-row sm:items-center sm:justify-between border border-gray-300 rounded-lg px-4 py-3 hover:shadow-md transition cursor-pointer"
@@ -73,9 +180,18 @@ export default function OnboardingStep3() {
 									<p className="font-medium text-gray-800 text-[15px]">
 										{name}
 									</p>
+									{connected && (
+										<span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">
+											Connected
+										</span>
+									)}
 								</div>
-								<button className="text-sm text-purple-600 font-medium">
-									Connect
+								<button 
+									onClick={onClick}
+									disabled={connecting === name || connected}
+									className="text-sm text-purple-600 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+								>
+									{connecting === name ? "Connecting..." : connected ? "Connected" : "Connect"}
 								</button>
 							</div>
 						))}

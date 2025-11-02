@@ -103,15 +103,16 @@ export default function ProfileMenu() {
 					}`}
 					style={{ outline: "none" }}
 				>
-					{userData?.picture ? (
-						<Image
-							src={userData.picture}
-							alt="Profile"
-							width={32}
-							height={32}
-							className="w-8 h-8 rounded-full object-cover"
-						/>
-					) : (
+                {userData?.picture ? (
+                    <img
+                        src={userData.picture}
+                        alt="Profile"
+                        width={32}
+                        height={32}
+                        className="w-8 h-8 rounded-full object-cover"
+                        referrerPolicy="no-referrer"
+                    />
+                ) : (
 						<div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white font-medium text-sm">
 							{userData?.fullName?.charAt(0) ||
 								userData?.email?.charAt(0) ||
@@ -126,15 +127,16 @@ export default function ProfileMenu() {
 						<div className="px-4 pb-2 border-b border-gray-200">
 							<div className="flex flex-col gap-0.5 text-gray-700 text-sm">
 								<div className="flex items-center gap-2">
-									{userData?.picture ? (
-										<Image
-											src={userData.picture}
-											alt="User"
-											width={16}
-											height={16}
-											className="w-4 h-4 rounded-full object-cover"
-										/>
-									) : (
+                                    {userData?.picture ? (
+                                        <img
+                                            src={userData.picture}
+                                            alt="User"
+                                            width={16}
+                                            height={16}
+                                            className="w-4 h-4 rounded-full object-cover"
+                                            referrerPolicy="no-referrer"
+                                        />
+                                    ) : (
 										<div className="w-4 h-4 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white font-medium text-xs">
 											{userData?.fullName?.charAt(0) ||
 												userData?.email?.charAt(0) ||

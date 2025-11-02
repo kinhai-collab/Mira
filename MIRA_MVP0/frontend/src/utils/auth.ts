@@ -103,41 +103,103 @@ export function storeAuthToken(token: string): void {
 	console.log("Storing auth token:", token.substring(0, 20) + "...");
 	localStorage.setItem("access_token", token);
 
-	// Extract and store user data
-	const userData = extractUserDataFromToken(token);
-	console.log("Extracted user data:", userData);
-
-	if (userData) {
-		localStorage.setItem("mira_email", userData.email);
-
-		if (userData.fullName) {
-			localStorage.setItem("mira_full_name", userData.fullName);
-			localStorage.setItem("mira_username", userData.fullName); // 🟣 added
-		}
-
-		if (userData.picture) {
-			localStorage.setItem("mira_profile_picture", userData.picture);
-		}
-
-		if (userData.provider) {
-			localStorage.setItem("mira_provider", userData.provider);
-		}
-
-		console.log("Stored user data in localStorage:", {
-			email: userData.email,
-			fullName: userData.fullName,
-			picture: userData.picture,
-			provider: userData.provider,
-		});
-	} else {
-		console.warn("Could not extract user data from token");
-	}
+	// NOTE: Do NOT store user data extracted from token here
+	// Token contains stale user metadata that will be overwritten
+	// Let the caller fetch fresh data from Supabase /me endpoint
+	console.log("Token stored. Caller should fetch fresh user data from Supabase.");
 }
 
 export function getStoredToken(): string | null {
 	if (typeof window === "undefined") return null;
 
 	return localStorage.getItem("access_token") ?? localStorage.getItem("token");
+}
+
+export function getStoredRefreshToken(): string | null {
+	if (typeof window === "undefined") return null;
+
+	return localStorage.getItem("refresh_token");
+}
+
+export function storeRefreshToken(token: string): void {
+	if (typeof window === "undefined") return;
+	localStorage.setItem("refresh_token", token);
+}
+
+export function isTokenExpired(token: string | null): boolean {
+	if (!token) return true;
+	
+	try {
+		const parts = token.split(".");
+		if (parts.length !== 3) return true;
+		
+		const payload = JSON.parse(atob(parts[1]));
+		const exp = payload.exp;
+		
+		if (!exp) return false; // If no expiration, assume it's valid
+		
+		// Check if token expires in less than 60 seconds (buffer time)
+		return Date.now() >= (exp * 1000) - 60000;
+	} catch {
+		return true; // If we can't parse, assume expired
+	}
+}
+
+export async function refreshAccessToken(): Promise<string | null> {
+	const refreshToken = getStoredRefreshToken();
+	if (!refreshToken) {
+		console.error("No refresh token available");
+		return null;
+	}
+
+	try {
+		const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+		const response = await fetch(`${apiBase}/refresh_token`, {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({ refresh_token: refreshToken }),
+		});
+
+		if (!response.ok) {
+			console.error("Failed to refresh token");
+			return null;
+		}
+
+		const data = await response.json();
+		const newAccessToken = data.access_token;
+		const newRefreshToken = data.refresh_token;
+
+		if (newAccessToken) {
+			localStorage.setItem("access_token", newAccessToken);
+			if (newRefreshToken) {
+				localStorage.setItem("refresh_token", newRefreshToken);
+			}
+			return newAccessToken;
+		}
+
+		return null;
+	} catch (error) {
+		console.error("Error refreshing token:", error);
+		return null;
+	}
+}
+
+export async function getValidToken(): Promise<string | null> {
+	let token = getStoredToken();
+	
+	if (!token || isTokenExpired(token)) {
+		console.log("Token expired or missing, attempting to refresh...");
+		token = await refreshAccessToken();
+		
+		if (!token) {
+			console.error("Failed to refresh token, user needs to log in again");
+			return null;
+		}
+	}
+	
+	return token;
 }
 
 export function getStoredUserData(): UserData | null {
@@ -215,20 +277,55 @@ export async function refreshUserData(): Promise<UserData | null> {
 		if (!response.ok) return null;
 
 		const me = await response.json();
-		const userData: UserData = {
-			email: me.email || "",
-			fullName:
+		
+		// Try to get data from user_profile table first (most reliable)
+		let fullName = null;
+		let picture = null;
+		
+		try {
+			const profileRes = await fetch(`${apiBase}/user_settings`, {
+				headers: { Authorization: `Bearer ${token}` },
+				credentials: 'include' // Include cookies (needed for ms_access_token cookie)
+			});
+			if (profileRes.ok) {
+				const profileResult = await profileRes.json();
+				if (profileResult?.status === 'success' && profileResult?.data) {
+					const profileData = profileResult.data;
+					if (profileData.firstName || profileData.lastName) {
+						fullName = [profileData.firstName, profileData.lastName].filter(Boolean).join(' ');
+					}
+					if (profileData.profilePicture) {
+						picture = profileData.profilePicture;
+					}
+				}
+			}
+		} catch (err) {
+			console.log("Could not fetch user_profile in refreshUserData, using fallback:", err);
+		}
+		
+		// Fallback to user_metadata if user_profile doesn't have data
+		if (!fullName) {
+			fullName =
 				me.user_metadata?.full_name ||
 				me.user_metadata?.name ||
 				me.user_metadata?.display_name ||
 				(me.user_metadata?.given_name && me.user_metadata?.family_name
 					? `${me.user_metadata.given_name} ${me.user_metadata.family_name}`
-					: null),
-			picture:
+					: null);
+		}
+		
+		if (!picture) {
+			picture =
 				me.user_metadata?.avatar_url ||
 				me.user_metadata?.picture ||
 				me.user_metadata?.photo_url ||
-				me.avatar_url,
+				me.avatar_url;
+		}
+		
+		const userData: UserData = {
+			email: me.email || "",
+			fullName: fullName,
+			picture: picture,
 			provider: me.app_metadata?.provider || "google",
 		};
 

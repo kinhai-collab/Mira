@@ -6,7 +6,8 @@ import { FaApple } from "react-icons/fa";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/components/Icon";
 import { useState, useEffect } from "react";
-import { isAuthenticated } from "@/utils/auth";
+import { isAuthenticated, storeRefreshToken } from "@/utils/auth";
+import { supabase } from "@/utils/supabaseClient";
 
 export default function LoginPage() {
 	const router = useRouter();
@@ -47,6 +48,11 @@ export default function LoginPage() {
 			// Store the access token
 			localStorage.setItem("access_token", data.access_token);
 			
+			// Store refresh token if available
+			if (data.refresh_token) {
+				storeRefreshToken(data.refresh_token);
+			}
+			
 			// Store user profile data from signin response
 			const userEmail = data.user_email || email;
 			localStorage.setItem("mira_email", userEmail);
@@ -57,8 +63,9 @@ export default function LoginPage() {
 			// Dispatch custom event to notify ProfileMenu component
 			window.dispatchEvent(new CustomEvent('userDataUpdated'));
 			
-			// Try to fetch additional user profile information
+			// Try to fetch additional user profile information from Supabase (prioritize updated data)
 			try {
+				// First get /me response
 				const userRes = await fetch(`${apiBase}/me`, {
 					headers: {
 						"Authorization": `Bearer ${data.access_token}`,
@@ -66,19 +73,61 @@ export default function LoginPage() {
 					}
 				});
 				
+				let fullName = null;
+				let picture = null;
+				
 				if (userRes.ok) {
 					const userData = await userRes.json();
-					// Store additional profile data if available
-					if (userData.user_metadata?.full_name) {
-						localStorage.setItem("mira_full_name", userData.user_metadata.full_name);
-					}
-					if (userData.user_metadata?.avatar_url) {
-						localStorage.setItem("mira_profile_picture", userData.user_metadata.avatar_url);
+					
+					// Try to get name from user_profile table first (most reliable)
+					try {
+						const profileRes = await fetch(`${apiBase}/user_settings`, {
+							headers: {
+								"Authorization": `Bearer ${data.access_token}`,
+								"Content-Type": "application/json"
+							},
+							credentials: 'include' // Include cookies (needed for ms_access_token cookie)
+						});
+						
+						if (profileRes.ok) {
+							const profileResult = await profileRes.json();
+							if (profileResult?.status === 'success' && profileResult?.data) {
+								const profileData = profileResult.data;
+								if (profileData.firstName || profileData.lastName) {
+									fullName = [profileData.firstName, profileData.lastName].filter(Boolean).join(' ');
+								}
+								if (profileData.profilePicture) {
+									picture = profileData.profilePicture;
+								}
+							}
+						}
+					} catch (err) {
+						console.log("Could not fetch user_profile, using fallback:", err);
 					}
 					
-					console.log("Login: Fetched additional profile data:", {
-						fullName: userData.user_metadata?.full_name,
-						avatar: userData.user_metadata?.avatar_url
+					// Fallback to user_metadata if user_profile doesn't have name
+					if (!fullName && userData.user_metadata?.full_name) {
+						fullName = userData.user_metadata.full_name;
+					} else if (!fullName && userData.user_metadata?.given_name && userData.user_metadata?.family_name) {
+						fullName = `${userData.user_metadata.given_name} ${userData.user_metadata.family_name}`;
+					}
+					
+					// Fallback to user_metadata for picture
+					if (!picture && userData.user_metadata?.avatar_url) {
+						picture = userData.user_metadata.avatar_url;
+					}
+					
+					// Store what we found
+					if (fullName) {
+						localStorage.setItem("mira_full_name", fullName);
+					}
+					if (picture) {
+						localStorage.setItem("mira_profile_picture", picture);
+					}
+					
+					console.log("Login: Fetched and stored profile data:", {
+						fullName: fullName,
+						avatar: picture
 					});
 				}
 			} catch (error) {
@@ -131,12 +180,24 @@ export default function LoginPage() {
 		}
 	};
 
-	const handleGoogleLogin = () => {
+	const handleGoogleLogin = async () => {
 		console.log("Google login clicked");
-		const apiBase = (
-			process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
-		).replace(/\/+$/, "");
-		window.location.href = `${apiBase}/auth/google`;
+		try {
+			const { data, error } = await supabase.auth.signInWithOAuth({
+				provider: 'google',
+				options: {
+					redirectTo: `${window.location.origin}/auth/callback`
+				}
+			});
+			
+			if (error) {
+				console.error("Google OAuth error:", error);
+				alert("Google login failed. Please try again.");
+			}
+		} catch (err) {
+			console.error("Error during Google login:", err);
+			alert("Something went wrong with Google login. Please try again.");
+		}
 	};
 
 	return (
