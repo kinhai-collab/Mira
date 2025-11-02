@@ -10,8 +10,7 @@ import {
 	storeAuthToken,
 	isAuthenticated,
 } from "@/utils/auth";
-// import { startMiraVoice, stopMiraVoice } from "@/utils/voice/voiceHandler";
-import { setMiraMute } from "@/utils/voice/voiceHandler"; // Temporarily disabled
+import { startMiraVoice, stopMiraVoice, setMiraMute } from "@/utils/voice/voiceHandler";
 
 export default function Home() {
 	const router = useRouter();
