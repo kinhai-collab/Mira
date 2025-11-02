@@ -12,7 +12,8 @@ const openai = new OpenAI({
 	apiKey: process.env.OPENAI_API_KEY!,
 });
 
-const BACKEND_TTS_URL = "http://127.0.0.1:8000/tts/tts";
+const ELEVEN_API_KEY = process.env.ELEVENLABS_API_KEY!;
+const ELEVEN_VOICE_ID = process.env.ELEVENLABS_VOICE_ID!;
 
 export async function POST(req: Request) {
 	let tempFilePath: string | null = null;
@@ -161,22 +162,29 @@ export async function POST(req: Request) {
 				"Sorry, something went wrong while generating my response.";
 		}
 
-		// 6️⃣ Generate TTS audio
+		// 6️⃣ Generate ElevenLabs voice
 		let audioBase64: string | null = null;
 		try {
-			const ttsResponse = await axios.get(BACKEND_TTS_URL, {
-				params: { text: responseText, mood: "calm" },
-				responseType: "arraybuffer",
-			});
+			const eleven = await axios.post(
+				`https://api.elevenlabs.io/v1/text-to-speech/${ELEVEN_VOICE_ID}`,
+				{ text: responseText },
+				{
+					headers: {
+						"xi-api-key": ELEVEN_API_KEY,
+						"Content-Type": "application/json",
+					},
+					responseType: "arraybuffer",
+				}
+			);
 
-			if (ttsResponse.data && ttsResponse.data.length > 0) {
-				audioBase64 = Buffer.from(ttsResponse.data).toString("base64");
-				console.log("✅ TTS audio generated successfully");
+			if (eleven.data && eleven.data.length > 0) {
+				audioBase64 = Buffer.from(eleven.data).toString("base64");
+				console.log("✅ ElevenLabs audio generated successfully");
 			} else {
-				console.error("No TTS audio returned from backend");
+				console.error("No audio returned from ElevenLabs");
 			}
 		} catch (ttsErr: any) {
-			console.error("TTS generation failed:", ttsErr.message);
+			console.error("ElevenLabs TTS generation failed:", ttsErr.message);
 		}
 
 		// 7️⃣ Final response
