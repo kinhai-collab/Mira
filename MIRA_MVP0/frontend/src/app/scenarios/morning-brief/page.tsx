@@ -215,7 +215,9 @@ export default function MorningBrief() {
 	// Auto-advance from thinking stage after loading completes
 	useEffect(() => {
 		if (stage === "thinking" && !loading && briefData) {
-			const timer = setTimeout(() => setStage("recommendation"), 2000);
+			const timer = setTimeout(() => {
+				setStage("recommendation");
+			}, 2000);
 			return () => clearTimeout(timer);
 		}
 	}, [stage, loading, briefData]);

@@ -35,9 +35,10 @@ app.include_router(tts_router)
 app.include_router(gmail_events)
 app.include_router(voice_router, prefix="/api")
 app.include_router(settings)
-app.include_router(morning_brief_router)
 register_google_calendar(app)
 app.include_router(outlook_events)
+app.include_router(morning_brief_router)
+
 
 @app.get("/envcheck")
 async def env_check():

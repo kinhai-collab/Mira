@@ -1,9 +1,12 @@
 /** @format */
-"use client";
 
-import Image from "next/image";
+interface RecommendationPanelProps {
+	data?: any;
+	onAccept: () => void;
+}
 
 export default function RecommendationPanel({
+	data,
 	onAccept,
 	briefText,
 }: {
@@ -19,18 +22,8 @@ export default function RecommendationPanel({
 	const briefLines = briefText ? parseBriefText(briefText) : [];
 
 	return (
-		<div
-			className="
-				relative bg-white text-sm rounded-2xl border border-gray-100 
-				shadow-[0_4px_20px_rgba(0,0,0,0.05)] 
-				p-4 sm:p-6 md:p-8 
-				w-full max-w-[95%] sm:max-w-[720px] md:max-w-[840px] lg:max-w-[960px] 
-				mx-auto 
-				transition-all duration-700 ease-in-out
-			"
-		>
-			{/* Header Section */}
-			<p className="text-[#2F2F2F] font-normal text-sm sm:text-base mb-3 sm:mb-4">
+		<div className="bg-white shadow-lg rounded-2xl p-6">
+			<h2 className="font-semibold text-lg mb-3">
 				Prepared your morning brief
 			</p>
 
