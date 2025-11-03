@@ -1,4 +1,4 @@
-# backend/scenarios/morning_brief/emotional_closure.py
+
 import json
 import os
 import random

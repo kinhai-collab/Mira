@@ -4,7 +4,8 @@ from backend.scenarios.morning_brief.mood_check import get_user_mood, adjust_voi
 from backend.scenarios.morning_brief.event_reader import get_today_events, read_events
 from backend.scenarios.morning_brief.daily_summary import get_weather_and_commute
 from backend.scenarios.morning_brief.emotional_closure import get_closing_phrase
-from voice.voice_generation import generate_voice
+from backend.voice.voice_generation import generate_voice
+
 
 from openai import OpenAI
 import os

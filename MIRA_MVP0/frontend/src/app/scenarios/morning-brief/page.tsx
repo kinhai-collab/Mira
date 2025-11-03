@@ -21,10 +21,26 @@ export default function MorningBrief() {
 	const [isListening, setIsListening] = useState(true);
 	const [isMuted, setIsMuted] = useState(false);
 	const [isConversationActive, setIsConversationActive] = useState(false);
+	const [briefData, setBriefData] = useState<any>(null); // store backend response
 
+	// 🎯 Fetch morning brief after "thinking"
 	useEffect(() => {
 		if (stage === "thinking") {
-			const timer = setTimeout(() => setStage("recommendation"), 4000);
+			const timer = setTimeout(async () => {
+				try {
+					const res = await fetch(
+						`${process.env.NEXT_PUBLIC_API_URL}/api/scenarios/morning-brief`
+					);
+					const data = await res.json();
+					console.log("🌅 Morning Brief Data:", data);
+					setBriefData(data);
+					setStage("recommendation");
+				} catch (error) {
+					console.error("Error fetching morning brief:", error);
+					setStage("recommendation"); // fallback
+				}
+			}, 4000);
+
 			return () => clearTimeout(timer);
 		}
 	}, [stage]);
@@ -166,7 +182,10 @@ export default function MorningBrief() {
 					>
 						{stage === "thinking" && <ThinkingPanel />}
 						{stage === "recommendation" && (
-							<RecommendationPanel onAccept={() => setStage("confirmation")} />
+							<RecommendationPanel
+								data={briefData}
+								onAccept={() => setStage("confirmation")}
+							/>
 						)}
 						{stage === "confirmation" && <ConfirmationPanel />}
 					</div>
