@@ -62,6 +62,6 @@ def run_morning_brief(user_id: str, user_name: str, tz: str):
     brief = "\n\n".join(filter(None, brief_parts))
 
     # 10️⃣ Generate audio
-    audio_path = generate_voice(brief)
+    audio_base64, filename = generate_voice(brief)
 
-    return {"text": brief, "audio_path": audio_path}
+    return {"text": brief, "audio_base64": audio_base64, "audio_filename": filename}

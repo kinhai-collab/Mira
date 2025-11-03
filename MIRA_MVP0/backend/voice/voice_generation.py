@@ -206,11 +206,12 @@ async def voice_pipeline(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Voice pipeline failed: {e}")
 
-def generate_voice(text: str) -> str:
+def generate_voice(text: str) -> tuple[str, str]:
     """
-    Generates audio from text and saves it to a file.
-    Returns the file path to the generated audio.
+    Generates audio from text and returns both base64 data and a filename.
+    Returns (audio_base64, filename) tuple.
     This is a synchronous utility function for use in non-async contexts.
+    In Lambda, we return base64 instead of saving to disk (filesystem is read-only).
     """
     try:
         # Get the ElevenLabs client (with lazy import)
@@ -219,7 +220,7 @@ def generate_voice(text: str) -> str:
         voice_id = os.getenv("ELEVENLABS_VOICE_ID")
         if not voice_id:
             print("Warning: ELEVENLABS_VOICE_ID not set, skipping audio generation")
-            return ""
+            return "", ""
         
         # Request the audio stream
         audio_stream = elevenlabs_client.text_to_speech.convert(
@@ -234,25 +235,31 @@ def generate_voice(text: str) -> str:
         
         if not audio_bytes:
             print("Warning: No audio data received from ElevenLabs")
-            return ""
+            return "", ""
         
-        # Save to a file with timestamp
+        # Generate filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"morning_brief_{timestamp}.mp3"
-        filepath = os.path.join(os.getcwd(), "speech", filename)
         
-        # Create speech directory if it doesn't exist
-        os.makedirs(os.path.join(os.getcwd(), "speech"), exist_ok=True)
+        # Try to save to /tmp for local dev (Lambda can't write to /var/task)
+        try:
+            os.makedirs("/tmp/speech", exist_ok=True)
+            tmp_path = os.path.join("/tmp/speech", filename)
+            with open(tmp_path, "wb") as f:
+                f.write(audio_bytes)
+            print(f"Audio saved to: {tmp_path}")
+        except Exception as save_err:
+            print(f"Could not save audio file (Lambda read-only filesystem): {save_err}")
+            # Continue - we'll return base64 instead
         
-        # Write audio to file
-        with open(filepath, "wb") as f:
-            f.write(audio_bytes)
+        # Encode to base64 for direct use
+        import base64
+        audio_base64 = base64.b64encode(audio_bytes).decode("ascii")
         
-        print(f"Audio saved to: {filepath}")
-        return filepath
+        return audio_base64, filename
         
     except Exception as e:
         print(f"Error generating voice: {e}")
         import traceback
         traceback.print_exc()
-        return ""
+        return "", ""

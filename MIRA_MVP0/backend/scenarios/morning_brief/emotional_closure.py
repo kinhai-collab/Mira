@@ -7,7 +7,8 @@ from pathlib import Path
 
 # Use relative path based on current file location
 _current_dir = Path(__file__).parent
-CLOSING_FILE = str(_current_dir / "_last_closing.json")
+# In Lambda, /var/task is read-only. Use /tmp for ephemeral writes.
+CLOSING_FILE = os.environ.get("CLOSING_STATE_PATH", "/tmp/_last_closing.json")
 
 CLOSING_PHRASES = [
     "You’ve got this, {name}.",
@@ -42,13 +43,17 @@ def _get_recent_closings():
 
 def _save_closing(phrase):
     """Track the last 7 phrases to ensure variety."""
-    os.makedirs(os.path.dirname(CLOSING_FILE), exist_ok=True)
-    history = _get_recent_closings()
-    if phrase not in history:
-        history.append(phrase)
-    history = history[-7:]  # keep last 7 days
-    with open(CLOSING_FILE, "w") as f:
-        json.dump({"recent": history, "date": str(date.today())}, f)
+    try:
+        os.makedirs(os.path.dirname(CLOSING_FILE), exist_ok=True)
+        history = _get_recent_closings()
+        if phrase not in history:
+            history.append(phrase)
+        history = history[-7:]  # keep last 7 days
+        with open(CLOSING_FILE, "w") as f:
+            json.dump({"recent": history, "date": str(date.today())}, f)
+    except Exception:
+        # If writing fails (e.g., filesystem constraints), skip persistence
+        pass
 
 
 def get_closing_phrase(user_name: str, mood: str) -> str:
