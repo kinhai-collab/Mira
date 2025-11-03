@@ -57,11 +57,11 @@ function MessageCard({ user, mira }: Message) {
 				<div className="ml-4 border-l-[2px] border-[#E4D9FF] pl-4 text-[15px] text-gray-800 leading-relaxed">
 					<ReactMarkdown
 						remarkPlugins={[remarkGfm]}
-						components={{
-							p: ({ node, ...props }) => (
+                    components={{
+                            p: ({ ...props }) => (
 								<p className="text-gray-800 leading-relaxed mb-2" {...props} />
 							),
-							li: ({ node, ...props }) => (
+                            li: ({ ...props }) => (
 								<li className="ml-4 list-disc text-gray-800" {...props} />
 							),
 						}}

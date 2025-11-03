@@ -2,7 +2,6 @@
 
 let currentAudio: HTMLAudioElement | null = null;
 let currentUrl: string | null = null;
-let currentState: "idle" | "playing" | "paused" = "idle";
 
 export async function playVoice(text: string) {
 	try {
@@ -25,18 +24,17 @@ export async function playVoice(text: string) {
 		const audio = new Audio(url);
 		currentAudio = audio;
 		currentUrl = url;
-		currentState = "idle";
 
 		audio.addEventListener("canplaythrough", async () => {
 			await audio.play().catch(() => {
 				document.addEventListener("click", () => audio.play(), { once: true });
 			});
-			currentState = "playing";
+            
 			console.log("Voice playback started");
 		});
 
 		audio.addEventListener("ended", () => {
-			currentState = "idle";
+            
 			URL.revokeObjectURL(url);
 			console.log("Voice playback finished");
 		});
@@ -52,6 +50,6 @@ export function stopVoice() {
 		currentAudio = null;
 		if (currentUrl) URL.revokeObjectURL(currentUrl);
 		currentUrl = null;
-		currentState = "idle";
+        
 	}
 }

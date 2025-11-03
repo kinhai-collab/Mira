@@ -65,6 +65,14 @@ const CustomRadioButton = ({ checked, onChange, name, value, className = "" }: {
 
 type TabType = 'profile' | 'preferences' | 'notifications' | 'privacy' | 'subscription';
 
+interface OnboardingData {
+    step1?: Record<string, unknown>;
+    step2?: { firstName?: string; middleName?: string; lastName?: string };
+    step3?: { connectedEmails?: string[] };
+    step4?: { connectedCalendars?: string[] };
+    step5?: { permissions?: Record<string, unknown> };
+}
+
 export default function SettingsPage() {
 	const router = useRouter();
 	const [activeTab, setActiveTab] = useState<TabType>('profile');
@@ -92,12 +100,12 @@ export default function SettingsPage() {
 		state: '',
 		postalCode: ''
 	});
-	const [onboardingData, setOnboardingData] = useState<any>(null);
+    const [onboardingData, setOnboardingData] = useState<OnboardingData | null>(null);
 	const [connectedEmails, setConnectedEmails] = useState<string[]>([]);
 	const [connectedCalendars, setConnectedCalendars] = useState<string[]>([]);
 
 	// Check authentication on mount and load user data
-	useEffect(() => {
+    useEffect(() => {
 		const loadAllData = async () => {
 			if (!isAuthenticated()) {
 				router.push('/login');
@@ -107,8 +115,9 @@ export default function SettingsPage() {
 			await loadOnboardingData();
 			await loadUserSettings();
 		};
-		loadAllData();
-	}, [router]);
+        loadAllData();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [router]);
 
 	// Load user data from localStorage
 	const loadUserData = () => {
@@ -251,7 +260,7 @@ export default function SettingsPage() {
 	};
 
 	// Listen for user data updates (from Google OAuth or manual signup/login)
-	useEffect(() => {
+    useEffect(() => {
 		const handleUserDataUpdate = async () => {
 			console.log('User data updated, reloading...');
 			loadUserData();
@@ -259,9 +268,10 @@ export default function SettingsPage() {
 			await loadUserSettings();
 		};
 
-		window.addEventListener('userDataUpdated', handleUserDataUpdate);
-		return () => window.removeEventListener('userDataUpdated', handleUserDataUpdate);
-	}, []);
+        window.addEventListener('userDataUpdated', handleUserDataUpdate);
+        return () => window.removeEventListener('userDataUpdated', handleUserDataUpdate);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
 	// Handle OAuth callbacks (Gmail and Outlook) - update local state but don't auto-save
 	useEffect(() => {
@@ -510,7 +520,7 @@ export default function SettingsPage() {
 					try {
 						const errorData = await res.json();
 						errorMessage = errorData?.detail?.message || errorData?.message || errorData?.detail || JSON.stringify(errorData) || errorMessage;
-					} catch (e) {
+                    } catch {
 						errorMessage = `Failed to save profile (${res.status}: ${res.statusText})`;
 					}
 					console.error('Profile update error:', errorMessage);

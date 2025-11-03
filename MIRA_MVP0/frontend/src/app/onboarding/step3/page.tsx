@@ -95,18 +95,18 @@ export default function OnboardingStep3() {
 		}
 	};
 
-	const handleMicrosoft365Connect = async () => {
-		setConnecting("Microsoft 365");
-		try {
-			const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
-			// Pass return_to so settings page redirects back here after OAuth
-			window.location.href = `${apiBase}/microsoft/auth?return_to=${encodeURIComponent(window.location.href)}`;
-		} catch (error) {
-			console.error("Error connecting Microsoft 365:", error);
-			alert("Failed to connect Microsoft 365. Please try again.");
-			setConnecting(null);
-		}
-	};
+    // const handleMicrosoft365Connect = async () => {
+    //     setConnecting("Microsoft 365");
+    //     try {
+    //         const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+    //         // Pass return_to so settings page redirects back here after OAuth
+    //         window.location.href = `${apiBase}/microsoft/auth?return_to=${encodeURIComponent(window.location.href)}`;
+    //     } catch (error) {
+    //         console.error("Error connecting Microsoft 365:", error);
+    //         alert("Failed to connect Microsoft 365. Please try again.");
+    //         setConnecting(null);
+    //     }
+    // };
 
 	const handleContinue = () => {
 		try {

@@ -4,7 +4,7 @@
 import { FcGoogle } from "react-icons/fc";
 import { FaApple } from "react-icons/fa";
 import { useRouter } from "next/navigation";
-import { Icon } from "@/components/Icon";
+// import { Icon } from "@/components/Icon";
 import { useState, useEffect } from "react";
 import { isAuthenticated, storeRefreshToken } from "@/utils/auth";
 import { supabase } from "@/utils/supabaseClient";
@@ -183,7 +183,7 @@ export default function LoginPage() {
 	const handleGoogleLogin = async () => {
 		console.log("Google login clicked");
 		try {
-			const { data, error } = await supabase.auth.signInWithOAuth({
+            const { error } = await supabase.auth.signInWithOAuth({
 				provider: 'google',
 				options: {
 					redirectTo: `${window.location.origin}/auth/callback`

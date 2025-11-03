@@ -206,7 +206,6 @@ export default function MorningBrief() {
 		};
 
 		fetchMorningBrief();
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
 	// Auto-advance from thinking stage after loading completes

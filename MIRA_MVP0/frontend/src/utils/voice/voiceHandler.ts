@@ -148,13 +148,13 @@ function analyzeAudioEnergy(stream: MediaStream): { stop: () => number } {
 	return {
 		stop: () => {
 			if (analyzeInterval) clearInterval(analyzeInterval);
-			if (audioContext) {
-				try {
-					audioContext.close();
-				} catch (e) {
-					// Ignore close errors
-				}
-			}
+            if (audioContext) {
+                try {
+                    audioContext.close();
+                } catch {
+                    // Ignore close errors
+                }
+            }
 			return maxEnergy;
 		}
 	};

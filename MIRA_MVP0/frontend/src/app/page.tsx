@@ -27,19 +27,7 @@ export default function Home() {
 
 	const greetingCalledRef = useRef(false);
 
-	const handleMicToggle = () => {
-		const newState = !isMicOn;
-		setIsMicOn(newState);
-		if (newState) {
-			setIsConversationActive(true);
-			startMiraVoice();
-		} else {
-			setIsConversationActive(false);
-			stopMiraVoice();
-			setIsMuted(false);
-			setMiraMute(false);
-		}
-	};
+    // Removed unused handleMicToggle
 
 	useEffect(() => {
 		console.log("Initializing Mira...");
