@@ -143,6 +143,37 @@ async def voice_pipeline(
                 "userText": user_input,
             })
 
+        # 2.5) Intent: Morning brief navigate
+        import re, base64
+        morning_brief_keywords = re.compile(r"(morning|daily|today).*(brief|summary|update)", re.I)
+        show_brief_keywords = re.compile(r"(show|give|tell|read).*(brief|summary|morning|daily)", re.I)
+        if morning_brief_keywords.search(user_input) or show_brief_keywords.search(user_input):
+            # Generate short TTS prompt for navigation (best-effort)
+            audio_base64: Optional[str] = None
+            try:
+                el = get_elevenlabs_client()
+                voice_id = os.getenv("ELEVENLABS_VOICE_ID")
+                if voice_id:
+                    stream = el.text_to_speech.convert(
+                        voice_id=voice_id,
+                        model_id="eleven_turbo_v2",
+                        text="Opening your morning brief now.",
+                        output_format="mp3_44100_128",
+                    )
+                    mp3_bytes = b"".join(list(stream))
+                    if mp3_bytes:
+                        audio_base64 = base64.b64encode(mp3_bytes).decode("ascii")
+            except Exception:
+                audio_base64 = None
+
+            return JSONResponse({
+                "text": "Opening your morning brief now.",
+                "audio": audio_base64,
+                "userText": user_input,
+                "action": "navigate",
+                "actionTarget": "/scenarios/morning-brief",
+            })
+
         # 3) Build chat message array
         messages: List[Dict[str, Any]] = [
             {
@@ -180,7 +211,6 @@ async def voice_pipeline(
         # 5) TTS via ElevenLabs (best-effort)
         audio_base64: Optional[str] = None
         try:
-            import base64
             el = get_elevenlabs_client()
             voice_id = os.getenv("ELEVENLABS_VOICE_ID")
             if not voice_id:
