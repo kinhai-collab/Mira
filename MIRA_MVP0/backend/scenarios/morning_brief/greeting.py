@@ -4,7 +4,8 @@ from pathlib import Path
 
 # Use relative path based on current file location
 _current_dir = Path(__file__).parent
-GREETING_FILE = str(_current_dir / "_last_greeting.json")
+# In Lambda, /var/task is read-only. Use /tmp for ephemeral writes.
+GREETING_FILE = os.environ.get("GREETING_STATE_PATH", "/tmp/_last_greeting.json")
 
 GREETING_LIBRARY = [
     "Good morning, {name}.",
@@ -30,9 +31,13 @@ def _load_last():
     return None
 
 def _save_today(g):
-    os.makedirs(os.path.dirname(GREETING_FILE), exist_ok=True)
-    with open(GREETING_FILE, "w") as f:
-        json.dump({"date": str(date.today()), "greeting": g}, f)
+    try:
+        os.makedirs(os.path.dirname(GREETING_FILE), exist_ok=True)
+        with open(GREETING_FILE, "w") as f:
+            json.dump({"date": str(date.today()), "greeting": g}, f)
+    except Exception:
+        # If writing fails (e.g., filesystem constraints), skip persistence
+        pass
 
 def generate_greeting(name: str) -> str:
     last = _load_last()

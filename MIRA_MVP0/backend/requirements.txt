@@ -21,3 +21,4 @@ supabase>=2.5.1
 gotrue>=2.9.0
 httpx>=0.27,<0.29
 websockets>=13,<14
+openai>=1.30.0
