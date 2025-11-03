@@ -99,8 +99,9 @@ export async function POST(req: Request) {
 				});
 				userInput = transcription.text?.trim() || "";
 				if (userInput) break;
-			} catch (err: any) {
-				console.error(`Whisper attempt ${attempt} failed:`, err.message);
+            } catch (err) {
+                const message = err instanceof Error ? err.message : String(err);
+                console.error(`Whisper attempt ${attempt} failed:`, message);
 				if (attempt === 2) {
 					// Clean up temp file before early return
 					if (tempFilePath && fs.existsSync(tempFilePath)) {
@@ -188,8 +189,8 @@ export async function POST(req: Request) {
 					}
 				);
 				navAudioBase64 = Buffer.from(elevenNav.data).toString("base64");
-			} catch (e) {
-				console.warn("TTS for navigation failed, proceeding without audio");
+            } catch {
+                console.warn("TTS for navigation failed, proceeding without audio");
 			}
 			return NextResponse.json({
 				text: "Opening your morning brief now.",
@@ -232,8 +233,9 @@ export async function POST(req: Request) {
 			responseText =
 				completion.choices[0].message?.content?.trim() || "I'm here.";
 			console.log("Mira replies:", responseText);
-		} catch (gptErr: any) {
-			console.error("GPT response generation failed:", gptErr.message);
+        } catch (gptErr) {
+            const message = gptErr instanceof Error ? gptErr.message : String(gptErr);
+            console.error("GPT response generation failed:", message);
 			responseText =
 				"Sorry, something went wrong while generating my response.";
 		}
@@ -278,13 +280,15 @@ export async function POST(req: Request) {
 			} else {
 				console.error("No audio returned from ElevenLabs");
 			}
-		} catch (ttsErr: any) {
-			console.error("ElevenLabs TTS generation failed:", {
-				message: ttsErr.message,
-				status: ttsErr.response?.status,
-				statusText: ttsErr.response?.statusText,
-				data: ttsErr.response?.data?.toString?.()?.substring(0, 200),
-			});
+        } catch (ttsErr) {
+            // Best-effort logging without relying on 'any'
+            const maybeAxios = ttsErr as unknown as { message?: string; response?: { status?: number; statusText?: string; data?: unknown } };
+            console.error("ElevenLabs TTS generation failed:", {
+                message: (ttsErr instanceof Error ? ttsErr.message : maybeAxios?.message) || String(ttsErr),
+                status: maybeAxios?.response?.status,
+                statusText: maybeAxios?.response?.statusText,
+                data: typeof maybeAxios?.response?.data === 'string' ? (maybeAxios.response.data as string).slice(0, 200) : undefined,
+            });
 			// Don't throw - return text response even if TTS fails
 		}
 
@@ -340,8 +344,9 @@ export async function POST(req: Request) {
 				new_time: extractedTime,
 			}),
 		});
-	} catch (error: any) {
-		console.error("[VOICE ERROR]", error.message);
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error("[VOICE ERROR]", message);
 		
 		// Clean up temp file on error if it was created
 		if (tempFilePath) {
@@ -355,8 +360,8 @@ export async function POST(req: Request) {
 			}
 		}
 		
-		return NextResponse.json(
-			{ error: "Voice processing failed", details: error.message },
+        return NextResponse.json(
+            { error: "Voice processing failed", details: message },
 			{ status: 500 }
 		);
 	}

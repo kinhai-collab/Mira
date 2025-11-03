@@ -57,11 +57,17 @@ export default function AuthCallback() {
       }
       
       // 4) Extract user data from token as fallback (Google's original data)
-      let tokenUserData = extractUserDataFromToken(accessToken);
+      const tokenUserData = extractUserDataFromToken(accessToken);
       console.log("Auth callback: token user data:", tokenUserData);
       
       // 5) Build userData with priority: user_profile > user_metadata > token data
-      let userData: any = null;
+      interface CallbackUserData {
+        email: string;
+        fullName: string | null;
+        picture: string | null;
+        provider?: string;
+      }
+      let userData: CallbackUserData | null = null;
       
       // Construct full name from user_profile table (most reliable source)
       let fullName = null;
