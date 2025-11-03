@@ -22,6 +22,7 @@ RATE_LIMIT_WINDOW_SEC = float(os.getenv("GCALENDAR_RATE_LIMIT_WINDOW_SEC", "100.
 
 SCOPES = [
     "https://www.googleapis.com/auth/calendar.events",
+    "https://www.googleapis.com/auth/gmail.readonly",
     "openid",
     "email",
 ]

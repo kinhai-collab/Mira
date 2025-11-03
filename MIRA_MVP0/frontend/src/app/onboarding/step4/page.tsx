@@ -2,7 +2,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Icon } from "@/components/Icon";
 import { FcGoogle } from "react-icons/fc";
 import { FaMicrosoft } from "react-icons/fa";
@@ -10,7 +10,78 @@ import { RiExchangeBoxFill } from "react-icons/ri";
 
 export default function OnboardingStep4() {
 	const router = useRouter();
-	const [connectedCalendars] = useState([]);
+	const [connectedCalendars, setConnectedCalendars] = useState<string[]>([]);
+	const [connecting, setConnecting] = useState<string | null>(null);
+
+	// Check for Google Calendar and Outlook Calendar connection status on component mount
+	useEffect(() => {
+		const urlParams = new URLSearchParams(window.location.search);
+		const calendarConnected = urlParams.get("calendar");
+		const calendarStatus = urlParams.get("status");
+		const msConnected = urlParams.get("ms_connected");
+		const msEmail = urlParams.get("email");
+
+		// Handle Google Calendar callback
+		if (calendarConnected === "google" && calendarStatus === "connected") {
+			setConnectedCalendars(prev => {
+				if (!prev.includes("Google Calendar")) {
+					return [...prev, "Google Calendar"];
+				}
+				return prev;
+			});
+
+			// Clear URL parameters
+			window.history.replaceState({}, document.title, window.location.pathname);
+			
+			alert("Google Calendar connected successfully!");
+		}
+		// Handle Outlook Calendar callback (same Microsoft OAuth, but we'll check if we're on calendar step)
+		else if (msConnected === "true" && msEmail) {
+			setConnectedCalendars(prev => {
+				if (!prev.includes("Outlook Calendar")) {
+					return [...prev, "Outlook Calendar"];
+				}
+				return prev;
+			});
+
+			// Clear URL parameters
+			window.history.replaceState({}, document.title, window.location.pathname);
+			
+			alert(`Outlook Calendar connected successfully! Email: ${msEmail}`);
+		}
+	}, [connectedCalendars]);
+
+	const handleGoogleCalendarConnect = async () => {
+		setConnecting("Google Calendar");
+		try {
+			const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+			const token = localStorage.getItem("access_token") || localStorage.getItem("token");
+			if (!token) {
+				alert("Please log in first to connect Google Calendar.");
+				setConnecting(null);
+				return;
+			}
+			// Pass token and return_to so backend can extract user ID and redirect back
+			window.location.href = `${apiBase}/google/calendar/oauth/start?token=${encodeURIComponent(token)}&return_to=${encodeURIComponent(window.location.href)}`;
+		} catch (error) {
+			console.error("Error connecting Google Calendar:", error);
+			alert("Failed to connect Google Calendar. Please try again.");
+			setConnecting(null);
+		}
+	};
+
+	const handleOutlookCalendarConnect = async () => {
+		setConnecting("Outlook Calendar");
+		try {
+			const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+			// Pass purpose and return_to so settings page redirects back here after OAuth
+			window.location.href = `${apiBase}/microsoft/auth?purpose=calendar&return_to=${encodeURIComponent(window.location.href)}`;
+		} catch (error) {
+			console.error("Error connecting Outlook Calendar:", error);
+			alert("Failed to connect Outlook Calendar. Please try again.");
+			setConnecting(null);
+		}
+	};
 
 	const handleContinue = () => {
 		try {
@@ -56,20 +127,32 @@ export default function OnboardingStep4() {
 					{/* Calendar Options */}
 					<div className="space-y-4">
 						{[
-							{ icon: <FcGoogle size={22} />, name: "Google Calendar" },
+							{ 
+								icon: <FcGoogle size={22} />, 
+								name: "Google Calendar",
+								onClick: handleGoogleCalendarConnect,
+								connected: connectedCalendars.includes("Google Calendar")
+							},
 							{
 								icon: <FaMicrosoft size={22} color="#0078D4" />,
 								name: "Outlook Calendar",
+								onClick: handleOutlookCalendarConnect,
+								connected: connectedCalendars.includes("Outlook Calendar")
 							},
-							{
-								icon: <FaMicrosoft size={22} color="#F25022" />,
-								name: "Microsoft Calendar",
-							},
+							// Microsoft Calendar - commented out as it's the same as Outlook Calendar
+							// {
+							// 	icon: <FaMicrosoft size={22} color="#F25022" />,
+							// 	name: "Microsoft Calendar",
+							// 	onClick: handleOutlookCalendarConnect,
+							// 	connected: connectedCalendars.includes("Microsoft Calendar")
+							// },
 							{
 								icon: <RiExchangeBoxFill size={22} color="#000" />,
 								name: "Exchange Calendar",
+								onClick: () => alert("Exchange Calendar integration coming soon!"),
+								connected: connectedCalendars.includes("Exchange Calendar")
 							},
-						].map(({ icon, name }, i) => (
+						].map(({ icon, name, onClick, connected }, i) => (
 							<div
 								key={i}
 								className="flex flex-col sm:flex-row sm:items-center sm:justify-between border border-gray-300 rounded-lg px-4 py-3 hover:shadow-md transition cursor-pointer"
@@ -79,9 +162,18 @@ export default function OnboardingStep4() {
 									<p className="font-medium text-gray-800 text-[15px]">
 										{name}
 									</p>
+									{connected && (
+										<span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">
+											Connected
+										</span>
+									)}
 								</div>
-								<button className="text-sm text-purple-600 font-medium">
-									Connect
+								<button 
+									onClick={onClick}
+									disabled={connecting === name || connected}
+									className="text-sm text-purple-600 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+								>
+									{connecting === name ? "Connecting..." : connected ? "Connected" : "Connect"}
 								</button>
 							</div>
 						))}
