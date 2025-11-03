@@ -1,6 +1,6 @@
 /** @format */
 
-import { startRecording } from "./voice";
+import { startMiraVoice } from "./voiceHandler";
 
 export async function listenForWakeWord() {
 	try {
@@ -29,7 +29,7 @@ export async function listenForWakeWord() {
 				processor.disconnect();
 				source.disconnect();
 
-				await startRecording();
+                await startMiraVoice();
 
 				setTimeout(() => {
 					console.log("✅ Ready to listen again...");
