@@ -25,7 +25,7 @@ export default function RecommendationPanel({
 		<div className="bg-white shadow-lg rounded-2xl p-6">
 			<h2 className="font-semibold text-lg mb-3">
 				Prepared your morning brief
-			</p>
+			</h2>
 
 			{/* Brief Content */}
 			{briefText && (
