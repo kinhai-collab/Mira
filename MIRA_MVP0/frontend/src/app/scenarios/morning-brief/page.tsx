@@ -34,7 +34,6 @@ export default function MorningBrief() {
 	const [briefData, setBriefData] = useState<MorningBriefData | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
-	const [audioError, setAudioError] = useState(false);
 	const audioRef = useRef<HTMLAudioElement | null>(null);
 	
 	const playAudio = () => {
@@ -46,7 +45,6 @@ export default function MorningBrief() {
 			audioRef.current.src = fullAudioUrl;
 			audioRef.current.play().catch((err) => {
 				console.error("Error playing audio:", err);
-				setAudioError(true);
 			});
 		}
 	};
@@ -151,18 +149,16 @@ export default function MorningBrief() {
 				
 				// Play audio if available
 				if (data.audio_url) {
-					// Stop any active voice conversation to avoid conflicts
-					if (isConversationActive) {
-						stopMiraVoice();
-						setIsConversationActive(false);
-						setIsListening(false);
-					}
+					// Stop any active voice conversation to avoid conflicts (safe to call even if not active)
+					stopMiraVoice();
+					setIsConversationActive(false);
+					setIsListening(false);
 					
 					// Construct full URL using API base
-					const apiBase = (
+					const apiBaseUrl = (
 						process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
 					).replace(/\/+$/, "");
-					const fullAudioUrl = `${apiBase}${data.audio_url}`;
+					const fullAudioUrl = `${apiBaseUrl}${data.audio_url}`;
 					
 					// Small delay to ensure audio element is rendered
 					setTimeout(() => {
@@ -210,6 +206,7 @@ export default function MorningBrief() {
 		};
 
 		fetchMorningBrief();
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
 	// Auto-advance from thinking stage after loading completes
@@ -235,8 +232,16 @@ export default function MorningBrief() {
 
 	// Listen for calendar modify intents from voice handler
 	useEffect(() => {
-		const handler = (e: any) => {
-			const detail = e?.detail || {};
+		interface CalendarModifyEventDetail {
+			needsDetails?: boolean;
+			event_query?: string | null;
+			action?: string | null;
+			new_time?: string | null;
+		}
+
+		const handler = (e: Event) => {
+			const customEvent = e as CustomEvent<CalendarModifyEventDetail>;
+			const detail = customEvent?.detail || {};
 			const eventName = detail.event_query as string | null;
 			const action = detail.action as string | null;
 			const newTime = detail.new_time as string | undefined;

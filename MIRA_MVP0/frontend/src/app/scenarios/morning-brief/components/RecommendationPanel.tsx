@@ -1,12 +1,6 @@
 /** @format */
 
-interface RecommendationPanelProps {
-	data?: any;
-	onAccept: () => void;
-}
-
 export default function RecommendationPanel({
-	data,
 	onAccept,
 	briefText,
 }: {

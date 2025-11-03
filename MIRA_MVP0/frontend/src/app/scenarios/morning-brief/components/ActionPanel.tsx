@@ -1,5 +1,9 @@
 /** @format */
-export default function ActionPanel({ data }: { data: any }) {
+interface ActionPanelData {
+	resolved?: string;
+}
+
+export default function ActionPanel({ data }: { data?: ActionPanelData }) {
 	return (
 		<div
 			className="

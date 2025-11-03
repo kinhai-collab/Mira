@@ -360,13 +360,15 @@ async function recordOnce(): Promise<void> {
 										playAudio();
 									}
 								}, 100);
-							} catch (err: any) {
+							} catch (err) {
 								console.error("❌ Audio creation/decode failed:", err);
-								console.error("Error details:", {
-									name: err.name,
-									message: err.message,
-									stack: err.stack
-								});
+								if (err instanceof Error) {
+									console.error("Error details:", {
+										name: err.name,
+										message: err.message,
+										stack: err.stack
+									});
+								}
 							}
 						} else {
 							console.log("⚠️ No audio in response");
