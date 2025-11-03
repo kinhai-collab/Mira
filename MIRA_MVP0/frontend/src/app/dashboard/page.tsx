@@ -102,7 +102,7 @@ export default function Dashboard() {
 	const [serverGreeting] = useState<string | null>(null);
 
 	const [firstName, setFirstName] = useState<string | null>(null);
-	const [greeting, setGreeting] = useState<string>("");
+    const [, setGreeting] = useState<string>("");
 
 	// Check authentication on mount
 	useEffect(() => {

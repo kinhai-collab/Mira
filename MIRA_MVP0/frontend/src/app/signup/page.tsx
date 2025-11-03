@@ -74,7 +74,7 @@ export default function SignupPage() {
 	const handleGoogleSignup = async () => {
 		console.log("Google signup clicked");
 		try {
-			const { data, error } = await supabase.auth.signInWithOAuth({
+            const { error } = await supabase.auth.signInWithOAuth({
 				provider: 'google',
 				options: {
 					redirectTo: `${window.location.origin}/auth/callback`

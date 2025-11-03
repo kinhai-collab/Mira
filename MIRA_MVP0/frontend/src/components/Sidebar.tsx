@@ -3,7 +3,6 @@
 
 import { useRouter } from "next/navigation";
 import { Icon } from "@/components/Icon";
-import Image from "next/image";
 import ProfileMenu from "@/components/ProfileMenu";
 import { useState, useEffect } from "react";
 import { getStoredUserData, clearAuthTokens, UserData } from "@/utils/auth";

@@ -21,7 +21,7 @@ export default function Home() {
 	const [input, setInput] = useState("");
 	const [isListening, setIsListening] = useState(true);
 	const [greeting, setGreeting] = useState<string>("");
-	const [isMicOn, setIsMicOn] = useState(false);
+    // Removed unused isMicOn state
 	const [isConversationActive, setIsConversationActive] = useState(false);
 	const [isMuted, setIsMuted] = useState(false);
 

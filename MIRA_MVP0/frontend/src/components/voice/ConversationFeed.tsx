@@ -2,8 +2,6 @@
 "use client";
 
 import React, { useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { ChevronDown } from "lucide-react";
 
 interface Message {
@@ -54,20 +52,10 @@ function MessageCard({ user, mira }: Message) {
 					<span className="text-[#6B21A8] font-semibold">Mira:</span>
 				</p>
 
-				<div className="ml-4 border-l-[2px] border-[#E4D9FF] pl-4 text-[15px] text-gray-800 leading-relaxed">
-					<ReactMarkdown
-						remarkPlugins={[remarkGfm]}
-                    components={{
-                            p: ({ ...props }) => (
-								<p className="text-gray-800 leading-relaxed mb-2" {...props} />
-							),
-                            li: ({ ...props }) => (
-								<li className="ml-4 list-disc text-gray-800" {...props} />
-							),
-						}}
-					>
-						{displayText}
-					</ReactMarkdown>
+                <div className="ml-4 border-l-[2px] border-[#E4D9FF] pl-4 text-[15px] text-gray-800 leading-relaxed">
+                    {displayText.split("\n").map((line, idx) => (
+                        <p key={idx} className="text-gray-800 leading-relaxed mb-2">{line}</p>
+                    ))}
 
 					{isLong && (
 						<button
