@@ -1,6 +1,7 @@
 import os
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
+from datetime import datetime
 
 router = APIRouter()
 
@@ -101,3 +102,54 @@ async def generate_voice(text: str = "Hello from Mira!"):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Voice generation failed: {e}")
+
+def generate_voice(text: str) -> str:
+    """
+    Generates audio from text and saves it to a file.
+    Returns the file path to the generated audio.
+    This is a synchronous utility function for use in non-async contexts.
+    """
+    try:
+        # Get the ElevenLabs client (with lazy import)
+        elevenlabs_client = get_elevenlabs_client()
+        
+        voice_id = os.getenv("ELEVENLABS_VOICE_ID")
+        if not voice_id:
+            print("Warning: ELEVENLABS_VOICE_ID not set, skipping audio generation")
+            return ""
+        
+        # Request the audio stream
+        audio_stream = elevenlabs_client.text_to_speech.convert(
+            voice_id=voice_id,
+            model_id="eleven_turbo_v2",
+            text=text,
+            output_format="mp3_44100_128",
+        )
+        
+        # Combine all chunks into one binary MP3 blob
+        audio_bytes = b"".join(list(audio_stream))
+        
+        if not audio_bytes:
+            print("Warning: No audio data received from ElevenLabs")
+            return ""
+        
+        # Save to a file with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"morning_brief_{timestamp}.mp3"
+        filepath = os.path.join(os.getcwd(), "speech", filename)
+        
+        # Create speech directory if it doesn't exist
+        os.makedirs(os.path.join(os.getcwd(), "speech"), exist_ok=True)
+        
+        # Write audio to file
+        with open(filepath, "wb") as f:
+            f.write(audio_bytes)
+        
+        print(f"Audio saved to: {filepath}")
+        return filepath
+        
+    except Exception as e:
+        print(f"Error generating voice: {e}")
+        import traceback
+        traceback.print_exc()
+        return ""

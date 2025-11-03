@@ -3,7 +3,19 @@
 
 import Image from "next/image";
 
-export default function ConfirmationPanel() {
+export default function ConfirmationPanel({
+	briefText,
+}: {
+	briefText?: string;
+}) {
+	// Parse the brief text into sections
+	const parseBriefText = (text: string) => {
+		const lines = text.split("\n").filter((line) => line.trim());
+		return lines;
+	};
+
+	const briefLines = briefText ? parseBriefText(briefText) : [];
+
 	return (
 		<div
 			className="
@@ -19,6 +31,21 @@ export default function ConfirmationPanel() {
 			<p className="text-[#2F2F2F] font-normal text-sm sm:text-base mb-3 sm:mb-4">
 				Prepared your morning brief
 			</p>
+
+			{/* Brief Content */}
+			{briefText && (
+				<div className="mb-4 sm:mb-6">
+					<div className="bg-gray-50 rounded-xl p-4 sm:p-5 border border-gray-200">
+						<div className="space-y-3 text-gray-700 text-sm sm:text-base leading-relaxed">
+							{briefLines.map((line, index) => (
+								<p key={index} className="mb-2">
+									{line}
+								</p>
+							))}
+						</div>
+					</div>
+				</div>
+			)}
 
 			{/* Task List with Vertical Line */}
 			<div className="relative pl-4 sm:pl-5 mb-3 sm:mb-4">

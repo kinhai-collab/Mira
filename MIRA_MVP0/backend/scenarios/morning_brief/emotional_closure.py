@@ -3,8 +3,11 @@ import json
 import os
 import random
 from datetime import date
+from pathlib import Path
 
-CLOSING_FILE = "backend/scenarios/morning_brief/_last_closing.json"
+# Use relative path based on current file location
+_current_dir = Path(__file__).parent
+CLOSING_FILE = str(_current_dir / "_last_closing.json")
 
 CLOSING_PHRASES = [
     "You’ve got this, {name}.",

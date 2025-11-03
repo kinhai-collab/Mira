@@ -1,9 +1,10 @@
-from backend.scenarios.morning_brief.greeting import generate_greeting
-from backend.scenarios.morning_brief.busy_level import calculate_busy_level, describe_busy_level
-from backend.scenarios.morning_brief.mood_check import get_user_mood, adjust_voice_tone
-from backend.scenarios.morning_brief.event_reader import get_today_events, read_events
-from backend.scenarios.morning_brief.daily_summary import get_weather_and_commute
-from backend.scenarios.morning_brief.emotional_closure import get_closing_phrase
+from .greeting import generate_greeting
+from .busy_level import calculate_busy_level, describe_busy_level
+from .mood_check import get_user_mood, adjust_voice_tone
+from .event_reader import get_today_events, read_events
+from .daily_summary import get_weather_and_commute
+from .emotional_closure import get_closing_phrase
+from .email_summary import get_email_summary
 from voice.voice_generation import generate_voice
 
 from openai import OpenAI
@@ -28,8 +29,8 @@ def run_morning_brief(user_id: str, user_name: str, tz: str):
     busy_level_desc = describe_busy_level(busy_minutes, events)
     print("Busy Level:", busy_level_desc)
 
-    # 4️⃣ Mood check-in
-    mood = get_user_mood()
+    # 4️⃣ Mood check-in (skip interactive input for API calls)
+    mood = get_user_mood(skip_interactive=True)
     adjust_voice_tone(mood)
 
     # 5️⃣ Daily context (weather + commute)
@@ -38,20 +39,27 @@ def run_morning_brief(user_id: str, user_name: str, tz: str):
     # 6️⃣ Event read-out
     event_summary = read_events(events)
 
-    # 7️⃣ Check if user wants quick mode
-    # quick_mode = check_quick_mode()
+    # 7️⃣ Email summary
+    email_summary = get_email_summary(user_id)
 
     # 8️⃣ Emotional closure
     closing_phrase = get_closing_phrase(user_name, mood)
 
     # 9️⃣ Combine into single brief text
-    brief = (
-        f"{greeting_text}\n\n"
-        f"Your day looks {busy_level_desc}.\n\n"
-        f"{weather_summary}\n{commute_summary}\n\n"
-        f"{event_summary}\n\n"
-        f"{closing_phrase}"
-    )
+    brief_parts = [
+        greeting_text,
+        f"Your day looks {busy_level_desc}.",
+        weather_summary,
+        commute_summary,
+        event_summary,
+    ]
+    
+    if email_summary:
+        brief_parts.append(email_summary)
+    
+    brief_parts.append(closing_phrase)
+    
+    brief = "\n\n".join(filter(None, brief_parts))
 
     # 10️⃣ Generate audio
     audio_path = generate_voice(brief)

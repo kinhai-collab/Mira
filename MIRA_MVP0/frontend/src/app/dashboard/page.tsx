@@ -239,7 +239,10 @@ export default function Dashboard() {
 						</div>
 					</div>
 
-					<button className="px-4 sm:px-5 py-2 border border-gray-400 rounded-full hover:bg-gray-50 transition text-xs sm:text-sm font-medium self-center md:self-auto">
+					<button
+						onClick={() => router.push("/scenarios/morning-brief")}
+						className="px-4 sm:px-5 py-2 border border-gray-400 rounded-full hover:bg-gray-50 transition text-xs sm:text-sm font-medium self-center md:self-auto"
+					>
 						View Full Brief
 					</button>
 				</section>

@@ -1,7 +1,10 @@
 import random, json, os
 from datetime import date
+from pathlib import Path
 
-GREETING_FILE = "backend/scenarios/morning_brief/_last_greeting.json"
+# Use relative path based on current file location
+_current_dir = Path(__file__).parent
+GREETING_FILE = str(_current_dir / "_last_greeting.json")
 
 GREETING_LIBRARY = [
     "Good morning, {name}.",

@@ -1,5 +1,21 @@
 from datetime import datetime, timedelta
+from dateutil import parser
 import re
+import sys
+import os
+from zoneinfo import ZoneInfo
+from typing import List, Dict, Any, Optional
+
+# Add parent directory to path for imports
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+try:
+    from Google_Calendar_API.service import list_events
+    from fastapi import HTTPException
+    CALENDAR_AVAILABLE = True
+except ImportError:
+    CALENDAR_AVAILABLE = False
+    print("⚠️ Google Calendar API not available - using fallback")
 
 # --- Detect video platform links ---------------------------------------------
 PLATFORM_PATTERNS = {
@@ -42,43 +58,153 @@ def _format_time(dt: datetime):
     return dt.strftime("%I:%M %p").lstrip("0")
 
 
+def _parse_google_calendar_datetime(dt_str: str, tz: str) -> datetime:
+    """
+    Parse Google Calendar datetime string (ISO format) and convert to user timezone.
+    Handles both dateTime and date fields.
+    """
+    try:
+        if isinstance(dt_str, dict):
+            # Handle Google Calendar dateTime/date objects
+            if "dateTime" in dt_str:
+                dt = parser.isoparse(dt_str["dateTime"])
+            elif "date" in dt_str:
+                # All-day event - parse date only
+                dt = parser.parse(dt_str["date"])
+                dt = dt.replace(hour=0, minute=0, second=0)
+            else:
+                raise ValueError("Invalid datetime format")
+        else:
+            dt = parser.isoparse(dt_str)
+        
+        # Convert to user timezone if datetime is timezone-aware
+        if dt.tzinfo:
+            user_tz = ZoneInfo(tz)
+            dt = dt.astimezone(user_tz)
+        else:
+            # Assume UTC if no timezone info
+            dt = dt.replace(tzinfo=ZoneInfo("UTC")).astimezone(ZoneInfo(tz))
+        
+        return dt
+    except Exception as e:
+        print(f"Error parsing datetime {dt_str}: {e}")
+        return datetime.now(ZoneInfo(tz))
+
+
+def _transform_google_event(gcal_event: Dict[str, Any], tz: str) -> Optional[Dict[str, Any]]:
+    """
+    Transform Google Calendar event format to morning brief format.
+    """
+    try:
+        start_dt = _parse_google_calendar_datetime(gcal_event.get("start", {}), tz)
+        end_dt = _parse_google_calendar_datetime(gcal_event.get("end", {}), tz)
+        
+        # Check if this is an all-day event
+        is_all_day = "date" in gcal_event.get("start", {})
+        
+        return {
+            "summary": gcal_event.get("summary", "No title"),
+            "start_dt": start_dt.replace(tzinfo=None) if start_dt.tzinfo else start_dt,
+            "end_dt": end_dt.replace(tzinfo=None) if end_dt.tzinfo else end_dt,
+            "location": gcal_event.get("location", ""),
+            "description": gcal_event.get("description", ""),
+            "status": gcal_event.get("status", "confirmed"),
+            "all_day": is_all_day,
+        }
+    except Exception as e:
+        print(f"Error transforming event {gcal_event.get('id')}: {e}")
+        return None
+
+
+def _filter_today_events(events: List[Dict[str, Any]], tz: str) -> List[Dict[str, Any]]:
+    """
+    Filter events to only include those happening today in the user's timezone.
+    """
+    user_tz = ZoneInfo(tz)
+    now = datetime.now(user_tz)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_end = today_start + timedelta(days=1)
+    
+    today_events = []
+    for event in events:
+        start_dt = event.get("start_dt")
+        if not start_dt:
+            continue
+        
+        # Make datetime timezone-aware for comparison
+        if isinstance(start_dt, datetime):
+            if start_dt.tzinfo is None:
+                start_dt = start_dt.replace(tzinfo=user_tz)
+            else:
+                start_dt = start_dt.astimezone(user_tz)
+            
+            # Include events that start today or are ongoing
+            if today_start <= start_dt < today_end:
+                today_events.append(event)
+    
+    return today_events
+
+
 # --- Core functions ----------------------------------------------------------
 
-def get_today_events(user_id: str, tz: str):
+def get_today_events(user_id: str, tz: str) -> List[Dict[str, Any]]:
     """
-    Mock event data for Morning Brief testing.
-    Replace this later with Gmail/Outlook/Calendar integration.
+    Fetch today's events from Google Calendar for the user.
+    Falls back to empty list if calendar is not connected or on error.
     """
-    print("📅 [Mock] Fetching events for user:", user_id)
-
-    now = datetime.now()
-    events = [
-        {
-            "summary": "Team Standup",
-            "start_dt": now.replace(hour=9, minute=0),
-            "end_dt": now.replace(hour=9, minute=30),
-            "location": "Conference Room A",
-            "description": "Daily sync with team",
-            "status": "confirmed",
-        },
-        {
-            "summary": "Design Review",
-            "start_dt": now.replace(hour=11, minute=0),
-            "end_dt": now.replace(hour=12, minute=0),
-            "location": "Zoom",
-            "description": "meet.google.com/test-link",
-            "status": "confirmed",
-        },
-        {
-            "summary": "1:1 with Manager",
-            "start_dt": now.replace(hour=15, minute=0),
-            "end_dt": now.replace(hour=15, minute=30),
-            "location": "Room B",
-            "description": "Project updates",
-            "status": "confirmed",
-        },
-    ]
-    return events
+    print(f"📅 Fetching events for user: {user_id} in timezone: {tz}")
+    
+    # Try to fetch from Google Calendar
+    if CALENDAR_AVAILABLE:
+        try:
+            # Calculate time range for today in user's timezone
+            user_tz = ZoneInfo(tz)
+            now = datetime.now(user_tz)
+            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            today_end = today_start + timedelta(days=1)
+            
+            # Convert to ISO format for API
+            time_min = today_start.astimezone(ZoneInfo("UTC")).isoformat()
+            time_max = today_end.astimezone(ZoneInfo("UTC")).isoformat()
+            
+            # Fetch events from Google Calendar
+            response = list_events(user_id, time_min=time_min, time_max=time_max, page_token=None)
+            
+            # Extract events from response
+            gcal_events = response.get("items", [])
+            
+            if not gcal_events:
+                print(f"📅 No events found for user {user_id} today")
+                return []
+            
+            # Transform Google Calendar events to morning brief format
+            transformed_events = []
+            for gcal_event in gcal_events:
+                transformed = _transform_google_event(gcal_event, tz)
+                if transformed:
+                    transformed_events.append(transformed)
+            
+            # Filter to ensure only today's events (extra safety)
+            filtered_events = _filter_today_events(transformed_events, tz)
+            
+            print(f"📅 Found {len(filtered_events)} events for today")
+            return filtered_events
+            
+        except HTTPException as e:
+            if "not connected" in str(e).lower() or "400" in str(e):
+                print(f"⚠️ Google Calendar not connected for user {user_id}")
+            else:
+                print(f"⚠️ Error fetching calendar events: {e}")
+            return []
+        except Exception as e:
+            print(f"⚠️ Unexpected error fetching calendar events: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
+    
+    # Fallback: return empty list if calendar integration not available
+    print("⚠️ Calendar integration not available - returning empty events")
+    return []
 
 
 def read_events(events: list):

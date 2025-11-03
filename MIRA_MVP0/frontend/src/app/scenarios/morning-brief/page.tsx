@@ -1,7 +1,8 @@
 /** @format */
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Orb from "./components/Orb";
 import ThinkingPanel from "./components/ThinkingPanel";
@@ -12,28 +13,245 @@ import {
 	stopMiraVoice,
 	setMiraMute,
 } from "@/utils/voice/voiceHandler";
+import { getValidToken, requireAuth } from "@/utils/auth";
+
+interface MorningBriefData {
+	text: string;
+	audio_path: string;
+	audio_url?: string;
+	user_name: string;
+}
 
 export default function MorningBrief() {
+	const router = useRouter();
 	const [stage, setStage] = useState<
 		"thinking" | "recommendation" | "confirmation"
 	>("thinking");
 
-	const [isListening, setIsListening] = useState(true);
+	const [isListening, setIsListening] = useState(false); // Start with mic OFF
 	const [isMuted, setIsMuted] = useState(false);
 	const [isConversationActive, setIsConversationActive] = useState(false);
+	const [briefData, setBriefData] = useState<MorningBriefData | null>(null);
+	const [loading, setLoading] = useState(true);
+	const [error, setError] = useState<string | null>(null);
+	const [audioError, setAudioError] = useState(false);
+	const audioRef = useRef<HTMLAudioElement | null>(null);
+	
+	const playAudio = () => {
+		if (audioRef.current && briefData?.audio_url) {
+			const apiBase = (
+				process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+			).replace(/\/+$/, "");
+			const fullAudioUrl = `${apiBase}${briefData.audio_url}`;
+			audioRef.current.src = fullAudioUrl;
+			audioRef.current.play().catch((err) => {
+				console.error("Error playing audio:", err);
+				setAudioError(true);
+			});
+		}
+	};
 
+	// Handle calendar modification from voice commands
+	const handleCalendarModify = async (eventName: string, action: string, newTime?: string) => {
+		try {
+			const token = await getValidToken();
+			if (!token) {
+				setError("Not authenticated");
+				return;
+			}
+
+			const apiBase = (
+				process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+			).replace(/\/+$/, "");
+
+			const params = new URLSearchParams({
+				event_query: eventName,
+				action: action,
+			});
+			if (newTime) {
+				params.append("new_time", newTime);
+			}
+
+			const response = await fetch(
+				`${apiBase}/calendar/modify-event?${params.toString()}`,
+				{
+					method: "POST",
+					headers: {
+						Authorization: `Bearer ${token}`,
+						"Content-Type": "application/json",
+					},
+				}
+			);
+
+			if (!response.ok) {
+				const errorData = await response.json().catch(() => ({ detail: "Unknown error" }));
+				throw new Error(errorData.detail || `HTTP ${response.status}`);
+			}
+
+			const result = await response.json();
+			console.log("Calendar modification result:", result);
+			// Could show a toast/notification here
+		} catch (err) {
+			console.error("Error modifying calendar event:", err);
+			setError(err instanceof Error ? err.message : "Failed to modify event");
+		}
+	};
+
+	// Check authentication
 	useEffect(() => {
-		if (stage === "thinking") {
-			const timer = setTimeout(() => setStage("recommendation"), 4000);
+		if (!requireAuth(router)) return;
+	}, [router]);
+	
+	// Stop any active voice when entering morning brief page
+	useEffect(() => {
+		// Stop voice handler on mount to avoid conflicts with brief audio
+		stopMiraVoice();
+		setIsConversationActive(false);
+		setIsListening(false);
+		setIsMuted(false);
+		setMiraMute(false);
+	}, []);
+
+	// Fetch morning brief data on mount
+	useEffect(() => {
+		const fetchMorningBrief = async () => {
+			try {
+				setLoading(true);
+				const token = await getValidToken();
+				if (!token) {
+					setError("Not authenticated");
+					setLoading(false);
+					return;
+				}
+
+				const apiBase = (
+					process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+				).replace(/\/+$/, "");
+
+				const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+				const response = await fetch(
+					`${apiBase}/morning-brief?timezone=${encodeURIComponent(timezone)}`,
+					{
+						method: "POST",
+						headers: {
+							Authorization: `Bearer ${token}`,
+							"Content-Type": "application/json",
+						},
+					}
+				);
+
+				if (!response.ok) {
+					const errorData = await response.json().catch(() => ({ detail: "Unknown error" }));
+					throw new Error(errorData.detail || `HTTP ${response.status}`);
+				}
+
+				const data = await response.json();
+				setBriefData(data);
+				setError(null);
+				
+				// Play audio if available
+				if (data.audio_url) {
+					// Stop any active voice conversation to avoid conflicts
+					if (isConversationActive) {
+						stopMiraVoice();
+						setIsConversationActive(false);
+						setIsListening(false);
+					}
+					
+					// Construct full URL using API base
+					const apiBase = (
+						process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+					).replace(/\/+$/, "");
+					const fullAudioUrl = `${apiBase}${data.audio_url}`;
+					
+					// Small delay to ensure audio element is rendered
+					setTimeout(() => {
+						if (audioRef.current) {
+							// Ensure voice is stopped before playing brief audio
+							stopMiraVoice();
+							setIsConversationActive(false);
+							setIsListening(false);
+							
+							audioRef.current.src = fullAudioUrl;
+							
+							// Try to play automatically - navigation click counts as user interaction
+							// This should work since user clicked to navigate to this page
+							const playPromise = audioRef.current.play();
+							if (playPromise !== undefined) {
+								playPromise
+									.then(() => {
+										console.log("✅ Morning brief audio playing automatically");
+									})
+									.catch((err) => {
+										// Autoplay blocked - play button will be shown (it's already in the UI)
+										console.log("⚠️ Autoplay blocked - user can click 'Play Morning Brief' button:", err);
+									});
+							}
+							
+							// Stop voice handler while brief audio is playing (one-time listener)
+							const handlePlay = () => {
+								stopMiraVoice();
+								setIsConversationActive(false);
+								setIsListening(false);
+								audioRef.current?.removeEventListener("play", handlePlay);
+							};
+							audioRef.current.addEventListener("play", handlePlay, { once: true });
+						}
+					}, 100);
+				}
+			} catch (err) {
+				console.error("Error fetching morning brief:", err);
+				setError(
+					err instanceof Error ? err.message : "Failed to load morning brief"
+				);
+			} finally {
+				setLoading(false);
+			}
+		};
+
+		fetchMorningBrief();
+	}, []);
+
+	// Auto-advance from thinking stage after loading completes
+	useEffect(() => {
+		if (stage === "thinking" && !loading && briefData) {
+			const timer = setTimeout(() => setStage("recommendation"), 2000);
 			return () => clearTimeout(timer);
 		}
-	}, [stage]);
+	}, [stage, loading, briefData]);
 
-	// 🎙 Initialize voice when page mounts
+	// 🎙 Voice is not auto-started on morning brief page
+	// User can manually start it via the mic button
 	useEffect(() => {
-		startMiraVoice();
-		setIsConversationActive(true);
-		return () => stopMiraVoice();
+		// Ensure voice is stopped when leaving the page
+		return () => {
+			if (isConversationActive) {
+				stopMiraVoice();
+			}
+		};
+	}, [isConversationActive]);
+
+	// Listen for calendar modify intents from voice handler
+	useEffect(() => {
+		const handler = (e: any) => {
+			const detail = e?.detail || {};
+			const eventName = detail.event_query as string | null;
+			const action = detail.action as string | null;
+			const newTime = detail.new_time as string | undefined;
+			if (action && eventName) {
+				handleCalendarModify(eventName, action, newTime);
+			} else {
+				console.log("Calendar modify needs more details", detail);
+			}
+		};
+		if (typeof window !== "undefined") {
+			window.addEventListener("miraCalendarModify", handler as EventListener);
+		}
+		return () => {
+			if (typeof window !== "undefined") {
+				window.removeEventListener("miraCalendarModify", handler as EventListener);
+			}
+		};
 	}, []);
 
 	return (
@@ -45,7 +263,7 @@ export default function MorningBrief() {
 				shadow-[2px_0_10px_rgba(0,0,0,0.03)] hidden md:flex"
 			>
 				<div className="w-5 h-5 rounded-full bg-gradient-to-b from-[#F9C8E4] to-[#B5A6F7]" />
-				{["Grid", "Settings"].map((icon) => (
+				{["Dashboard", "Settings"].map((icon) => (
 					<button
 						key={icon}
 						className="p-2 rounded-xl hover:bg-[#F6F0FF] transition"
@@ -60,8 +278,8 @@ export default function MorningBrief() {
 				))}
 				<button className="mt-auto mb-6 p-2 rounded-xl hover:bg-[#F6F0FF] transition">
 					<Image
-						src="/Icons/Property 1=Bell.svg"
-						alt="Bell"
+						src="/Icons/Property 1=Reminder.svg"
+						alt="Reminder"
 						width={20}
 						height={20}
 					/>
@@ -164,13 +382,59 @@ export default function MorningBrief() {
 						className="w-[92%] sm:w-[85%] md:w-[80%] lg:w-[720px] 
 						transition-all duration-700 ease-in-out"
 					>
-						{stage === "thinking" && <ThinkingPanel />}
-						{stage === "recommendation" && (
-							<RecommendationPanel onAccept={() => setStage("confirmation")} />
+						{loading && stage === "thinking" && <ThinkingPanel />}
+						{error && (
+							<div className="bg-white text-sm rounded-2xl border border-red-200 shadow-lg p-6">
+								<p className="text-red-600 mb-2">Error loading morning brief</p>
+								<p className="text-gray-600 text-sm">{error}</p>
+								<button
+									onClick={() => window.location.reload()}
+									className="mt-4 px-4 py-2 bg-black text-white rounded-full text-sm hover:bg-gray-800"
+								>
+									Retry
+								</button>
+							</div>
 						)}
-						{stage === "confirmation" && <ConfirmationPanel />}
+						{!loading && !error && briefData && (
+							<>
+								{/* Play Audio Button */}
+								{briefData.audio_url && (
+									<div className="mb-4 flex justify-center">
+										<button
+											onClick={playAudio}
+											className="px-6 py-3 bg-[#6245A7] text-white rounded-full font-medium hover:bg-[#7C5BEF] transition flex items-center gap-2"
+										>
+											<Image
+												src="/Icons/Property 1=VoiceOn.svg"
+												alt="Play"
+												width={20}
+												height={20}
+											/>
+											<span>Play Morning Brief</span>
+										</button>
+									</div>
+								)}
+								{stage === "recommendation" && (
+									<RecommendationPanel
+										briefText={briefData.text}
+										onAccept={() => setStage("confirmation")}
+									/>
+								)}
+								{stage === "confirmation" && (
+									<ConfirmationPanel briefText={briefData.text} />
+								)}
+							</>
+						)}
 					</div>
 				</div>
+
+				{/* Hidden audio element for playing the brief */}
+				<audio
+					ref={audioRef}
+					autoPlay={false}
+					controls={false}
+					style={{ display: "none" }}
+				/>
 
 				{/* Mic & Keyboard Toggle */}
 				<div className="mt-10 sm:mt-12 flex items-center justify-center">
@@ -186,6 +450,7 @@ export default function MorningBrief() {
 								const newState = !isListening;
 								setIsListening(newState);
 								if (newState) {
+									// Only start voice when user explicitly clicks mic
 									setIsConversationActive(true);
 									startMiraVoice();
 								} else {

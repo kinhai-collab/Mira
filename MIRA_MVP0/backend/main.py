@@ -11,6 +11,7 @@ from gmail_events import router as gmail_events
 from outlook_events import router as outlook_events
 from voice.voice_generation import router as voice_router
 from settings import router as settings
+from morning_brief_api import router as morning_brief_router
 from Google_Calendar_API import register_google_calendar
 app = FastAPI()
 
@@ -34,6 +35,7 @@ app.include_router(tts_router)
 app.include_router(gmail_events)
 app.include_router(voice_router, prefix="/api")
 app.include_router(settings)
+app.include_router(morning_brief_router)
 register_google_calendar(app)
 app.include_router(outlook_events)
 
