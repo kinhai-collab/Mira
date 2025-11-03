@@ -1,7 +1,10 @@
 import os
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi.responses import StreamingResponse, JSONResponse
 from datetime import datetime
+from typing import Optional, List, Dict, Any
+import tempfile
+import json
 
 router = APIRouter()
 
@@ -102,6 +105,106 @@ async def generate_voice(text: str = "Hello from Mira!"):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Voice generation failed: {e}")
+
+
+@router.post("/voice")
+async def voice_pipeline(
+    audio: UploadFile = File(...),
+    history: Optional[str] = Form(None)
+):
+    """
+    Accepts recorded audio, transcribes with Whisper, generates a chat reply, and optional TTS audio.
+    Returns a JSON body compatible with the frontend voice handler.
+    """
+    try:
+        # 1) Persist upload to temp file (OpenAI SDK expects a real file object)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".webm", dir="/tmp") as tmp:
+            content = await audio.read()
+            tmp.write(content)
+            tmp_path = tmp.name
+
+        # 2) Transcribe with Whisper
+        user_input = ""
+        try:
+            from openai import OpenAI
+            import os
+            oa = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+            with open(tmp_path, "rb") as f:
+                tr = oa.audio.transcriptions.create(file=f, model="whisper-1")
+            user_input = (tr.text or "").strip()
+        except Exception as err:
+            user_input = ""
+
+        # Early exit on empty/noisy input
+        if not user_input or len(user_input) < 3:
+            return JSONResponse({
+                "text": "",
+                "audio": None,
+                "userText": user_input,
+            })
+
+        # 3) Build chat message array
+        messages: List[Dict[str, Any]] = [
+            {
+                "role": "system",
+                "content": (
+                    "You are Mira, a warm, voice-first assistant. Keep answers concise (1–3 sentences)."
+                ),
+            },
+            {"role": "user", "content": user_input},
+        ]
+        if history:
+            try:
+                parsed = json.loads(history)
+                if isinstance(parsed, list):
+                    messages[1:1] = parsed  # insert after system
+            except Exception:
+                pass
+
+        # 4) Generate reply
+        response_text = "I'm here."
+        try:
+            from openai import OpenAI
+            import os
+            oa = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+            comp = oa.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=messages,
+                temperature=0.8,
+                max_tokens=200,
+            )
+            response_text = (comp.choices[0].message.content or "I'm here.").strip()
+        except Exception:
+            response_text = "Sorry, something went wrong while generating my response."
+
+        # 5) TTS via ElevenLabs (best-effort)
+        audio_base64: Optional[str] = None
+        try:
+            import base64
+            el = get_elevenlabs_client()
+            voice_id = os.getenv("ELEVENLABS_VOICE_ID")
+            if not voice_id:
+                raise Exception("Missing ELEVENLABS_VOICE_ID")
+            stream = el.text_to_speech.convert(
+                voice_id=voice_id,
+                model_id="eleven_turbo_v2",
+                text=response_text,
+                output_format="mp3_44100_128",
+            )
+            mp3_bytes = b"".join(list(stream))
+            if mp3_bytes:
+                audio_base64 = base64.b64encode(mp3_bytes).decode("ascii")
+        except Exception:
+            audio_base64 = None
+
+        # 6) Response compatible with frontend
+        return JSONResponse({
+            "text": response_text,
+            "audio": audio_base64,
+            "userText": user_input,
+        })
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Voice pipeline failed: {e}")
 
 def generate_voice(text: str) -> str:
     """

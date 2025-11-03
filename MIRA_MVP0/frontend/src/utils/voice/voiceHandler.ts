@@ -215,8 +215,11 @@ async function recordOnce(): Promise<void> {
 				const formData = new FormData();
 				formData.append("audio", audioBlob, "user_input.webm");
 
-				try {
-					const res = await fetch("/api/voice", {
+                try {
+                    const apiBase = (
+                        process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+                    ).replace(/\/+$/, "");
+                    const res = await fetch(`${apiBase}/api/voice`, {
 						method: "POST",
 						body: formData,
 					});
