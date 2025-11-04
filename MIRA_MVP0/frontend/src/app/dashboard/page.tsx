@@ -133,7 +133,7 @@ export default function Dashboard() {
 	const [showEmailModal, setShowEmailModal] = useState<boolean>(false);
 
 	const [firstName, setFirstName] = useState<string | null>(null);
-	const [greeting, setGreeting] = useState<string>("");
+    const [, setGreeting] = useState<string>("");
 
 	// Check authentication on mount
 	useEffect(() => {
@@ -210,20 +210,36 @@ export default function Dashboard() {
 
 	// 🟣 Load user name from localStorage and personalize greeting
 	useEffect(() => {
-		const storedName =
-			localStorage.getItem("mira_username") ||
-			localStorage.getItem("mira_full_name") ||
-			localStorage.getItem("user_name") ||
-			"there";
+		const updateGreeting = () => {
+			const storedName =
+				localStorage.getItem("mira_username") ||
+				localStorage.getItem("mira_full_name") ||
+				localStorage.getItem("user_name") ||
+				"there";
 
-		const hour = new Date().getHours();
-		let timeGreeting = "Good Evening";
-		if (hour < 12) timeGreeting = "Good Morning";
-		else if (hour < 18) timeGreeting = "Good Afternoon";
+			const hour = new Date().getHours();
+			let timeGreeting = "Good Evening";
+			if (hour < 12) timeGreeting = "Good Morning";
+			else if (hour < 18) timeGreeting = "Good Afternoon";
 
-		const first = storedName.split(" ")[0]; // only first name
-		setFirstName(first);
-		setGreeting(`${timeGreeting}, ${first}!`);
+			const first = storedName.split(" ")[0]; // only first name
+			setFirstName(first);
+			setGreeting(`${timeGreeting}, ${first}!`);
+		};
+
+		// Update greeting initially
+		updateGreeting();
+
+		// Listen for user data updates to refresh greeting
+		const handleUserDataUpdate = () => {
+			updateGreeting();
+		};
+
+		window.addEventListener('userDataUpdated', handleUserDataUpdate);
+		
+		return () => {
+			window.removeEventListener('userDataUpdated', handleUserDataUpdate);
+		};
 	}, []);
 
 	// Format time ago (e.g., "18m ago", "1h ago")
@@ -546,7 +562,10 @@ export default function Dashboard() {
 						</div>
 					</div>
 
-					<button className="px-4 sm:px-5 py-2 border border-gray-400 rounded-full hover:bg-gray-50 transition text-xs sm:text-sm font-medium self-center md:self-auto">
+					<button
+						onClick={() => router.push("/scenarios/morning-brief")}
+						className="px-4 sm:px-5 py-2 border border-gray-400 rounded-full hover:bg-gray-50 transition text-xs sm:text-sm font-medium self-center md:self-auto"
+					>
 						View Full Brief
 					</button>
 				</section>

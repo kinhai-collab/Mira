@@ -84,6 +84,7 @@ async def sign_in(email: str = Form(...), password: str = Form(...)):
                 "status": "success",
                 "message": "Sign in successful.",
                 "access_token": data.get("access_token"),
+                "refresh_token": data.get("refresh_token"),  # Include refresh token
                 "user_email": data.get("user", {}).get("email", email)
             })
         else:
@@ -108,8 +109,10 @@ TOKEN_URL = "https://oauth2.googleapis.com/token"
 
 # Gmail Integration OAuth endpoint (separate from user authentication)
 @router.get("/gmail/auth")
-def gmail_oauth_start():
+def gmail_oauth_start(return_to: str = Query(None)):
     # Redirect user to Google Consent Screen
+    # Store return_to in state parameter to redirect back after OAuth
+    state = f"return_to={return_to}" if return_to else None
     params = {
         "client_id": CLIENT_ID,
         "redirect_uri": REDIRECT_URI,
@@ -118,12 +121,14 @@ def gmail_oauth_start():
         "access_type": "offline",   # Request refresh token
         "prompt": "consent"
     }
+    if state:
+        params["state"] = state
     url = f"{AUTH_URL}?{urlencode(params)}"
     # Redirect user to Google's OAuth page
     return RedirectResponse(url=url)
 
 @router.get("/gmail/auth/callback")
-def gmail_oauth_callback(code: str = Query(...)):
+def gmail_oauth_callback(code: str = Query(...), state: str = Query(None)):
     # Exchange the authorization code for an access token
     data = {
         "code": code,
@@ -157,10 +162,22 @@ def gmail_oauth_callback(code: str = Query(...)):
         raise HTTPException(status_code=500, detail=f"Error retrieving Gmail profile: {str(e)}")
     
     frontend_url = get_frontend_url()
-    frontend_onboarding_url = f"{frontend_url}/onboarding/step3"
-    redirect = RedirectResponse(
-        url=f"{frontend_onboarding_url}?gmail_connected=true&access_token={access_token}&email={email}"
-    )
+    
+    # Parse state to get return_to
+    return_to = None
+    if state:
+        for part in state.split("&"):
+            if part.startswith("return_to="):
+                return_to = part.split("=", 1)[1]
+    
+    # Always redirect to settings page first (standard flow)
+    # Settings page will handle redirecting back to onboarding if return_to is present
+    from urllib.parse import unquote
+    settings_url = f"{frontend_url}/dashboard/settings?gmail_connected=true&access_token={access_token}&email={email}"
+    if return_to:
+        settings_url += f"&return_to={return_to}"
+    
+    redirect = RedirectResponse(url=settings_url)
     return redirect
 
 # Microsoft settings
@@ -212,8 +229,17 @@ def upsert_supabase_user(email: str):
     # Currently no error handling for this request
 
 @router.get("/microsoft/auth")
-def microsoft_oauth_start():
+def microsoft_oauth_start(purpose: str = Query(None), return_to: str = Query(None)):
     # Start OAuth flow by redirecting to Microsoft login
+    # Use state parameter to pass purpose and return_to information
+    # return_to is used to redirect back to onboarding after OAuth completes
+    state_parts = []
+    if purpose:
+        state_parts.append(f"purpose={purpose}")
+    if return_to:
+        state_parts.append(f"return_to={return_to}")
+    state = "&".join(state_parts) if state_parts else None
+    
     params = {
         "client_id": MICROSOFT_CLIENT_ID,
         "response_type": "code",
@@ -222,30 +248,87 @@ def microsoft_oauth_start():
         "scope": " ".join(MICROSOFT_SCOPES),
         "prompt": "consent"
     }
+    if state:
+        params["state"] = state
     url = f"{MICROSOFT_AUTH_URL}?{urlencode(params)}"
     return RedirectResponse(url=url)
 
 @router.get("/microsoft/auth/callback")
-def microsoft_oauth_callback(code: str = Query(...)):
+def microsoft_oauth_callback(code: str = Query(...), state: str = Query(None)):
     # Handle callback from Microsoft OAuth
     access_token = get_microsoft_access_token(code)
     email = get_microsoft_user_email(access_token)
     upsert_supabase_user(email)
     frontend_url = get_frontend_url()
-    frontend_onboarding_url = f"{frontend_url}/onboarding/step3?ms_connected=true&email={email}"
+    
+    # Parse state parameter to get purpose and return_to
+    purpose = None
+    return_to = None
+    if state:
+        for part in state.split("&"):
+            if part.startswith("purpose="):
+                purpose = part.split("=", 1)[1]
+            elif part.startswith("return_to="):
+                return_to = part.split("=", 1)[1]
+    
+    # Always redirect to settings page (standard flow like Google Calendar)
+    # Settings page will handle redirecting back to onboarding if return_to is present
+    settings_url = f"{frontend_url}/dashboard/settings?ms_connected=true&email={email}"
+    if purpose:
+        settings_url += f"&purpose={purpose}"
+    if return_to:
+        settings_url += f"&return_to={return_to}"
+    
+    redirect_url = settings_url
 
     # Set access token as HttpOnly cookie
-    response = RedirectResponse(url=frontend_onboarding_url)
-    response.set_cookie(
-        key="ms_access_token",
-        value=access_token,
-        httponly=True,
-        secure=True,   
-        samesite="lax"
-    )
+    response = RedirectResponse(url=redirect_url)
+    # Only set secure=True in production (HTTPS), not in local development
+    is_production = os.getenv("AWS_LAMBDA_FUNCTION_NAME") or os.getenv("FRONTEND_URL", "").startswith("https://")
+    
+    # Set cookie domain - use None (default) which sets cookie for current domain
+    # This ensures cookies work for both localhost (same origin) and cross-origin requests
+    cookie_kwargs = {
+        "key": "ms_access_token",
+        "value": access_token,
+        "httponly": True,
+        "secure": is_production,   # Only secure in production (HTTPS)
+        "samesite": "lax"
+    }
+    # Don't set domain explicitly - let it default to the request domain
+    # This works for both localhost and production
+    response.set_cookie(**cookie_kwargs)
+    
+    print(f"[Microsoft OAuth] Cookie set: ms_access_token (secure={is_production})")
 
     return response
 
+
+@router.post("/refresh_token")
+def refresh_token(refresh_token: str = Body(..., embed=True)):
+    """
+    Refresh an expired access token using a refresh token.
+    """
+    try:
+        url = f"{SUPABASE_URL.rstrip('/')}/auth/v1/token?grant_type=refresh_token"
+        headers = {"apikey": SUPABASE_KEY, "Content-Type": "application/json"}
+        payload = {"refresh_token": refresh_token}
+        res = requests.post(url, headers=headers, json=payload)
+        data = res.json()
+
+        if res.status_code == 200:
+            return JSONResponse(content={
+                "status": "success",
+                "access_token": data.get("access_token"),
+                "refresh_token": data.get("refresh_token"),
+            })
+        else:
+            error_msg = data.get("msg") or data.get("error_description") or "Token refresh failed."
+            raise HTTPException(status_code=res.status_code, detail={"status": "error", "message": error_msg})
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"status": "error", "message": f"Error: {e}"})
 
 @router.get("/me")
 def me(authorization: Optional[str] = Header(default=None)):
@@ -291,60 +374,154 @@ def profile_update(
         raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
 
     token = authorization.split(" ", 1)[1].strip()
+    
+    # Validate service role key is available
+    if not SUPABASE_SERVICE_ROLE_KEY:
+        raise HTTPException(status_code=500, detail="Server configuration error: SUPABASE_SERVICE_ROLE_KEY is not set")
 
-    # Build user_metadata update
-    first_name = (payload or {}).get("firstName")
-    middle_name = (payload or {}).get("middleName")
-    last_name = (payload or {}).get("lastName")
-    full_name = (payload or {}).get("fullName")
-    picture = (payload or {}).get("picture")
-
-    if not full_name:
-        names = [n for n in [first_name, last_name] if n]
-        if names:
-            full_name = " ".join(names)
-
-    user_metadata: dict = {}
-    if first_name:
-        user_metadata["given_name"] = first_name
-    if middle_name:
-        user_metadata["middle_name"] = middle_name
-    if last_name:
-        user_metadata["family_name"] = last_name
-    if full_name:
-        user_metadata["full_name"] = full_name
-    if picture:
-        user_metadata["avatar_url"] = picture
-
-    if not user_metadata:
-        return {"status": "noop", "message": "No profile fields provided"}
-
-    headers = {
+    # First, get the user ID from the token
+    headers_user = {
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
     }
-
+    
     try:
-        # PATCH auth user metadata
-        r = requests.patch(
+        # Get user info to extract user ID and existing metadata
+        r_user = requests.get(
             f"{SUPABASE_URL.rstrip('/')}/auth/v1/user",
-            headers=headers,
-            json={"data": user_metadata},
+            headers=headers_user
         )
+        
+        if r_user.status_code != 200:
+            try:
+                err = r_user.json()
+                error_code = err.get("code") or err.get("error_code")
+                error_msg = err.get("message") or err.get("error_description") or err.get("msg") or str(err)
+                
+                # Check if token is expired
+                if error_code == "bad_jwt" or "expired" in error_msg.lower() or "invalid JWT" in error_msg:
+                    raise HTTPException(
+                        status_code=401,
+                        detail={
+                            "message": "Your session has expired. Please refresh your token or log in again.",
+                            "status": "error",
+                            "error_code": "token_expired"
+                        }
+                    )
+            except HTTPException:
+                raise
+            except Exception:
+                error_msg = r_user.text or f"HTTP {r_user.status_code}"
+            
+            raise HTTPException(status_code=r_user.status_code, detail={"message": error_msg, "status": "error"})
+        
+        user_data = r_user.json()
+        user_id = user_data.get("id")
+        
+        if not user_id:
+            raise HTTPException(status_code=400, detail={"message": "Unable to extract user ID from token", "status": "error"})
+
+        # Get existing user_metadata to merge with new data
+        existing_metadata = user_data.get("user_metadata") or {}
+
+        # Build user_metadata update (merge with existing)
+        first_name = (payload or {}).get("firstName")
+        middle_name = (payload or {}).get("middleName")
+        last_name = (payload or {}).get("lastName")
+        full_name = (payload or {}).get("fullName")
+        picture = (payload or {}).get("picture")
+
+        if not full_name:
+            names = [n for n in [first_name, last_name] if n]
+            if names:
+                full_name = " ".join(names)
+
+        # Merge new metadata with existing
+        user_metadata: dict = dict(existing_metadata)  # Start with existing
+        if first_name:
+            user_metadata["given_name"] = first_name
+        if middle_name:
+            user_metadata["middle_name"] = middle_name
+        if last_name:
+            user_metadata["family_name"] = last_name
+        if full_name:
+            user_metadata["full_name"] = full_name
+        if picture:
+            user_metadata["avatar_url"] = picture
+
+        # Check if there are actual changes
+        has_changes = any(
+            user_metadata.get(key) != existing_metadata.get(key)
+            for key in ["given_name", "middle_name", "family_name", "full_name", "avatar_url"]
+        )
+        
+        if not has_changes and not any([first_name, middle_name, last_name, full_name, picture]):
+            return {"status": "noop", "message": "No profile fields provided or no changes detected"}
+
+        # Use service role key to update user metadata via admin API
+        headers_admin = {
+            "apikey": SUPABASE_SERVICE_ROLE_KEY,
+            "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+            "Content-Type": "application/json",
+        }
+
+        # Prepare update payload - Supabase admin API expects user_metadata in the payload
+        update_payload = {
+            "user_metadata": user_metadata
+        }
+
+        # Try PUT first (Supabase admin API standard)
+        r = requests.put(
+            f"{SUPABASE_URL.rstrip('/')}/auth/v1/admin/users/{user_id}",
+            headers=headers_admin,
+            json=update_payload,
+        )
+
+        # If PUT fails with 403, try PATCH
+        if r.status_code == 403:
+            print(f"PUT returned 403, trying PATCH instead...")
+            r = requests.patch(
+                f"{SUPABASE_URL.rstrip('/')}/auth/v1/admin/users/{user_id}",
+                headers=headers_admin,
+                json=update_payload,
+            )
 
         if r.status_code not in (200, 201):
             try:
                 err = r.json()
+                error_msg = err.get("message") or err.get("error_description") or err.get("msg") or str(err)
+                error_code = err.get("code") or err.get("error_code")
             except Exception:
-                err = {"error": r.text}
-            raise HTTPException(status_code=r.status_code, detail=err)
+                error_msg = r.text or f"HTTP {r.status_code}: {r.reason}"
+                error_code = None
+            
+            print(f"Supabase admin API error: {r.status_code} - {error_msg}")
+            print(f"Request URL: {SUPABASE_URL.rstrip('/')}/auth/v1/admin/users/{user_id}")
+            print(f"Service role key present: {bool(SUPABASE_SERVICE_ROLE_KEY)}")
+            
+            raise HTTPException(
+                status_code=r.status_code, 
+                detail={
+                    "message": error_msg, 
+                    "status": "error", 
+                    "error_code": error_code,
+                    "debug": f"Failed to update user {user_id}",
+                    "hint": "Check if SUPABASE_SERVICE_ROLE_KEY is correctly set in environment variables"
+                }
+            )
 
-        return {"status": "success", "user": r.json()}
+        # Return updated user data
+        updated_user = r.json()
+        return {"status": "success", "user": updated_user}
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error: {e}")
+        import traceback
+        error_detail = str(e)
+        print(f"Profile update error: {error_detail}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail={"message": f"Internal server error: {error_detail}", "status": "error"})
 
 
 # Test endpoint to verify server is working
@@ -382,6 +559,9 @@ def profile_update_options():
 def onboarding_save(payload: dict = Body(...)):
     """
     Upserts the exact onboarding selections into Supabase.
+    This is ONLY for new user onboarding during signup.
+    For user profile updates after signup, use /user_preferences_save, /user_notifications_save, etc.
+    
     Expected payload (JSON):
     {
       "email": "user@example.com",

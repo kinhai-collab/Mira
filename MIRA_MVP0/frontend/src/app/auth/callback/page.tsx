@@ -21,10 +21,8 @@ export default function AuthCallback() {
       }
       storeAuthToken(accessToken);
 
-      // 2) Extract user data from token and store it
-      let userData = extractUserDataFromToken(accessToken);
-      
-      // 3) Ask backend who this is (email) for additional verification
+      // 2) FIRST: Get the latest user data from Supabase (source of truth)
+      // This ensures we use the updated profile information saved via profile_update
       const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
       const meRes = await fetch(`${apiBase}/me`, {
         headers: { Authorization: `Bearer ${accessToken}` },
@@ -37,23 +35,84 @@ export default function AuthCallback() {
       const me = await meRes.json();
       const email = me?.email;
       
-      // If token extraction failed, try to get user data from backend response
-      if (!userData && me) {
-        console.log("Token extraction failed, using backend data:", me);
-        userData = {
-          email: me.email || '',
-          fullName: me.user_metadata?.full_name || 
-                   me.user_metadata?.name || 
-                   me.user_metadata?.display_name ||
-                   (me.user_metadata?.given_name && me.user_metadata?.family_name ? 
-                    `${me.user_metadata.given_name} ${me.user_metadata.family_name}` : null),
-          picture: me.user_metadata?.avatar_url || 
-                  me.user_metadata?.picture || 
-                  me.user_metadata?.photo_url ||
-                  me.avatar_url,
-          provider: me.app_metadata?.provider || 'google'
-        };
+      console.log("Auth callback: /me response from Supabase:", me);
+      console.log("Auth callback: user_metadata from Supabase:", me?.user_metadata);
+      
+      // 3) Get user profile data from user_profile table (source of truth for name)
+      let profileData = null;
+      try {
+        const profileRes = await fetch(`${apiBase}/user_settings`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+          credentials: 'include' // Include cookies (needed for ms_access_token cookie)
+        });
+        if (profileRes.ok) {
+          const profileResult = await profileRes.json();
+          if (profileResult?.status === 'success' && profileResult?.data) {
+            profileData = profileResult.data;
+            console.log("Auth callback: user_profile data:", profileData);
+          }
+        }
+      } catch (err) {
+        console.log("Auth callback: Could not fetch user_profile, continuing...", err);
       }
+      
+      // 4) Extract user data from token as fallback (Google's original data)
+      const tokenUserData = extractUserDataFromToken(accessToken);
+      console.log("Auth callback: token user data:", tokenUserData);
+      
+      // 5) Build userData with priority: user_profile > user_metadata > token data
+      interface CallbackUserData {
+        email: string;
+        fullName: string | null;
+        picture: string | null;
+        provider?: string;
+      }
+      let userData: CallbackUserData | null = null;
+      
+      // Construct full name from user_profile table (most reliable source)
+      let fullName = null;
+      if (profileData?.firstName || profileData?.lastName) {
+        fullName = [profileData.firstName, profileData.lastName].filter(Boolean).join(' ');
+      }
+      
+      // If no name from user_profile, try user_metadata from /me
+      if (!fullName && me?.user_metadata) {
+        fullName = me.user_metadata.full_name || 
+                   me.user_metadata.name || 
+                   me.user_metadata.display_name ||
+                   (me.user_metadata.given_name && me.user_metadata.family_name ? 
+                    `${me.user_metadata.given_name} ${me.user_metadata.family_name}` : null);
+      }
+      
+      // Last resort: use token data
+      if (!fullName && tokenUserData?.fullName) {
+        fullName = tokenUserData.fullName;
+      }
+      
+      // Get picture with same priority
+      let picture = null;
+      if (profileData?.profilePicture) {
+        picture = profileData.profilePicture;
+      } else if (me?.user_metadata) {
+        picture = me.user_metadata.avatar_url || 
+                  me.user_metadata.picture || 
+                  me.user_metadata.photo_url ||
+                  me.avatar_url;
+      } else if (tokenUserData?.picture) {
+        picture = tokenUserData.picture;
+      }
+      
+      userData = {
+        email: me.email || email || '',
+        fullName: fullName,
+        picture: picture,
+        provider: me.app_metadata?.provider || 
+                 me.user_metadata?.provider || 
+                 tokenUserData?.provider || 
+                 'google'
+      };
+      
+      console.log("Auth callback: Final userData being stored:", userData);
       
       // Store user data if we have any
       if (userData && userData.email) {
