@@ -13,6 +13,7 @@ from voice.voice_generation import router as voice_router
 from settings import router as settings
 from payments import router as stripe_router
 from morning_brief_api import router as morning_brief_router
+from temp import router as weather_router
 from Google_Calendar_API import register_google_calendar
 app = FastAPI()
 
@@ -37,6 +38,7 @@ app.include_router(gmail_events)
 app.include_router(voice_router, prefix="/api")
 app.include_router(settings)
 app.include_router(stripe_router, prefix="/api")
+app.include_router(weather_router)
 # Simple HTML Page for manual testing
 register_google_calendar(app)
 app.include_router(outlook_events)
