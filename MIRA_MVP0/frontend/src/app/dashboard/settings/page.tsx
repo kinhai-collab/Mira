@@ -108,6 +108,23 @@ export default function SettingsPage() {
 	const [location, setLocation] = useState<string>("New York");
 	const [isLocationLoading, setIsLocationLoading] = useState<boolean>(true);
 
+	// Timezone for formatting the date/time for the detected location.
+	// Default to the browser/system timezone — good offline/frontend-only fallback.
+	const [timezone, setTimezone] = useState<string>(
+		() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
+	);
+
+	// Backend base URL (use your NEXT_PUBLIC_API_URL or fallback to localhost)
+	const apiBase = (
+		process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+	).replace(/\/+$/, "");
+
+		// Weather state for settings page
+		const [latitude, setLatitude] = useState<number | null>(null);
+		const [longitude, setLongitude] = useState<number | null>(null);
+		const [temperatureC, setTemperatureC] = useState<number | null>(null);
+		const [isWeatherLoading, setIsWeatherLoading] = useState<boolean>(false);
+
 	// Check authentication on mount and load user data
     useEffect(() => {
 		const loadAllData = async () => {
@@ -286,7 +303,14 @@ export default function SettingsPage() {
 				if (!res.ok) return;
 				const data = await res.json();
 				const city = data.city || data.region || data.region_code || data.country_name;
+				// ipapi returns a `timezone` field like 'America/New_York'
+				if (data.timezone) setTimezone(data.timezone);
 				if (city) setLocation(city);
+				// ipapi returns approximate coords
+				if (data.latitude && data.longitude) {
+					setLatitude(Number(data.latitude));
+					setLongitude(Number(data.longitude));
+				}
 			} catch (err) {
 				console.error("IP geolocation fallback error:", err);
 			} finally {
@@ -320,6 +344,14 @@ export default function SettingsPage() {
 					data?.address?.state ||
 					data?.address?.county;
 				if (city) setLocation(city);
+
+					// Keep browser timezone as primary frontend-only source. If you
+					// need timezone-from-coordinates, use a server-side timezone API.
+					setTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
+
+					// Save coordinates for weather lookup
+					setLatitude(latitude);
+					setLongitude(longitude);
 			} catch (err) {
 				console.error("reverse geocode error:", err);
 				await ipFallback();
@@ -1569,13 +1601,66 @@ export default function SettingsPage() {
 		}
 	};
 
+	// Format a friendly date string for the provided timezone.
+	const getFormattedDate = (tz: string) => {
+		try {
+			const now = new Date();
+			return new Intl.DateTimeFormat("en-US", {
+				weekday: "short",
+				month: "short",
+				day: "numeric",
+				timeZone: tz,
+			}).format(now);
+		} catch (e) {
+			return new Date().toLocaleDateString(undefined, {
+				weekday: "short",
+				month: "short",
+				day: "numeric",
+			});
+		}
+	};
+
+	// Fetch current weather by calling the same-origin Next.js API route (/api/weather).
+	// This mirrors Home and avoids cross-origin/auth issues when calling an external API.
+	const fetchWeatherForCoords = async (lat: number, lon: number) => {
+		try {
+			setIsWeatherLoading(true);
+			const url = `/api/weather?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`;
+			console.log('Settings: fetching weather from internal proxy:', url);
+			const resp = await fetch(url);
+			if (!resp.ok) {
+				let details = '';
+				try {
+					details = await resp.text();
+				} catch (e) {
+					details = '<unreadable response body>';
+				}
+				throw new Error(`Weather proxy failed: ${resp.status} ${details}`);
+			}
+			const data = await resp.json();
+			const temp = data?.temperatureC ?? data?.temperature ?? data?.tempC;
+			if (typeof temp === 'number') setTemperatureC(temp);
+			else console.warn('Settings: weather response did not contain a numeric temperature', data);
+		} catch (err) {
+			console.error('Settings: Error fetching weather from internal API (/api/weather):', err);
+		} finally {
+			setIsWeatherLoading(false);
+		}
+	};
+
+	useEffect(() => {
+		if (latitude != null && longitude != null) {
+			fetchWeatherForCoords(latitude, longitude).catch((e) => console.error(e));
+		}
+	}, [latitude, longitude]);
+
 	return (
 		<div className="min-h-screen bg-gray-50 p-8">
 			{/* Header */}
 			<div className="flex items-center justify-between mb-8">
 				<div className="flex items-center gap-8">
 					<div className="flex items-center gap-2">
-						<span className="text-base text-gray-800">Wed, Oct 15</span>
+						<span className="text-base text-gray-800">{getFormattedDate(timezone)}</span>
 					</div>
 					<div className="flex items-center gap-2 px-3 py-2 bg-white rounded-full border border-gray-200">
 						<MapPin className="w-4 h-4 text-gray-600" />
@@ -1583,7 +1668,7 @@ export default function SettingsPage() {
 					</div>
 					<div className="flex items-center gap-2 px-3 py-2 bg-white rounded-full border border-gray-200">
 						<Sun className="w-6 h-6 text-yellow-500" />
-						<span className="text-base text-gray-800">20°</span>
+						<span className="text-base text-gray-800">{isWeatherLoading ? '...' : (temperatureC != null ? `${Math.round(temperatureC)}°` : '—')}</span>
 					</div>
 				</div>
 				<div className="w-11 h-11 bg-white rounded-lg border border-gray-200 flex items-center justify-center">

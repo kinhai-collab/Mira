@@ -29,6 +29,23 @@ export default function Home() {
 	const [location, setLocation] = useState<string>("New York");
 	const [isLocationLoading, setIsLocationLoading] = useState<boolean>(true);
 
+	// Timezone for formatting the date/time for the detected location.
+	// Default to the browser/system timezone — good offline/frontend-only fallback.
+	const [timezone, setTimezone] = useState<string>(
+		() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"	
+	);
+
+	// Backend base URL (use your NEXT_PUBLIC_API_URL or fallback to localhost)
+	const apiBase = (
+		process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+	).replace(/\/+$/, "");
+
+	// Weather state: store coords and current temperature. We'll call Open-Meteo (no API key)
+	const [latitude, setLatitude] = useState<number | null>(null);
+	const [longitude, setLongitude] = useState<number | null>(null);
+	const [temperatureC, setTemperatureC] = useState<number | null>(null);
+	const [isWeatherLoading, setIsWeatherLoading] = useState<boolean>(false);
+
 	const greetingCalledRef = useRef(false);
 
 	// Added: get system/geolocation and reverse-geocode to a readable place name
@@ -39,8 +56,15 @@ export default function Home() {
 				const res = await fetch("https://ipapi.co/json/");
 				if (!res.ok) return;
 				const data = await res.json();
-				const city = data.city || data.region || data.region_code || data.country_name;
+					const city = data.city || data.region || data.region_code || data.country_name;
+					// ipapi returns a `timezone` field like 'America/New_York'
+					if (data.timezone) setTimezone(data.timezone);
 				if (city) setLocation(city);
+				// ipapi provides approximate lat/lon which we can use for weather lookup
+				if (data.latitude && data.longitude) {
+					setLatitude(Number(data.latitude));
+					setLongitude(Number(data.longitude));
+				}
 			} catch (err) {
 				console.error("IP geolocation fallback error:", err);
 			} finally {
@@ -74,6 +98,18 @@ export default function Home() {
 					data?.address?.state ||
 					data?.address?.county;
 				if (city) setLocation(city);
+
+					// If possible, keep the browser's timezone (Intl); this will usually
+					// match the geolocation. If you need absolute timezone-from-coords,
+					// you'd need a timezone lookup service or library (server or heavy client bundle).
+					setTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
+
+					// Save coordinates for weather lookup
+					setLatitude(latitude);
+					setLongitude(longitude);
+
+					// Fetch weather for these coords (via backend proxy)
+					fetchWeatherForCoords(latitude, longitude).catch((e) => console.error('Weather fetch failed:', e));
 			} catch (err) {
 				console.error("reverse geocode error:", err);
 				await ipFallback();
@@ -223,12 +259,71 @@ export default function Home() {
 		};
 	}, []);
 
+	// Format a friendly date string for the provided timezone.
+	const getFormattedDate = (tz: string) => {
+		try {
+			const now = new Date();
+			return new Intl.DateTimeFormat("en-US", {
+				weekday: "short",
+				month: "short",
+				day: "numeric",
+				timeZone: tz,
+			}).format(now);
+		} catch (e) {
+			// Fallback to local formatting if Intl fails for some reason
+			return new Date().toLocaleDateString(undefined, {
+				weekday: "short",
+				month: "short",
+				day: "numeric",
+			});
+		}
+	};
+
+	// Fetch current weather by calling the internal Next.js API route (/api/weather).
+	// Using a same-origin API route avoids CORS and mixed-content issues (http vs https).
+	const fetchWeatherForCoords = async (lat: number, lon: number) => {
+		try {
+			setIsWeatherLoading(true);
+			const url = `/api/weather?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`;
+			// Log the URL so if "Failed to fetch" occurs we can see exactly what was attempted.
+			console.log('Fetching weather from (internal proxy):', url);
+			const resp = await fetch(url);
+			if (!resp.ok) {
+				// Try to read response body for diagnostics
+				let details = '';
+				try {
+					const txt = await resp.text();
+					details = txt;
+				} catch (e) {
+					details = '<unreadable response body>';
+				}
+				throw new Error(`Weather proxy failed: ${resp.status} ${details}`);
+			}
+			const data = await resp.json();
+			// Expecting backend to return { temperatureC: number } (or similar)
+			const temp = data?.temperatureC ?? data?.temperature ?? data?.tempC;
+			if (typeof temp === 'number') setTemperatureC(temp);
+		} catch (err) {
+			// Show richer diagnostics in console for easier debugging
+			console.error('Error fetching weather from internal API (/api/weather):', err);
+		} finally {
+			setIsWeatherLoading(false);
+		}
+	};
+
+	// When coords change, fetch weather
+	useEffect(() => {
+		if (latitude != null && longitude != null) {
+			fetchWeatherForCoords(latitude, longitude).catch((e) => console.error(e));
+		}
+	}, [latitude, longitude]);
+
 	return (
 		<div className="flex flex-col min-h-screen bg-[#F8F8FB] text-gray-800 overflow-hidden">
 			<main className="flex-1 flex flex-col items-center justify-center px-4 sm:px-6 md:px-8 relative overflow-y-auto pb-20 md:pb-0">
 				{/* Top-left bar */}
 				<div className="absolute top-4 sm:top-6 left-4 sm:left-10 flex flex-wrap items-center gap-2 sm:gap-3 text-xs sm:text-sm">
-					<span className="font-medium text-gray-800">Wed, Oct 15</span>
+					<span className="font-medium text-gray-800">{getFormattedDate(timezone)}</span>
 					<div className="flex items-center gap-1 px-2 sm:px-3 py-1 border border-gray-200 rounded-full bg-white/40 backdrop-blur-sm">
 						<Icon name="Location" size={16} className="text-gray-600" />
 						<span className="text-gray-700 font-medium">
@@ -237,7 +332,9 @@ export default function Home() {
 					</div>
 					<div className="flex items-center gap-1 px-2 sm:px-3 py-1 border border-gray-200 rounded-full bg-white/40 backdrop-blur-sm">
 						<Icon name="Sun" size={16} className="text-yellow-500" />
-						<span className="text-gray-700 font-medium">20°</span>
+						<span className="text-gray-700 font-medium">
+							{isWeatherLoading ? '...' : (temperatureC != null ? `${Math.round(temperatureC)}°` : '—')}
+						</span>
 					</div>
 				</div>
 
