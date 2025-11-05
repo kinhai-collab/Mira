@@ -11,7 +11,7 @@ frontend:
         - npm run build
   environment:
     variables:
-      NEXT_PUBLIC_API_URL: https://ytm2meewyf.execute-api.us-east-2.amazonaws.com/dev
+      NEXT_PUBLIC_API_URL: https://xmtg107ehj.execute-api.us-east-2.amazonaws.com
   artifacts:
     baseDirectory: MIRA_MVP0/frontend/out
     files:
