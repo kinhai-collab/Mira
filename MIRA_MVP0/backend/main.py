@@ -10,6 +10,8 @@ from gmail_events import router as gmail_events
 from outlook_events import router as outlook_events
 from voice.voice_generation import router as voice_router
 from settings import router as settings
+from gmail_reader import router as gmail_reader
+
 app = FastAPI()
 
 # Middleware
@@ -32,6 +34,7 @@ app.include_router(gmail_events)
 app.include_router(voice_router, prefix="/api")
 app.include_router(settings)
 app.include_router(outlook_events)
+app.include_router(gmail_reader)
 
 @app.get("/envcheck")
 async def env_check():
