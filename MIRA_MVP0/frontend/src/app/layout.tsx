@@ -3,6 +3,7 @@ import "./globals.css";
 import { Outfit } from "next/font/google";
 import ConditionalSidebar from "@/components/ConditionalSidebar";
 import MainContent from "@/components/MainContent";
+import AuthGate from "@/components/AuthGate";
 
 const outfit = Outfit({
 	subsets: ["latin"],
@@ -25,11 +26,13 @@ export default function RootLayout({
 			<body
 				className={`${outfit.className} font-light min-h-screen bg-[#F8F8FB] text-gray-900 flex`}
 			>
-				{/* ✅ Conditionally rendered sidebar */}
-				<ConditionalSidebar />
+				<AuthGate>
+					{/* ✅ Conditionally rendered sidebar */}
+					<ConditionalSidebar />
 
-				{/* ✅ Page content with conditional margin */}
-				<MainContent>{children}</MainContent>
+					{/* ✅ Page content with conditional margin */}
+					<MainContent>{children}</MainContent>
+				</AuthGate>
 			</body>
 		</html>
 	);
