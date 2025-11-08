@@ -217,6 +217,11 @@ async def user_privacy_save(
     result = save_user_data(uid, data, email=email, authorization=authorization)
     return {"status": "success", "message": "User privacy saved successfully!", "data": result}
 
+PRICE_ID_TO_PLAN = {
+    "price_1SNXMJBp8nbRsF692LLL8ISU": {"key": "premium", "name": "Premium Plan", "sku": "pro_monthly", "interval": "month"},
+    "price_1SNXLTBp8nbRsF69zdOqhYQG": {"key": "advanced", "name": "Advanced Plan", "interval": "month"},
+}
+
 # Route to save or update user subscription plan
 @router.post("/user_subscription_save")
 async def user_subscription_save(
@@ -239,6 +244,7 @@ async def user_subscription_save(
     """
     uid = get_uid_from_token(authorization)
     email = get_email_from_token(authorization)
+
     data = {
         "subscriptionPlan": payload.get("selectedPlan"),
         "cardName": payload.get("cardName"),
