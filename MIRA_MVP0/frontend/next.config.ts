@@ -3,7 +3,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-	output: 'export',
+	// Note: removed `output: 'export'` to allow server-side API routes
+	// If you need a fully static export, keep `output: 'export'` and
+	// host the weather proxy separately (or call your backend directly).
 	trailingSlash: true,
 	images: {
 		unoptimized: true,

@@ -69,7 +69,7 @@ export default function LandingPage() {
 				{/* Button */}
 				<div className="flex justify-center">
 					<button
-						onClick={() => router.push("/login")}
+						onClick={() => router.push("/signup")}
 						className="bg-black text-white px-6 sm:px-8 md:px-10 py-2.5 sm:py-3.5 md:py-4 rounded-full font-semibold text-sm sm:text-base md:text-lg hover:scale-105 transition-transform duration-300 shadow-md hover:shadow-lg"
 					>
 						Get Started

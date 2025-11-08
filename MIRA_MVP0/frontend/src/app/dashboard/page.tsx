@@ -104,7 +104,20 @@ export default function Dashboard() {
 	const [firstName, setFirstName] = useState<string | null>(null);
 	const [, setGreeting] = useState<string>("");
 
+<<<<<<< HEAD
 	// Check authentication on mount and refresh token if needed
+=======
+	// Weather & location state for dashboard header
+	const [location, setLocation] = useState<string>("New York");
+	const [isLocationLoading, setIsLocationLoading] = useState<boolean>(true);
+	const [latitude, setLatitude] = useState<number | null>(null);
+	const [longitude, setLongitude] = useState<number | null>(null);
+	const [temperatureC, setTemperatureC] = useState<number | null>(null);
+	const [weatherDescription, setWeatherDescription] = useState<string | null>(null);
+	const [isWeatherLoading, setIsWeatherLoading] = useState<boolean>(false);
+
+	// Check authentication on mount
+>>>>>>> 331bf8be64d44249f66299db76f64ff5c2178ce7
 	useEffect(() => {
 		const checkAuth = async () => {
 			// Try to refresh token if expired (for returning users)
@@ -191,6 +204,112 @@ export default function Dashboard() {
 		return () => {
 			window.removeEventListener("userDataUpdated", handleUserDataUpdate);
 		};
+	}, []);
+
+	// Helper: map Open-Meteo weathercode to simple description
+	const openMeteoCodeToDesc = (code: number) => {
+		// Simplified mapping for common values
+		switch (code) {
+			case 0:
+				return 'Clear';
+			case 1:
+			case 2:
+			case 3:
+				return 'Partly cloudy';
+			case 45:
+			case 48:
+				return 'Fog';
+			case 51:
+			case 53:
+			case 55:
+				return 'Drizzle';
+			case 61:
+			case 63:
+			case 65:
+				return 'Rain';
+			case 71:
+			case 73:
+			case 75:
+				return 'Snow';
+			case 80:
+			case 81:
+			case 82:
+				return 'Showers';
+			case 95:
+			case 96:
+			case 99:
+				return 'Thunderstorm';
+			default:
+				return 'Unknown';
+		}
+	};
+
+	// Fetch weather from the same-origin API route (/api/weather) using coords
+	const fetchWeatherForCoords = async (lat: number, lon: number) => {
+		try {
+			setIsWeatherLoading(true);
+			const url = `/api/weather?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`;
+			console.log('Dashboard: fetching weather from internal proxy:', url);
+			const resp = await fetch(url);
+			if (!resp.ok) {
+				let details = '';
+				try { details = await resp.text(); } catch { details = '<unreadable response body>'; }
+				throw new Error(`Weather proxy failed: ${resp.status} ${details}`);
+			}
+			const data: any = await resp.json();
+			const temp = data?.temperatureC ?? data?.temperature ?? data?.tempC ?? null;
+			let desc: string | null = null;
+			// Prefer description from normalized field
+			if (data?.description) desc = data.description;
+			// If provider returned raw Open-Meteo payload, map its weathercode
+			else if (data?.raw?.current_weather?.weathercode !== undefined) {
+				desc = openMeteoCodeToDesc(Number(data.raw.current_weather.weathercode));
+			}
+			// If provider is weatherapi.com style
+			else if (data?.raw?.current?.condition?.text) {
+				desc = data.raw.current.condition.text;
+			}
+			if (typeof temp === 'number') setTemperatureC(temp);
+			if (desc) setWeatherDescription(desc);
+			if (!desc && temp == null) console.warn('Dashboard: weather response had no usable fields', data);
+		} catch (err) {
+			console.error('Dashboard: Error fetching weather from internal API (/api/weather):', err);
+		} finally {
+			setIsWeatherLoading(false);
+		}
+	};
+
+	// Get coords either via geolocation or IP fallback, then fetch weather
+	useEffect(() => {
+		const ipFallback = async () => {
+			try {
+				const res = await fetch('https://ipapi.co/json/');
+				if (!res.ok) return;
+				const data = await res.json();
+				const city = data.city || data.region || data.region_code || data.country_name;
+				if (data.timezone) {/* timezone not used here */}
+				if (city) setLocation(city);
+				if (data.latitude && data.longitude) {
+					setLatitude(Number(data.latitude));
+					setLongitude(Number(data.longitude));
+					fetchWeatherForCoords(Number(data.latitude), Number(data.longitude));
+				}
+			} catch (e) { console.error('Dashboard IP fallback error:', e); }
+			finally { setIsLocationLoading(false); }
+		};
+
+		if (!('geolocation' in navigator)) { ipFallback(); return; }
+
+		const success = (pos: GeolocationPosition) => {
+			const { latitude: lat, longitude: lon } = pos.coords;
+			setLatitude(lat); setLongitude(lon);
+			fetchWeatherForCoords(lat, lon).catch((e) => console.error(e));
+			setIsLocationLoading(false);
+		};
+
+		const failure = async (err: any) => { console.warn('Dashboard geolocation failed:', err); await ipFallback(); };
+
+		navigator.geolocation.getCurrentPosition(success, failure, { timeout: 10000 });
 	}, []);
 	return (
 		<div className="flex flex-col md:flex-row h-screen bg-[#F8F8FB] text-gray-800">
