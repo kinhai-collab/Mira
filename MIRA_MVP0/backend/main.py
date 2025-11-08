@@ -11,10 +11,12 @@ from gmail_events import router as gmail_events
 from outlook_events import router as outlook_events
 from voice.voice_generation import router as voice_router
 from settings import router as settings
+from gmail_reader import router as gmail_reader
 from payments import router as stripe_router
 from morning_brief_api import router as morning_brief_router
 from temp import router as weather_router
 from Google_Calendar_API import register_google_calendar
+
 app = FastAPI()
 
 # Middleware
@@ -42,6 +44,7 @@ app.include_router(weather_router)
 # Simple HTML Page for manual testing
 register_google_calendar(app)
 app.include_router(outlook_events)
+app.include_router(gmail_reader)
 app.include_router(morning_brief_router)
 
 

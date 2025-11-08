@@ -143,6 +143,37 @@ async def voice_pipeline(
                 "userText": user_input,
             })
 
+        # 2.5) Intent: Morning brief navigate
+        import re, base64
+        morning_brief_keywords = re.compile(r"(morning|daily|today).*(brief|summary|update)", re.I)
+        show_brief_keywords = re.compile(r"(show|give|tell|read).*(brief|summary|morning|daily)", re.I)
+        if morning_brief_keywords.search(user_input) or show_brief_keywords.search(user_input):
+            # Generate short TTS prompt for navigation (best-effort)
+            audio_base64: Optional[str] = None
+            try:
+                el = get_elevenlabs_client()
+                voice_id = os.getenv("ELEVENLABS_VOICE_ID")
+                if voice_id:
+                    stream = el.text_to_speech.convert(
+                        voice_id=voice_id,
+                        model_id="eleven_turbo_v2",
+                        text="Opening your morning brief now.",
+                        output_format="mp3_44100_128",
+                    )
+                    mp3_bytes = b"".join(list(stream))
+                    if mp3_bytes:
+                        audio_base64 = base64.b64encode(mp3_bytes).decode("ascii")
+            except Exception:
+                audio_base64 = None
+
+            return JSONResponse({
+                "text": "Opening your morning brief now.",
+                "audio": audio_base64,
+                "userText": user_input,
+                "action": "navigate",
+                "actionTarget": "/scenarios/morning-brief",
+            })
+
         # 3) Build chat message array
         messages: List[Dict[str, Any]] = [
             {
@@ -180,7 +211,6 @@ async def voice_pipeline(
         # 5) TTS via ElevenLabs (best-effort)
         audio_base64: Optional[str] = None
         try:
-            import base64
             el = get_elevenlabs_client()
             voice_id = os.getenv("ELEVENLABS_VOICE_ID")
             if not voice_id:
@@ -206,11 +236,12 @@ async def voice_pipeline(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Voice pipeline failed: {e}")
 
-def generate_voice(text: str) -> str:
+def generate_voice(text: str) -> tuple[str, str]:
     """
-    Generates audio from text and saves it to a file.
-    Returns the file path to the generated audio.
+    Generates audio from text and returns both base64 data and a filename.
+    Returns (audio_base64, filename) tuple.
     This is a synchronous utility function for use in non-async contexts.
+    In Lambda, we return base64 instead of saving to disk (filesystem is read-only).
     """
     try:
         # Get the ElevenLabs client (with lazy import)
@@ -219,7 +250,7 @@ def generate_voice(text: str) -> str:
         voice_id = os.getenv("ELEVENLABS_VOICE_ID")
         if not voice_id:
             print("Warning: ELEVENLABS_VOICE_ID not set, skipping audio generation")
-            return ""
+            return "", ""
         
         # Request the audio stream
         audio_stream = elevenlabs_client.text_to_speech.convert(
@@ -234,25 +265,31 @@ def generate_voice(text: str) -> str:
         
         if not audio_bytes:
             print("Warning: No audio data received from ElevenLabs")
-            return ""
+            return "", ""
         
-        # Save to a file with timestamp
+        # Generate filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"morning_brief_{timestamp}.mp3"
-        filepath = os.path.join(os.getcwd(), "speech", filename)
         
-        # Create speech directory if it doesn't exist
-        os.makedirs(os.path.join(os.getcwd(), "speech"), exist_ok=True)
+        # Try to save to /tmp for local dev (Lambda can't write to /var/task)
+        try:
+            os.makedirs("/tmp/speech", exist_ok=True)
+            tmp_path = os.path.join("/tmp/speech", filename)
+            with open(tmp_path, "wb") as f:
+                f.write(audio_bytes)
+            print(f"Audio saved to: {tmp_path}")
+        except Exception as save_err:
+            print(f"Could not save audio file (Lambda read-only filesystem): {save_err}")
+            # Continue - we'll return base64 instead
         
-        # Write audio to file
-        with open(filepath, "wb") as f:
-            f.write(audio_bytes)
+        # Encode to base64 for direct use
+        import base64
+        audio_base64 = base64.b64encode(audio_bytes).decode("ascii")
         
-        print(f"Audio saved to: {filepath}")
-        return filepath
+        return audio_base64, filename
         
     except Exception as e:
         print(f"Error generating voice: {e}")
         import traceback
         traceback.print_exc()
-        return ""
+        return "", ""

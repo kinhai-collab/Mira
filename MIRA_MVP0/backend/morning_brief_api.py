@@ -60,23 +60,21 @@ async def get_morning_brief(
             # Generate morning brief
             try:
                 result = run_morning_brief(user_id, first_name, timezone)
-                audio_path = result.get("audio_path", "")
+                audio_base64 = result.get("audio_base64", "")
+                audio_filename = result.get("audio_filename", "")
                 
-                # Convert local file path to URL if audio was generated
+                # Return audio as base64 for direct playback (Lambda can't reliably serve files)
                 audio_url = None
-                if audio_path:
-                    # Extract just the filename from the full path
-                    import os
-                    filename = os.path.basename(audio_path)
-                    # Return relative URL that the frontend can use to fetch the audio
-                    # Frontend will construct the full URL using its API base
-                    audio_url = f"/audio/morning-brief/{filename}"
+                if audio_base64 and audio_filename:
+                    # Return the base64 directly - frontend can play it directly
+                    # Also provide a URL endpoint that serves the base64 as audio
+                    audio_url = f"/audio/morning-brief/{audio_filename}"
                 
                 return {
                     "status": "success",
                     "text": result.get("text", ""),
-                    "audio_path": audio_path,
-                    "audio_url": audio_url,
+                    "audio_base64": audio_base64,  # Direct base64 for playback
+                    "audio_url": audio_url,  # URL endpoint (optional, for compatibility)
                     "user_name": first_name
                 }
             except Exception as e:

@@ -17,8 +17,9 @@ import { getValidToken, requireAuth } from "@/utils/auth";
 
 interface MorningBriefData {
 	text: string;
-	audio_path: string;
+	audio_path?: string;
 	audio_url?: string;
+	audio_base64?: string;
 	user_name: string;
 }
 
@@ -37,7 +38,32 @@ export default function MorningBrief() {
 	const audioRef = useRef<HTMLAudioElement | null>(null);
 	
 	const playAudio = () => {
-		if (audioRef.current && briefData?.audio_url) {
+		if (!audioRef.current) return;
+		
+		// Prefer base64 audio (works in Lambda)
+		if (briefData?.audio_base64) {
+			try {
+				const audioBinary = atob(briefData.audio_base64);
+				const arrayBuffer = new ArrayBuffer(audioBinary.length);
+				const view = new Uint8Array(arrayBuffer);
+				for (let i = 0; i < audioBinary.length; i++) {
+					view[i] = audioBinary.charCodeAt(i);
+				}
+				const blob = new Blob([view], { type: "audio/mpeg" });
+				const url = URL.createObjectURL(blob);
+				audioRef.current.src = url;
+				audioRef.current.play().catch((err) => {
+					console.error("Error playing audio:", err);
+				});
+				// Clean up URL when done
+				audioRef.current.addEventListener("ended", () => {
+					URL.revokeObjectURL(url);
+				}, { once: true });
+			} catch (err) {
+				console.error("Error decoding base64 audio:", err);
+			}
+		} else if (briefData?.audio_url) {
+			// Fallback to URL if base64 not available
 			const apiBase = (
 				process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
 			).replace(/\/+$/, "");
@@ -147,18 +173,12 @@ export default function MorningBrief() {
 				setBriefData(data);
 				setError(null);
 				
-				// Play audio if available
-				if (data.audio_url) {
+				// Play audio if available (check for base64 or URL)
+				if (data.audio_base64 || data.audio_url) {
 					// Stop any active voice conversation to avoid conflicts (safe to call even if not active)
 					stopMiraVoice();
 					setIsConversationActive(false);
 					setIsListening(false);
-					
-					// Construct full URL using API base
-					const apiBaseUrl = (
-						process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
-					).replace(/\/+$/, "");
-					const fullAudioUrl = `${apiBaseUrl}${data.audio_url}`;
 					
 					// Small delay to ensure audio element is rendered
 					setTimeout(() => {
@@ -168,7 +188,37 @@ export default function MorningBrief() {
 							setIsConversationActive(false);
 							setIsListening(false);
 							
-							audioRef.current.src = fullAudioUrl;
+							// Prefer base64 audio (works in Lambda)
+							if (data.audio_base64) {
+								try {
+									const audioBinary = atob(data.audio_base64);
+									const arrayBuffer = new ArrayBuffer(audioBinary.length);
+									const view = new Uint8Array(arrayBuffer);
+									for (let i = 0; i < audioBinary.length; i++) {
+										view[i] = audioBinary.charCodeAt(i);
+									}
+									const blob = new Blob([view], { type: "audio/mpeg" });
+									const url = URL.createObjectURL(blob);
+									audioRef.current.src = url;
+									
+									// Clean up URL when done
+									audioRef.current.addEventListener("ended", () => {
+										URL.revokeObjectURL(url);
+									}, { once: true });
+								} catch (err) {
+									console.error("Error decoding base64 audio:", err);
+									return;
+								}
+							} else if (data.audio_url) {
+								// Fallback to URL
+								const apiBaseUrl = (
+									process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+								).replace(/\/+$/, "");
+								const fullAudioUrl = `${apiBaseUrl}${data.audio_url}`;
+								audioRef.current.src = fullAudioUrl;
+							} else {
+								return;
+							}
 							
 							// Try to play automatically - navigation click counts as user interaction
 							// This should work since user clicked to navigate to this page
@@ -404,7 +454,7 @@ export default function MorningBrief() {
 						{!loading && !error && briefData && (
 							<>
 								{/* Play Audio Button */}
-								{briefData.audio_url && (
+								{(briefData.audio_base64 || briefData.audio_url) && (
 									<div className="mb-4 flex justify-center">
 										<button
 											onClick={playAudio}
