@@ -102,7 +102,7 @@ export default function Dashboard() {
 	const [serverGreeting] = useState<string | null>(null);
 
 	const [firstName, setFirstName] = useState<string | null>(null);
-    const [, setGreeting] = useState<string>("");
+	const [, setGreeting] = useState<string>("");
 
 	// Check authentication on mount and refresh token if needed
 	useEffect(() => {
@@ -186,232 +186,515 @@ export default function Dashboard() {
 			updateGreeting();
 		};
 
-		window.addEventListener('userDataUpdated', handleUserDataUpdate);
-		
+		window.addEventListener("userDataUpdated", handleUserDataUpdate);
+
 		return () => {
-			window.removeEventListener('userDataUpdated', handleUserDataUpdate);
+			window.removeEventListener("userDataUpdated", handleUserDataUpdate);
 		};
 	}, []);
 	return (
 		<div className="flex flex-col md:flex-row h-screen bg-[#F8F8FB] text-gray-800">
 			{/* Main Content */}
 			<main className="flex-1 px-4 sm:px-8 md:px-12 py-8 md:py-10 overflow-y-auto">
-				{/* Header */}
-				<div className="mb-8 md:mb-10 text-center md:text-left">
-					<h1 className="text-2xl md:text-[28px] font-semibold mb-1">
-						{serverGreeting ?? `${getGreeting()}, ${firstName ?? "there"}!`}
-					</h1>
-					<p className="text-gray-500 text-sm md:text-base">
-						You&apos;re feeling good today. Here&apos;s your day at a glance. •{" "}
-						{formatTime(currentTime)}
-					</p>
-				</div>
+				{/* Header Section - Styled like Figma */}
+				<div className="mb-10 md:mb-12 text-center md:text-left space-y-3">
+					{/* Top Line: Date | Location | Weather */}
+					<div className="flex flex-wrap items-center gap-3 text-gray-600 text-sm">
+						<span className="font-medium">
+							{new Date().toLocaleDateString("en-US", {
+								weekday: "short",
+								month: "short",
+								day: "numeric",
+							})}
+						</span>
 
-				{/* Daily Overview */}
-				<section className="bg-white border border-gray-200 rounded-2xl shadow-sm px-4 sm:px-6 md:px-8 py-5 flex flex-col md:flex-row md:justify-between md:items-center mb-8 gap-4 md:gap-0">
-					<div className="flex flex-col sm:flex-row sm:flex-wrap md:flex-nowrap items-start md:items-center gap-4 sm:gap-8 text-sm sm:text-[15px] font-medium text-gray-700">
-						<div className="flex items-center gap-2">
+						{/* Location chip */}
+						<span className="flex items-center gap-1 bg-white border border-gray-200 rounded-full px-3 py-1 shadow-sm">
+							<Image
+								src="/Icons/Property 1=Location.svg"
+								alt="Location"
+								width={14}
+								height={14}
+							/>
+							<span className="text-gray-700">New York</span>
+						</span>
+
+						{/* Weather chip */}
+						<span className="flex items-center gap-1 bg-white border border-gray-200 rounded-full px-3 py-1 shadow-sm">
 							<Image
 								src="/Icons/Property 1=Sun.svg"
 								alt="Weather"
-								width={22}
-								height={22}
+								width={14}
+								height={14}
 							/>
-							<span>Sunny 20°</span>
-						</div>
+							<span className="text-gray-700">20°</span>
+						</span>
 
-						<div className="flex items-center gap-2">
-							<Image
-								src="/Icons/Property 1=Car.svg"
-								alt="Commute"
-								width={22}
-								height={22}
-							/>
-							<span>25 min commute</span>
-							<span className="text-gray-400 text-xs md:text-sm">
-								to the office
-							</span>
-						</div>
-
-						<div className="flex items-center gap-2">
-							<Image
-								src="/Icons/Property 1=Calendar.svg"
-								alt="Meeting"
-								width={22}
-								height={22}
-							/>
-							<span>Team Standup</span>
-							<span className="text-gray-400 text-xs md:text-sm">
-								9:00 AM | 15 min
-							</span>
-						</div>
+						{/* Time (right-aligned on large screens) */}
+						<span className="ml-auto text-gray-400 text-sm font-medium">
+							{formatTime(currentTime)}
+						</span>
 					</div>
 
-					<button
-						onClick={() => router.push("/scenarios/morning-brief")}
-						className="px-4 sm:px-5 py-2 border border-gray-400 rounded-full hover:bg-gray-50 transition text-xs sm:text-sm font-medium self-center md:self-auto"
-					>
-						View Full Brief
-					</button>
+					{/* Greeting */}
+					<div className="mt-8 md:mt-10">
+						<h1 className="text-3xl md:text-[30px] font-normal text-black leading-snug">
+							{serverGreeting ?? `${getGreeting()}, ${firstName ?? "there"}!`}
+						</h1>
+						<p className="text-gray-600 text-base mt-2">
+							You’re feeling good today. Here’s your day at a glance.
+						</p>
+					</div>
+				</div>
+
+				{/* Daily Overview Section */}
+				<section className="mt-6 mb-8">
+					<div className="bg-white border border-gray-200 rounded-2xl shadow-[0_2px_10px_rgba(0,0,0,0.04)] px-8 py-5 md:py-6 flex flex-col md:flex-row md:justify-between md:items-center gap-6">
+						{/* Left content block */}
+						<div className="flex flex-col gap-4">
+							{/* Title */}
+							<h3 className="text-[20px] md:text-[21px] font-normal text-gray-800">
+								Daily Overview
+							</h3>
+
+							{/* Overview items */}
+							<div className="flex flex-col sm:flex-row flex-wrap items-start md:items-center gap-8 text-[15px] md:text-[15.5px] font-normal text-gray-800">
+								{/* Weather */}
+								<div className="flex items-center gap-3">
+									<div className="border border-gray-300 rounded-full p-[6px] flex items-center justify-center">
+										<Image
+											src="/Icons/Property 1=Sun.svg"
+											alt="Weather"
+											width={22}
+											height={22}
+										/>
+									</div>
+									<div>
+										<p className="text-[15px] leading-tight">Sunny</p>
+										<p className="text-gray-500 text-[13.5px]">20°</p>
+									</div>
+								</div>
+
+								{/* Commute */}
+								<div className="flex items-center gap-3">
+									<div className="border border-gray-300 rounded-full p-[6px] flex items-center justify-center">
+										<Image
+											src="/Icons/Property 1=Car.svg"
+											alt="Commute"
+											width={22}
+											height={22}
+										/>
+									</div>
+									<div>
+										<p className="text-[15px] leading-tight">25 min commute</p>
+										<p className="text-gray-500 text-[13.5px]">the office</p>
+									</div>
+								</div>
+
+								{/* Meeting */}
+								<div className="flex items-center gap-3">
+									<div className="border border-gray-300 rounded-full p-[6px] flex items-center justify-center">
+										<Image
+											src="/Icons/Property 1=Calendar.svg"
+											alt="Meeting"
+											width={22}
+											height={22}
+										/>
+									</div>
+									<div>
+										<p className="text-[15px] leading-tight">Team Standup</p>
+										<p className="text-gray-500 text-[13.5px]">
+											9:00 AM | 15min
+										</p>
+									</div>
+								</div>
+							</div>
+						</div>
+
+						{/* Button (right side) */}
+						<button
+							onClick={() => router.push("/scenarios/morning-brief")}
+							className="self-center md:self-auto px-6 py-[6px] border border-gray-400 rounded-full hover:bg-gray-50 transition text-[14.5px] font-normal text-gray-800"
+						>
+							View Full Brief
+						</button>
+					</div>
 				</section>
 
 				{/* Dashboard Cards */}
 				<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
 					{/* Emails */}
-					<div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-5 sm:p-6 flex flex-col justify-between hover:shadow-md transition">
+					<div className="bg-white border border-gray-200 rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.04)] p-5 flex flex-col justify-between hover:shadow-md transition-all duration-200">
 						<div>
-							<h3 className="text-base font-semibold mb-3 flex items-center gap-2">
+							{/* Header */}
+							<h3 className="text-[18px] font-medium mb-3 flex items-center gap-2 text-gray-900">
 								<Image
 									src="/Icons/Property 1=Email.svg"
 									alt="Email"
 									width={20}
 									height={20}
+									className="opacity-90"
 								/>
 								Emails
 							</h3>
 
-							<p className="text-sm text-gray-700 mb-1">12 important emails</p>
-							<p className="text-xs text-gray-400 mb-3">
-								from the last 24 hours
+							{/* Important Emails */}
+							<p className="text-[17px] text-gray-900 mb-0.5 leading-tight">
+								<span className="font-semibold text-[19px]">12</span> Important
+								Emails
 							</p>
 
-							<p className="text-sm font-medium mb-1">Priority Distribution</p>
-							<div className="flex flex-wrap gap-2 mb-4">
-								<span className="bg-red-100 text-red-600 text-xs px-2 py-1 rounded-full">
+							{/* Clock icon line */}
+							<div className="flex items-center gap-1.5 text-[14.5px] text-gray-500 mb-4">
+								<Image
+									src="/Icons/Property 1=Clock.svg"
+									alt="Time"
+									width={16}
+									height={16}
+									className="opacity-80"
+								/>
+								from the last 24 hours
+							</div>
+
+							{/* Priority Distribution */}
+							<p className="text-[16.5px] text-gray-800 mb-2 font-normal">
+								Priority Distribution
+							</p>
+							<div className="flex flex-wrap gap-2 mb-3">
+								{/* High */}
+								<span
+									className="text-white text-[13.5px] px-[8px] py-[2px] rounded-full font-normal"
+									style={{ background: "#F16A6A", borderRadius: "99px" }}
+								>
 									High: 3
 								</span>
-								<span className="bg-yellow-100 text-yellow-700 text-xs px-2 py-1 rounded-full">
+
+								{/* Medium */}
+								<span
+									className="text-white text-[13.5px] px-[8px] py-[2px] rounded-full font-normal"
+									style={{ background: "#FABA2E", borderRadius: "99px" }}
+								>
 									Medium: 5
 								</span>
-								<span className="bg-green-100 text-green-700 text-xs px-2 py-1 rounded-full">
+
+								{/* Low */}
+								<span
+									className="text-white text-[13.5px] px-[8px] py-[2px] rounded-full font-normal"
+									style={{ background: "#95D6A4", borderRadius: "99px" }}
+								>
 									Low: 4
 								</span>
 							</div>
 
-							<div className="text-xs sm:text-[13px] text-gray-600 space-y-1 mb-2">
-								<p>
-									Unread <span className="font-medium text-gray-800">8</span>
-								</p>
-								<p>
-									Trend <span className="text-red-500 font-medium">▼ 15%</span>
-								</p>
+							{/* Divider */}
+							<hr className="border-gray-200 mb-2" />
+
+							{/* Unread / Trend */}
+							<div className="flex justify-between items-center text-[15px] text-gray-700 mb-2">
+								<div className="flex flex-col leading-[1.1]">
+									<p className="font-normal mb-[2px]">Unread</p>
+									<span className="text-gray-900 font-semibold text-[17px]">
+										8
+									</span>
+								</div>
+
+								<div className="flex flex-col items-end leading-[1.1]">
+									<p className="font-normal mb-[2px]">Trend</p>
+									<div className="flex items-center gap-[3px]">
+										<svg
+											xmlns="http://www.w3.org/2000/svg"
+											width="16"
+											height="16"
+											viewBox="0 0 24 24"
+											fill="none"
+											stroke="#1E1E1E"
+											strokeWidth="1.8"
+											strokeLinecap="round"
+											strokeLinejoin="round"
+											className="opacity-90"
+										>
+											<path d="M3 7L10 14L14 10L21 17" />
+											<path d="M21 12V17H16" />
+										</svg>
+										<span className="text-gray-900 font-semibold text-[17px]">
+											15%
+										</span>
+									</div>
+								</div>
 							</div>
 
-							<p className="text-xs sm:text-[13px] text-gray-500">
-								Top Sender:{" "}
-								<span className="font-medium text-gray-800">John Mayer</span>
-							</p>
+							{/* Divider */}
+							<hr className="border-gray-200 mb-2" />
+
+							{/* Top Sender Box */}
+							<div className="bg-[#F8F9FB] border border-gray-200 rounded-xl px-3.5 py-2.5 text-[15px]">
+								<p className="text-gray-600 font-normal leading-tight">
+									Top Sender
+								</p>
+								<p className="text-gray-900 font-medium leading-tight mt-[2px]">
+									John Mayer
+								</p>
+							</div>
 						</div>
 
-						<button className="mt-6 w-full border border-gray-300 rounded-full py-2 text-xs sm:text-sm hover:bg-gray-50 transition">
+						{/* View All Button */}
+						<button
+							onClick={() => router.push("/dashboard/emails")}
+							className="mt-5 w-full rounded-full text-[15px] font-medium text-[#1E1E1E] tracking-[0.01em] transition-all duration-150 hover:bg-[#F8F8F8] active:scale-[0.99]"
+							style={{
+								border: "1px solid #1E1E1E",
+								padding: "4px 0",
+								lineHeight: "1.1",
+							}}
+						>
 							View All
 						</button>
 					</div>
 
-					{/* Calendar */}
-					<div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-5 sm:p-6 flex flex-col justify-between hover:shadow-md transition">
+					{/* Events */}
+					<div className="bg-white border border-gray-200 rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.04)] p-5 flex flex-col justify-between hover:shadow-md transition-all duration-200">
 						<div>
-							<h3 className="text-base font-semibold mb-3 flex items-center gap-2">
-								<Image
-									src="/Icons/Property 1=Calendar.svg"
-									alt="Calendar"
-									width={20}
-									height={20}
-								/>
-								Calendar{" "}
-								<span className="text-gray-400 text-xs">(3 RSVPs)</span>
-							</h3>
+							{/* Header */}
+							<div className="flex items-center justify-between mb-4">
+								<h3 className="text-[18px] font-semibold flex items-center gap-2 text-gray-900">
+									<Image
+										src="/Icons/Property 1=Calendar.svg"
+										alt="Calendar"
+										width={20}
+										height={20}
+										className="opacity-90"
+									/>
+									Events
+								</h3>
 
-							<p className="text-sm text-red-500 mb-2 font-medium">Busy Day</p>
-							<p className="text-sm text-gray-600 mb-3">6.5h across 4 events</p>
+								{/* RSVP Badge */}
+								<span className="text-[13px] px-[10px] py-[3px] bg-gray-50 border border-gray-300 rounded-full text-gray-700 font-medium">
+									3 RSVPs
+								</span>
+							</div>
 
-							<p className="text-sm font-medium mb-1">Next Event</p>
-							<p className="text-gray-800 font-medium text-[15px] mb-1">
-								Team Standup
+							{/* Busy Day */}
+							<div
+								className="px-[12px] py-[8px] mb-4"
+								style={{
+									background: "#FDF0EF",
+									border: "0.5px solid #C4C7CC",
+									borderRadius: "8px",
+								}}
+							>
+								<div className="flex items-center gap-[6px] mb-[2px]">
+									<svg
+										xmlns="http://www.w3.org/2000/svg"
+										width="16"
+										height="16"
+										viewBox="0 0 24 24"
+										fill="none"
+										stroke="#F16A6A"
+										strokeWidth="2"
+										strokeLinecap="round"
+										strokeLinejoin="round"
+										className="translate-y-[0.5px]"
+									>
+										<circle cx="12" cy="12" r="10" />
+										<polyline points="12 6 12 12 16 14" />
+									</svg>
+									<span className="text-[15px] font-semibold text-[#000000]">
+										Busy Day
+									</span>
+								</div>
+								<p className="text-[14px] text-[#000000] leading-[1.2] ml-[22px]">
+									6.5h across 4 events
+								</p>
+							</div>
+
+							{/* Next Event Section */}
+							<p className="text-[15px] text-gray-800 font-semibold mb-2">
+								Next Event
 							</p>
-							<p className="text-xs sm:text-[13px] text-gray-500">
-								9:00 AM | Zoom
-							</p>
+							<div className="bg-[#F8F9FB] border border-gray-200 rounded-xl px-4 py-3 mb-4">
+								<p className="text-[16px] font-semibold text-gray-900 mb-2">
+									Team Standup
+								</p>
 
-							<div className="flex flex-wrap gap-2 mt-3">
-								<span className="bg-green-100 text-green-700 text-xs px-2 py-1 rounded-full">
+								{/* Time */}
+								<div className="flex items-center gap-2 text-[14px] text-gray-600 mb-1">
+									<Image
+										src="/Icons/Property 1=Clock.svg"
+										alt="Time"
+										width={14}
+										height={14}
+									/>
+									9:00 AM | 15min
+								</div>
+
+								{/* Zoom */}
+								<div className="flex items-center gap-2 text-[14px] text-gray-600 mb-1">
+									<Image
+										src="/Icons/qlementine-icons_camera-16.svg"
+										alt="Zoom"
+										width={14}
+										height={14}
+									/>
+									Zoom
+								</div>
+
+								{/* Members */}
+								<div className="flex items-center gap-2 text-[14px] text-gray-600">
+									<Image
+										src="/Icons/mingcute_group-line.svg"
+										alt="Members"
+										width={14}
+										height={14}
+									/>
+									Members here
+								</div>
+							</div>
+
+							{/* Tags */}
+							<div className="flex flex-wrap gap-2 mb-1">
+								<span
+									className="text-white text-[13px] px-[10px] py-[4px] rounded-full font-normal"
+									style={{
+										background: "#95D6A4",
+										borderRadius: "99px",
+									}}
+								>
 									2 deep work blocks
 								</span>
-								<span className="bg-red-100 text-red-600 text-xs px-2 py-1 rounded-full">
-									1 at-risk task
+
+								<span
+									className="text-white text-[13px] px-[10px] py-[4px] rounded-full font-normal"
+									style={{
+										background: "#F16A6A",
+										borderRadius: "99px",
+									}}
+								>
+									1 at risk task
 								</span>
 							</div>
 						</div>
 
-						<button className="mt-6 w-full border border-gray-300 rounded-full py-2 text-xs sm:text-sm hover:bg-gray-50 transition">
-							View Calendar
+						{/* View All Button */}
+						<button
+							className="mt-5 w-full rounded-full text-[15px] font-medium text-[#1E1E1E] tracking-[0.01em] transition-all duration-150 hover:bg-[#F8F8F8] active:scale-[0.99]"
+							style={{
+								border: "1px solid #1E1E1E",
+								padding: "4px 0",
+								lineHeight: "1.1",
+							}}
+						>
+							View All
 						</button>
 					</div>
 
 					{/* Tasks */}
-					<div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-5 sm:p-6 flex flex-col justify-between hover:shadow-md transition">
+					<div className="bg-white border border-gray-200 rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.04)] p-5 flex flex-col justify-between hover:shadow-md transition-all duration-200">
 						<div>
-							<h3 className="text-base font-semibold mb-3 flex items-center gap-2">
-								<Image
-									src="/Icons/Property 1=Brief.svg"
-									alt="Tasks"
-									width={20}
-									height={20}
-								/>
-								Tasks <span className="text-gray-400 text-xs">(8)</span>
-							</h3>
+							{/* Header */}
+							<div className="flex items-center justify-between mb-4">
+								<h3 className="text-[17px] md:text-[18px] font-semibold flex items-center gap-2 text-gray-900">
+									<Image
+										src="/Icons/Property 1=Brief.svg"
+										alt="Tasks"
+										width={20}
+										height={20}
+										className="opacity-90"
+									/>
+									Tasks
+								</h3>
 
+								{/* Task Count Badge */}
+								<span className="text-[13px] bg-[#F7D76C] text-[#000000] font-semibold px-[9px] py-[3px] rounded-full shadow-sm">
+									8
+								</span>
+							</div>
+
+							{/* Task List */}
 							{[
-								"Task 1 name is here",
-								"Task 2 name is here",
-								"Task 3 name is here",
+								{ name: "Finalize dashboard layout", time: "Today, 11:00 AM" },
+								{ name: "Review daily brief copy", time: "Today, 1:30 PM" },
+								{ name: "Sync calendar API", time: "Today, 3:00 PM" },
 							].map((task, i) => (
 								<div
 									key={i}
-									className="bg-gray-50 border border-gray-100 rounded-lg px-3 py-2 mb-2"
+									className="bg-[#F8F9FB] border border-gray-200 rounded-xl px-4 py-2.5 mb-3"
 								>
-									<p className="text-sm text-gray-700 font-medium">{task}</p>
-									<p className="text-xs text-gray-400">Due: Today, 2:00 PM</p>
+									<p className="text-[15px] text-gray-900 font-medium mb-[2px] leading-tight">
+										{task.name}
+									</p>
+									<p className="text-[13px] text-gray-500 flex items-center gap-1">
+										<span className="text-[18px] leading-none">•</span> Due:{" "}
+										{task.time}
+									</p>
 								</div>
 							))}
 						</div>
 
-						<button className="mt-4 w-full border border-gray-300 rounded-full py-2 text-xs sm:text-sm hover:bg-gray-50 transition">
+						{/* Button */}
+						<button
+							className="mt-5 w-full rounded-full text-[15px] font-medium text-[#1E1E1E] tracking-[0.01em] transition-all duration-150 hover:bg-[#F8F8F8] active:scale-[0.99]"
+							style={{
+								border: "1px solid #1E1E1E",
+								padding: "4px 0",
+								lineHeight: "1.1",
+							}}
+						>
 							View All
 						</button>
 					</div>
 
 					{/* Reminders */}
-					<div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-5 sm:p-6 flex flex-col justify-between hover:shadow-md transition">
+					<div className="bg-white border border-gray-200 rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.04)] p-5 flex flex-col justify-between hover:shadow-md transition-all duration-200">
 						<div>
-							<h3 className="text-base font-semibold mb-3 flex items-center gap-2">
-								<Image
-									src="/Icons/Property 1=Reminder.svg"
-									alt="Reminders"
-									width={20}
-									height={20}
-								/>
-								Reminders <span className="text-gray-400 text-xs">(4)</span>
-							</h3>
+							{/* Header */}
+							<div className="flex items-center justify-between mb-4">
+								<h3 className="text-[17px] md:text-[18px] font-semibold flex items-center gap-2 text-gray-900">
+									<Image
+										src="/Icons/Property 1=Reminder.svg"
+										alt="Reminders"
+										width={20}
+										height={20}
+										className="opacity-90"
+									/>
+									Reminders
+								</h3>
 
+								{/* Count Badge */}
+								<span className="text-[13px] bg-[#F7D76C] text-[#000000] font-semibold px-[9px] py-[3px] rounded-full shadow-sm">
+									8
+								</span>
+							</div>
+
+							{/* Reminder List */}
 							{[
-								"Reminder 1 is here",
-								"Reminder 2 is here",
-								"Reminder 3 is here",
+								{ name: "Check email summaries", time: "Today, 9:00 AM" },
+								{ name: "Follow up with Megan", time: "Today, 12:00 PM" },
+								{ name: "Submit design updates", time: "Today, 4:30 PM" },
 							].map((reminder, i) => (
 								<div
 									key={i}
-									className="bg-gray-50 border border-gray-100 rounded-lg px-3 py-2 mb-2"
+									className="bg-[#F8F9FB] border border-gray-200 rounded-xl px-4 py-2.5 mb-3"
 								>
-									<p className="text-sm text-gray-700 font-medium">
-										{reminder}
+									<p className="text-[15px] text-gray-900 font-medium mb-[2px] leading-tight">
+										{reminder.name}
 									</p>
-									<p className="text-xs text-gray-400">Due: Today, 2:00 PM</p>
+									<p className="text-[13px] text-gray-500 flex items-center gap-1">
+										<span className="text-[18px] leading-none">•</span> Due:{" "}
+										{reminder.time}
+									</p>
 								</div>
 							))}
 						</div>
 
-						<button className="mt-4 w-full border border-gray-300 rounded-full py-2 text-xs sm:text-sm hover:bg-gray-50 transition">
+						{/* Button */}
+						<button
+							className="mt-5 w-full rounded-full text-[15px] font-medium text-[#1E1E1E] tracking-[0.01em] transition-all duration-150 hover:bg-[#F8F8F8] active:scale-[0.99]"
+							style={{
+								border: "1px solid #1E1E1E",
+								padding: "4px 0",
+								lineHeight: "1.1",
+							}}
+						>
 							View All
 						</button>
 					</div>
