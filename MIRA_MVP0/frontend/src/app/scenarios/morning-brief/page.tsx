@@ -141,9 +141,19 @@ export default function MorningBrief() {
 		const fetchMorningBrief = async () => {
 			try {
 				setLoading(true);
-				const token = await getValidToken();
+				setError(null); // Clear any previous errors
+				
+				// Get token - try to refresh if expired, but also try using existing token
+				const { getStoredToken } = await import("@/utils/auth");
+				let token = await getValidToken();
+				
+				// If getValidToken fails, try using stored token anyway (backend will validate)
 				if (!token) {
-					setError("Not authenticated");
+					token = getStoredToken();
+				}
+				
+				if (!token) {
+					setError("Not authenticated. Please log in again.");
 					setLoading(false);
 					return;
 				}
@@ -153,7 +163,7 @@ export default function MorningBrief() {
 				).replace(/\/+$/, "");
 
 				const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-				const response = await fetch(
+				let response = await fetch(
 					`${apiBase}/morning-brief?timezone=${encodeURIComponent(timezone)}`,
 					{
 						method: "POST",
@@ -163,6 +173,34 @@ export default function MorningBrief() {
 						},
 					}
 				);
+
+				// If 401, try refreshing token and retry
+				if (response.status === 401) {
+					const refreshedToken = await getValidToken();
+					if (refreshedToken && refreshedToken !== token) {
+						// Retry with new token
+						response = await fetch(
+							`${apiBase}/morning-brief?timezone=${encodeURIComponent(timezone)}`,
+							{
+								method: "POST",
+								headers: {
+									Authorization: `Bearer ${refreshedToken}`,
+									"Content-Type": "application/json",
+								},
+							}
+						);
+					}
+					
+					// If still 401 after refresh attempt, redirect to login
+					if (response.status === 401) {
+						setError("Your session has expired. Redirecting to login...");
+						setTimeout(() => {
+							router.push("/login");
+						}, 2000);
+						setLoading(false);
+						return;
+					}
+				}
 
 				if (!response.ok) {
 					const errorData = await response.json().catch(() => ({ detail: "Unknown error" }));

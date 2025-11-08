@@ -104,12 +104,20 @@ export default function Dashboard() {
 	const [firstName, setFirstName] = useState<string | null>(null);
     const [, setGreeting] = useState<string>("");
 
-	// Check authentication on mount
+	// Check authentication on mount and refresh token if needed
 	useEffect(() => {
-		if (!isAuthenticated()) {
-			router.push("/login");
-			return;
-		}
+		const checkAuth = async () => {
+			// Try to refresh token if expired (for returning users)
+			const { getValidToken } = await import("@/utils/auth");
+			const validToken = await getValidToken();
+			
+			if (!validToken) {
+				// No valid token, redirect to login
+				router.push("/login");
+				return;
+			}
+		};
+		checkAuth();
 	}, [router]);
 
 	// Update time every second

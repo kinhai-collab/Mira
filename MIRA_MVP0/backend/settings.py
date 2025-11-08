@@ -336,13 +336,62 @@ async def get_user_settings(request: Request, authorization: str = Header(...)):
             # If we can't check Outlook status, log but don't fail
             print(f"Warning: Could not check Outlook connection status: {outlook_check_error}")
         
-        # Note: Gmail tokens are stored in localStorage (frontend only), not in backend database
-        # So we can't verify Gmail connection status from backend
-        # The frontend will handle Gmail connection status via localStorage
+        # Check Gmail connection status from backend (if credentials were saved)
+        try:
+            gmail_access_token = user_data.get("gmail_access_token")
+            gmail_refresh_token = user_data.get("gmail_refresh_token")
+            
+            if gmail_access_token:
+                # Gmail credentials exist in backend - verify token is still valid
+                try:
+                    headers = {"Authorization": f"Bearer {gmail_access_token}"}
+                    # Make a lightweight request to verify token
+                    gmail_check = requests.get("https://www.googleapis.com/gmail/v1/users/me/profile", headers=headers, timeout=5)
+                    if gmail_check.status_code == 200:
+                        # Gmail token is valid - ensure Gmail is in connected emails
+                        if "Gmail" not in connected_emails:
+                            connected_emails = list(connected_emails)  # Make a copy
+                            connected_emails.append("Gmail")
+                    else:
+                        # Gmail token is invalid - try to refresh if we have refresh token
+                        if gmail_refresh_token:
+                            # Attempt to refresh token (this would need to be implemented)
+                            # For now, if token is invalid, remove Gmail from connected emails
+                            if "Gmail" in connected_emails:
+                                connected_emails = list(connected_emails)  # Make a copy
+                                connected_emails.remove("Gmail")
+                        else:
+                            # No refresh token, remove Gmail
+                            if "Gmail" in connected_emails:
+                                connected_emails = list(connected_emails)  # Make a copy
+                                connected_emails.remove("Gmail")
+                except Exception as gmail_check_error:
+                    # If we can't check Gmail status, keep the saved status
+                    print(f"Warning: Could not verify Gmail token: {gmail_check_error}")
+        except Exception as gmail_error:
+            # If we can't check Gmail status, continue with saved status
+            print(f"Warning: Could not check Gmail connection status: {gmail_error}")
+        
+        # Include Gmail credentials in response so frontend can restore them to localStorage
+        # This ensures connections persist after logout/login
+        if "gmail_access_token" in user_data:
+            # Keep Gmail credentials in response (frontend will restore to localStorage)
+            pass  # Already included in user_data
+        else:
+            # If no Gmail credentials in backend, but Gmail is marked as connected,
+            # we should still return the connection status (token might be in localStorage only)
+            pass
         
         # Update user_data with the corrected connected_calendars and connected_emails
         user_data["connectedCalendars"] = connected_calendars
         user_data["connectedEmails"] = connected_emails
+        
+        # Also include Gmail email if available (from localStorage or user_profile)
+        # This helps frontend restore the connection
+        if "gmail_email" not in user_data and user_data.get("email"):
+            # Use user's email as Gmail email if Gmail is connected
+            if "Gmail" in connected_emails:
+                user_data["gmail_email"] = user_data.get("email")
         
         return {"status": "success", "data": user_data}
     except Exception as e:

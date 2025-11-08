@@ -107,7 +107,9 @@ export default function SettingsPage() {
 	// Check authentication on mount and load user data
     useEffect(() => {
 		const loadAllData = async () => {
-			if (!isAuthenticated()) {
+			// Try to refresh token if expired (for returning users)
+			const validToken = await getValidToken();
+			if (!validToken) {
 				router.push('/login');
 				return;
 			}
@@ -137,7 +139,7 @@ export default function SettingsPage() {
 	// Load onboarding data from backend
 	const loadOnboardingData = async () => {
 		try {
-			const token = await getValidToken();
+			let token = await getValidToken();
 			if (!token) return;
 
 			const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
@@ -145,12 +147,26 @@ export default function SettingsPage() {
 			
 			if (!email) return;
 
-			const response = await fetch(`${apiBase}/onboarding_data?email=${encodeURIComponent(email)}`, {
+			let response = await fetch(`${apiBase}/onboarding_data?email=${encodeURIComponent(email)}`, {
 				headers: {
 					'Authorization': `Bearer ${token}`,
 					'Content-Type': 'application/json'
 				}
 			});
+
+			// If 401, try refreshing token once more
+			if (response.status === 401) {
+				const refreshedToken = await getValidToken();
+				if (refreshedToken && refreshedToken !== token) {
+					// Retry with new token
+					response = await fetch(`${apiBase}/onboarding_data?email=${encodeURIComponent(email)}`, {
+						headers: {
+							'Authorization': `Bearer ${refreshedToken}`,
+							'Content-Type': 'application/json'
+						}
+					});
+				}
+			}
 
 			if (response.ok) {
 				const data = await response.json();
@@ -181,12 +197,12 @@ export default function SettingsPage() {
 	// Load user settings from user_profile table
 	const loadUserSettings = async () => {
 		try {
-			const token = await getValidToken();
+			let token = await getValidToken();
 			if (!token) return;
 
 			const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
 			
-			const response = await fetch(`${apiBase}/user_settings`, {
+			let response = await fetch(`${apiBase}/user_settings`, {
 				headers: {
 					'Authorization': `Bearer ${token}`,
 					'Content-Type': 'application/json'
@@ -194,10 +210,46 @@ export default function SettingsPage() {
 				credentials: 'include' // Include cookies (needed for ms_access_token cookie)
 			});
 
+			// If 401, try refreshing token once more
+			if (response.status === 401) {
+				const refreshedToken = await getValidToken();
+				if (refreshedToken && refreshedToken !== token) {
+					// Retry with new token
+					response = await fetch(`${apiBase}/user_settings`, {
+						headers: {
+							'Authorization': `Bearer ${refreshedToken}`,
+							'Content-Type': 'application/json'
+						},
+						credentials: 'include'
+					});
+				}
+			}
+
 			if (response.ok) {
 				const result = await response.json();
 				if (result.status === 'success' && result.data) {
 					const settings = result.data;
+					
+					// Restore Gmail credentials from backend to localStorage if they exist
+					// This ensures connections persist after logout/login or browser restart
+					if (settings.gmail_access_token) {
+						localStorage.setItem("gmail_access_token", settings.gmail_access_token);
+						if (settings.gmail_refresh_token) {
+							localStorage.setItem("gmail_refresh_token", settings.gmail_refresh_token);
+						}
+						if (settings.gmail_email) {
+							localStorage.setItem("gmail_email", settings.gmail_email);
+						}
+						console.log("Gmail credentials restored from backend");
+					}
+					
+					// Update connected emails and calendars from backend (source of truth)
+					if (settings.connectedEmails && Array.isArray(settings.connectedEmails)) {
+						setConnectedEmails(settings.connectedEmails);
+					}
+					if (settings.connectedCalendars && Array.isArray(settings.connectedCalendars)) {
+						setConnectedCalendars(settings.connectedCalendars);
+					}
 					
 					// Update profile fields first (so they take priority over localStorage data)
 					if (settings.firstName || settings.lastName || settings.middleName) {
@@ -316,6 +368,11 @@ export default function SettingsPage() {
 			if (gmailConnected === "true" && gmailAccessToken && gmailEmail) {
 				localStorage.setItem("gmail_access_token", gmailAccessToken);
 				localStorage.setItem("gmail_email", gmailEmail);
+				// Also save refresh token if available (for persistence)
+				const gmailRefreshToken = urlParams.get("gmail_refresh_token") || urlParams.get("refresh_token");
+				if (gmailRefreshToken) {
+					localStorage.setItem("gmail_refresh_token", gmailRefreshToken);
+				}
 				
 				// Update local state immediately
 				setConnectedEmails(prev => {
@@ -324,6 +381,45 @@ export default function SettingsPage() {
 					}
 					return prev;
 				});
+
+				// Check if calendar scopes were also granted during Gmail OAuth
+				const calendarScopeGranted = urlParams.get("calendar_scope_granted") === "true";
+				if (calendarScopeGranted) {
+					// If calendar scopes were granted, also save calendar credentials
+					try {
+						const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+						const token = await getValidToken();
+						if (token) {
+							// Call backend to save calendar credentials from Gmail token
+							const gmailRefreshToken = urlParams.get("gmail_refresh_token") || urlParams.get("refresh_token");
+							const saveCalendarRes = await fetch(`${apiBase}/gmail/calendar/save-from-gmail`, {
+								method: "POST",
+								headers: {
+									'Authorization': `Bearer ${token}`,
+									'Content-Type': 'application/json'
+								},
+								body: JSON.stringify({
+									gmail_access_token: gmailAccessToken,
+									gmail_refresh_token: gmailRefreshToken
+								})
+							});
+							
+							if (saveCalendarRes.ok) {
+								// Mark Google Calendar as connected
+								setConnectedCalendars(prev => {
+									if (!prev.includes("Google Calendar")) {
+										return [...prev, "Google Calendar"];
+									}
+									return prev;
+								});
+								console.log("Calendar credentials saved from Gmail OAuth");
+							}
+						}
+					} catch (error) {
+						console.error("Error saving calendar credentials from Gmail:", error);
+						// Continue anyway - user can connect calendar separately
+					}
+				}
 
 				// Reload settings from backend to sync other connection statuses (Outlook, calendars)
 				await loadUserSettings();
@@ -337,7 +433,11 @@ export default function SettingsPage() {
 					return;
 				}
 				
-				alert(`Gmail connected successfully! Email: ${gmailEmail}. Don't forget to click Save to persist this connection.`);
+				if (calendarScopeGranted) {
+					alert(`Gmail and Google Calendar connected successfully! Email: ${gmailEmail}. Don't forget to click Save to persist these connections.`);
+				} else {
+					alert(`Gmail connected successfully! Email: ${gmailEmail}. Don't forget to click Save to persist this connection.`);
+				}
 				return;
 			}
 			
@@ -714,6 +814,31 @@ export default function SettingsPage() {
 					connectedEmails: connectedEmails,
 					connectedCalendars: connectedCalendars
 				};
+
+				// If Gmail is connected, also save Gmail credentials to backend for persistence
+				if (connectedEmails.includes("Gmail")) {
+					const gmailAccessToken = localStorage.getItem("gmail_access_token");
+					const gmailRefreshToken = localStorage.getItem("gmail_refresh_token");
+					if (gmailAccessToken) {
+						try {
+							// Save Gmail credentials to backend so connection persists
+							await fetch(`${apiBase}/gmail/credentials/save`, {
+								method: 'POST',
+								headers: {
+									'Authorization': `Bearer ${token}`,
+									'Content-Type': 'application/json'
+								},
+								body: JSON.stringify({
+									gmail_access_token: gmailAccessToken,
+									gmail_refresh_token: gmailRefreshToken || null
+								})
+							});
+						} catch (error) {
+							console.error("Error saving Gmail credentials:", error);
+							// Continue anyway - don't block the privacy save
+						}
+					}
+				}
 
 				let res = await fetch(`${apiBase}/user_privacy_save`, {
 					method: 'POST',

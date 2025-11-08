@@ -20,7 +20,16 @@ export function extractTokenFromUrl(): string | null {
 	if (!hash) return null;
 
 	const params = new URLSearchParams(hash.substring(1)); // Remove the # character
-	return params.get("access_token");
+	const accessToken = params.get("access_token");
+	
+	// Also extract and store refresh token if available (from OAuth callbacks)
+	const refreshToken = params.get("refresh_token");
+	if (refreshToken) {
+		storeRefreshToken(refreshToken);
+		console.log("Refresh token extracted from URL and stored");
+	}
+	
+	return accessToken;
 }
 
 export function extractUserDataFromToken(token: string): UserData | null {
@@ -189,13 +198,25 @@ export async function refreshAccessToken(): Promise<string | null> {
 export async function getValidToken(): Promise<string | null> {
 	let token = getStoredToken();
 	
-	if (!token || isTokenExpired(token)) {
-		console.log("Token expired or missing, attempting to refresh...");
-		token = await refreshAccessToken();
+	if (!token) {
+		console.log("No token found, user needs to log in");
+		return null;
+	}
+	
+	// Only try to refresh if token appears expired (with some buffer time)
+	// But don't fail completely - let the backend decide if token is really invalid
+	if (isTokenExpired(token)) {
+		console.log("Token appears expired, attempting to refresh...");
+		const refreshedToken = await refreshAccessToken();
 		
-		if (!token) {
-			console.error("Failed to refresh token, user needs to log in again");
-			return null;
+		if (refreshedToken) {
+			console.log("Token refreshed successfully");
+			return refreshedToken;
+		} else {
+			// Refresh failed, but return the original token anyway
+			// Backend will validate and return 401 if it's truly invalid
+			console.warn("Token refresh failed, but will try using existing token");
+			return token;
 		}
 	}
 	

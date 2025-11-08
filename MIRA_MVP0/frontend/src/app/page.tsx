@@ -49,38 +49,39 @@ export default function Home() {
 				return;
 			}
 
-			if (!isAuthenticated()) {
+			// Try to refresh token if expired (for returning users)
+			const { getValidToken } = await import("@/utils/auth");
+			const validToken = await getValidToken();
+			
+			if (!validToken) {
+				// No valid token, redirect to login
 				router.push("/login");
 				return;
 			}
 
 			try {
-				const token =
-					localStorage.getItem("access_token") ?? localStorage.getItem("token");
-				if (token) {
-					const apiBase = (
-						process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
-					).replace(/\/+$/, "");
-					const email = localStorage.getItem("mira_email");
+				const apiBase = (
+					process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+				).replace(/\/+$/, "");
+				const email = localStorage.getItem("mira_email");
 
-					if (email) {
-						const onboardingRes = await fetch(
-							`${apiBase}/onboarding_status?email=${encodeURIComponent(email)}`,
-							{
-								headers: {
-									Authorization: `Bearer ${token}`,
-									"Content-Type": "application/json",
-								},
-							}
-						);
+				if (email) {
+					const onboardingRes = await fetch(
+						`${apiBase}/onboarding_status?email=${encodeURIComponent(email)}`,
+						{
+							headers: {
+								Authorization: `Bearer ${validToken}`,
+								"Content-Type": "application/json",
+							},
+						}
+					);
 
-						if (onboardingRes.ok) {
-							const onboardingData = await onboardingRes.json();
-							const onboarded = !!onboardingData?.onboarded;
-							if (!onboarded) {
-								router.push("/onboarding/step1");
-								return;
-							}
+					if (onboardingRes.ok) {
+						const onboardingData = await onboardingRes.json();
+						const onboarded = !!onboardingData?.onboarded;
+						if (!onboarded) {
+							router.push("/onboarding/step1");
+							return;
 						}
 					}
 				}

@@ -12,44 +12,107 @@ export default function OnboardingStep4() {
 	const router = useRouter();
 	const [connectedCalendars, setConnectedCalendars] = useState<string[]>([]);
 	const [connecting, setConnecting] = useState<string | null>(null);
+	const [hasAutoConnected, setHasAutoConnected] = useState(false); // Track if we've already tried auto-connect
 
 	// Check for Google Calendar and Outlook Calendar connection status on component mount
 	useEffect(() => {
-		const urlParams = new URLSearchParams(window.location.search);
-		const calendarConnected = urlParams.get("calendar");
-		const calendarStatus = urlParams.get("status");
-		const msConnected = urlParams.get("ms_connected");
-		const msEmail = urlParams.get("email");
+		const checkConnectionStatus = async () => {
+			const urlParams = new URLSearchParams(window.location.search);
+			const calendarConnected = urlParams.get("calendar");
+			const calendarStatus = urlParams.get("status");
+			const msConnected = urlParams.get("ms_connected");
+			const msEmail = urlParams.get("email");
+			const returnTo = urlParams.get("return_to");
 
-		// Handle Google Calendar callback
-		if (calendarConnected === "google" && calendarStatus === "connected") {
-			setConnectedCalendars(prev => {
-				if (!prev.includes("Google Calendar")) {
-					return [...prev, "Google Calendar"];
-				}
-				return prev;
-			});
+			// Handle Google Calendar callback FIRST (before auto-connect logic)
+			if (calendarConnected === "google" && calendarStatus === "connected") {
+				setConnectedCalendars(prev => {
+					if (!prev.includes("Google Calendar")) {
+						return [...prev, "Google Calendar"];
+					}
+					return prev;
+				});
 
-			// Clear URL parameters
-			window.history.replaceState({}, document.title, window.location.pathname);
+				// Clear URL parameters (including return_to)
+				window.history.replaceState({}, document.title, window.location.pathname);
+				
+				// Mark that we've handled the callback, so auto-connect won't run
+				setHasAutoConnected(true);
+				
+				alert("Google Calendar connected successfully!");
+				return; // Exit early - don't run auto-connect logic
+			}
+			// Handle Outlook Calendar callback (same Microsoft OAuth, but we'll check if we're on calendar step)
+			else if (msConnected === "true" && msEmail) {
+				setConnectedCalendars(prev => {
+					if (!prev.includes("Outlook Calendar")) {
+						return [...prev, "Outlook Calendar"];
+					}
+					return prev;
+				});
+
+				// Clear URL parameters
+				window.history.replaceState({}, document.title, window.location.pathname);
+				
+				alert(`Outlook Calendar connected successfully! Email: ${msEmail}`);
+				return; // Exit early
+			}
 			
-			alert("Google Calendar connected successfully!");
-		}
-		// Handle Outlook Calendar callback (same Microsoft OAuth, but we'll check if we're on calendar step)
-		else if (msConnected === "true" && msEmail) {
-			setConnectedCalendars(prev => {
-				if (!prev.includes("Outlook Calendar")) {
-					return [...prev, "Outlook Calendar"];
+			// Check if Google Calendar is already connected via backend
+			try {
+				const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+				const token = localStorage.getItem("access_token") || localStorage.getItem("token");
+				if (token) {
+					const settingsRes = await fetch(`${apiBase}/user_settings`, {
+						headers: {
+							'Authorization': `Bearer ${token}`,
+							'Content-Type': 'application/json'
+						},
+						credentials: 'include'
+					});
+					
+					if (settingsRes.ok) {
+						const settingsResult = await settingsRes.json();
+						if (settingsResult?.status === 'success' && settingsResult?.data) {
+							const connectedCals = settingsResult.data.connectedCalendars || [];
+							if (connectedCals.includes("Google Calendar")) {
+								setConnectedCalendars(prev => {
+									if (!prev.includes("Google Calendar")) {
+										return [...prev, "Google Calendar"];
+									}
+									return prev;
+								});
+								setHasAutoConnected(true); // Mark as already connected, don't auto-connect
+								return; // Exit - calendar is already connected
+							}
+						}
+					}
 				}
-				return prev;
-			});
-
-			// Clear URL parameters
-			window.history.replaceState({}, document.title, window.location.pathname);
+			} catch (error) {
+				console.error("Error checking calendar connection status:", error);
+			}
 			
-			alert(`Outlook Calendar connected successfully! Email: ${msEmail}`);
-		}
-	}, [connectedCalendars]);
+			// Only auto-connect if:
+			// 1. User signed up with Google
+			// 2. Google Calendar is not already connected
+			// 3. We haven't already tried to auto-connect
+			// 4. We're not in the middle of connecting
+			const provider = localStorage.getItem("mira_provider");
+			if (
+				provider === "google" && 
+				!connectedCalendars.includes("Google Calendar") && 
+				!hasAutoConnected &&
+				connecting !== "Google Calendar"
+			) {
+				console.log("User signed up with Google, auto-connecting Google Calendar...");
+				setHasAutoConnected(true); // Mark that we've tried
+				// Auto-trigger Google Calendar connection
+				setTimeout(() => handleGoogleCalendarConnect(), 500); // Small delay to avoid race conditions
+			}
+		};
+		
+		checkConnectionStatus();
+	}, []); // Run only once on mount
 
 	const handleGoogleCalendarConnect = async () => {
 		setConnecting("Google Calendar");
