@@ -104,9 +104,6 @@ export default function Dashboard() {
 	const [firstName, setFirstName] = useState<string | null>(null);
 	const [, setGreeting] = useState<string>("");
 
-<<<<<<< HEAD
-	// Check authentication on mount and refresh token if needed
-=======
 	// Weather & location state for dashboard header
 	const [location, setLocation] = useState<string>("New York");
 	const [isLocationLoading, setIsLocationLoading] = useState<boolean>(true);
@@ -116,8 +113,7 @@ export default function Dashboard() {
 	const [weatherDescription, setWeatherDescription] = useState<string | null>(null);
 	const [isWeatherLoading, setIsWeatherLoading] = useState<boolean>(false);
 
-	// Check authentication on mount
->>>>>>> 331bf8be64d44249f66299db76f64ff5c2178ce7
+	// Check authentication on mount and refresh token if needed
 	useEffect(() => {
 		const checkAuth = async () => {
 			// Try to refresh token if expired (for returning users)
@@ -141,6 +137,16 @@ export default function Dashboard() {
 
 		return () => clearInterval(timer);
 	}, []);
+
+	const displayLocation = isLocationLoading ? "Locating..." : location || "New York";
+	const displayTemperature =
+		temperatureC != null
+			? `${Math.round(temperatureC)}°C`
+			: isWeatherLoading
+			? "Loading..."
+			: "--";
+	const displayWeatherDescription =
+		weatherDescription ?? (isWeatherLoading ? "Loading..." : "Weather unavailable");
 
 	// Handle OAuth callback token extraction (no greeting call to prevent double voice)
 	useEffect(() => {
@@ -300,11 +306,36 @@ export default function Dashboard() {
 
 		if (!('geolocation' in navigator)) { ipFallback(); return; }
 
-		const success = (pos: GeolocationPosition) => {
-			const { latitude: lat, longitude: lon } = pos.coords;
-			setLatitude(lat); setLongitude(lon);
-			fetchWeatherForCoords(lat, lon).catch((e) => console.error(e));
-			setIsLocationLoading(false);
+		const success = async (pos: GeolocationPosition) => {
+			try {
+				const { latitude: lat, longitude: lon } = pos.coords;
+				setLatitude(lat); setLongitude(lon);
+				
+				// Use OpenStreetMap Nominatim reverse geocoding (no key required)
+				const res = await fetch(
+					`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}`
+				);
+				if (!res.ok) {
+					// If reverse geocoding fails, fall back to IP-based lookup
+					await ipFallback();
+					return;
+				}
+				const data = await res.json();
+				const city =
+					data?.address?.city ||
+					data?.address?.town ||
+					data?.address?.village ||
+					data?.address?.state ||
+					data?.address?.county;
+				if (city) setLocation(city);
+				
+				fetchWeatherForCoords(lat, lon).catch((e) => console.error(e));
+			} catch (err) {
+				console.error('Dashboard reverse geocode error:', err);
+				await ipFallback();
+			} finally {
+				setIsLocationLoading(false);
+			}
 		};
 
 		const failure = async (err: any) => { console.warn('Dashboard geolocation failed:', err); await ipFallback(); };
@@ -335,7 +366,7 @@ export default function Dashboard() {
 								width={14}
 								height={14}
 							/>
-							<span className="text-gray-700">New York</span>
+							<span className="text-gray-700">{displayLocation}</span>
 						</span>
 
 						{/* Weather chip */}
@@ -346,7 +377,7 @@ export default function Dashboard() {
 								width={14}
 								height={14}
 							/>
-							<span className="text-gray-700">20°</span>
+							<span className="text-gray-700">{displayTemperature}</span>
 						</span>
 
 						{/* Time (right-aligned on large screens) */}
@@ -389,8 +420,12 @@ export default function Dashboard() {
 										/>
 									</div>
 									<div>
-										<p className="text-[15px] leading-tight">Sunny</p>
-										<p className="text-gray-500 text-[13.5px]">20°</p>
+										<p className="text-[15px] leading-tight">
+											{displayWeatherDescription}
+										</p>
+										<p className="text-gray-500 text-[13.5px]">
+											{displayTemperature}
+										</p>
 									</div>
 								</div>
 
