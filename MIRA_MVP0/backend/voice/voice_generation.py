@@ -12,6 +12,8 @@ import audioop
 import logging
 import base64
 
+logging.basicConfig(level=logging.INFO)
+
 def _stream_to_bytes(stream) -> bytes:
     """
     Normalize an iterable stream returned by TTS clients into raw bytes.
@@ -74,22 +76,6 @@ def get_elevenlabs_client():
             api_key = os.getenv("ELEVENLABS_API_KEY")
             if not api_key:
                 raise HTTPException(status_code=500, detail="Voice service unavailable: ELEVENLABS_API_KEY not configured")
-
-            # Sanity check: common mistake is placing an OpenAI key (starts with "sk_")
-            # into the ELEVENLABS_API_KEY env var. Give a clearer error for that case.
-            try:
-                if isinstance(api_key, str) and api_key.strip().startswith("sk_"):
-                    raise HTTPException(
-                        status_code=500,
-                        detail=("Voice service unavailable: ELEVENLABS_API_KEY appears to be an OpenAI key (starts with 'sk_'). "
-                                "Please set your ElevenLabs API key in ELEVENLABS_API_KEY environment variable.")
-                    )
-            except HTTPException:
-                # re-raise HTTPException
-                raise
-            except Exception:
-                # Ignore any unexpected check errors and proceed to attempt client creation
-                pass
 
             client = ElevenLabs(api_key=api_key)
         except ImportError as e:
@@ -349,6 +335,7 @@ async def generate_voice(text: str = "Hello from Mira!"):
     Generates spoken audio from the given text using ElevenLabs.
     Returns an MP3 stream that the frontend can directly play.
     """
+    logging.info(f"Generating voice for text: {text[:50]}...")
     try:
         # Get the ElevenLabs client (with lazy import)
         elevenlabs_client = get_elevenlabs_client()
@@ -368,11 +355,11 @@ async def generate_voice(text: str = "Hello from Mira!"):
         # Combine all chunks into one binary MP3 blob (normalize types)
         try:
             audio_bytes = _stream_to_bytes(audio_stream)
-            logging.debug(f"Audio bytes length: {len(audio_bytes)}")
+            logging.info(f"Audio bytes length: {len(audio_bytes)}")
             try:
-                logging.debug(f"First 16 bytes (hex): {audio_bytes[:16].hex()}")
+                logging.info(f"First 16 bytes (hex): {audio_bytes[:16].hex()}")
             except Exception:
-                logging.debug(f"First 16 bytes (raw): {audio_bytes[:16]}")
+                logging.info(f"First 16 bytes (raw): {audio_bytes[:16]}")
         except Exception as e:
             logging.exception(f"Failed to collect audio stream: {e}")
             audio_bytes = b""
@@ -381,31 +368,31 @@ async def generate_voice(text: str = "Hello from Mira!"):
         if len(audio_bytes) >= 3:
             if (audio_bytes[0] == 0xFF and (audio_bytes[1] & 0xE0) == 0xE0) or \
                (audio_bytes[0] == 0x49 and audio_bytes[1] == 0x44 and audio_bytes[2] == 0x33):
-                print("Audio data appears to be valid MP3")
+                logging.info("Audio data appears to be valid MP3")
             else:
-                print("Audio data does not appear to be valid MP3")
-                print("This might be base64 encoded or in a different format")
+                logging.info("Audio data does not appear to be valid MP3")
+                logging.info("This might be base64 encoded or in a different format")
                 
                 # Try to decode as base64 if it looks like base64
                 try:
                     import base64
                     # Check if the data looks like base64 (contains only base64 characters)
                     if all(c in b'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=' for c in audio_bytes):
-                        print("Attempting to decode as base64...")
+                        logging.info("Attempting to decode as base64...")
                         decoded_bytes = base64.b64decode(audio_bytes)
-                        print(f"Decoded bytes length: {len(decoded_bytes)}")
-                        print(f"Decoded first 16 bytes (hex): {decoded_bytes[:16].hex()}")
+                        logging.info(f"Decoded bytes length: {len(decoded_bytes)}")
+                        logging.info(f"Decoded first 16 bytes (hex): {decoded_bytes[:16].hex()}")
                         
                         # Check if decoded data is valid MP3
                         if len(decoded_bytes) >= 3:
                             if (decoded_bytes[0] == 0xFF and (decoded_bytes[1] & 0xE0) == 0xE0) or \
                                (decoded_bytes[0] == 0x49 and decoded_bytes[1] == 0x44 and decoded_bytes[2] == 0x33):
-                                print(" Decoded audio data appears to be valid MP3")
+                                logging.info(" Decoded audio data appears to be valid MP3")
                                 audio_bytes = decoded_bytes
                             else:
-                                print("Decoded data still doesn't look like MP3")
+                                logging.info("Decoded data still doesn't look like MP3")
                 except Exception as e:
-                    print(f"Base64 decode failed: {e}")
+                    logging.info(f"Base64 decode failed: {e}")
         
         # Validate that we got audio data
         if not audio_bytes:
