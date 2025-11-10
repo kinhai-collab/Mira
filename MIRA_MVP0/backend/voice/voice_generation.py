@@ -1,3 +1,4 @@
+import traceback
 import os
 import re
 import base64
@@ -7,6 +8,7 @@ from datetime import datetime
 from typing import Optional, List, Dict, Any
 import tempfile
 import json
+from Google_Calendar_API.service import list_events
 
 router = APIRouter()
 
@@ -136,13 +138,13 @@ async def text_query_pipeline(request_data: dict):
                 "action": "navigate",
                 "actionTarget": "/scenarios/morning-brief",
             })
-        
+
         # Check for email/calendar summary intent
         email_keywords = re.compile(r"(email|inbox|mail|messages)", re.I)
-        calendar_keywords = re.compile(r"(calendar|schedule|event)", re.I)
+        calendar_keywords = re.compile(r"(calendar|schedule|events?|meetings?)", re.I)
         has_email_intent = email_keywords.search(user_input)
         has_calendar_intent = calendar_keywords.search(user_input)
-        
+
         if has_email_intent or has_calendar_intent:
             # Determine which steps to show based on what was requested
             steps = []
@@ -153,8 +155,44 @@ async def text_query_pipeline(request_data: dict):
                 steps.append({"id": "highlights", "label": "Highlighting the most important meetings..."})
             if has_email_intent and has_calendar_intent:
                 steps.append({"id": "conflicts", "label": "Noting any schedule conflicts..."})
-            
-            # Build action data with mock emails
+
+            # --- Fetch real Google Calendar events dynamically ---
+            from datetime import datetime, timedelta
+
+            calendar_events = []
+            if has_calendar_intent:
+                try:
+                    now = datetime.utcnow().isoformat() + "Z"
+                    tomorrow = (datetime.utcnow() + timedelta(days=1)).isoformat() + "Z"
+                    # TODO: Replace "test_user" with actual user ID once available
+                    events_resp = list_events(uid="67812a6f-c76d-46d3-bcd4-ac879fb8f06a", time_min=now, time_max=tomorrow, page_token=None)
+                    print("🧭 Raw Google Calendar API Response:", json.dumps(events_resp, indent=2))
+
+
+                    items = events_resp.get("items", [])
+                    for ev in items:
+                        start = ev.get("start", {}).get("dateTime") or ev.get("start", {}).get("date")
+                        end = ev.get("end", {}).get("dateTime") or ev.get("end", {}).get("date")
+                        location = ev.get("location", "No location")
+                        summary = ev.get("summary", "Untitled Event")
+                        description = ev.get("description", "")
+
+                        start_time = start.split("T")[1][:5] if start and "T" in start else "All day"
+                        end_time = end.split("T")[1][:5] if end and "T" in end else ""
+
+                        calendar_events.append({
+                            "id": ev.get("id", ""),
+                            "title": summary,
+                            "timeRange": f"{start_time} – {end_time}" if end_time else start_time,
+                            "location": location,
+                            "note": description,
+                        })
+                    print(f"✅ Loaded {len(calendar_events)} Google Calendar events.")
+                except Exception as e:
+                    print(f"⚠️ Error fetching Google Calendar events: {e}")
+                    calendar_events = []
+
+            # --- Combine email + calendar data into unified response ---
             action_data = {
                 "steps": steps,
                 "emails": [
@@ -172,54 +210,15 @@ async def text_query_pipeline(request_data: dict):
                         "receivedAt": "7:55 AM",
                         "summary": "Requested final slide revisions before the 3 PM prep.",
                     },
-                    {
-                        "id": "email-3",
-                        "from": "kate.foret@gmail.com",
-                        "subject": "Marketing Budget Approval",
-                        "receivedAt": "Yesterday",
-                        "summary": "Marketing budget needs approval.",
-                    },
-                    {
-                        "id": "email-4",
-                        "from": "sam.foleigh@outlook.com",
-                        "subject": "Revised Marketing Budget",
-                        "receivedAt": "Yesterday",
-                        "summary": "Updated marketing budget proposal.",
-                    },
-                    {
-                        "id": "email-5",
-                        "from": "john.doe@gmail.com",
-                        "subject": "Q4 Planning Meeting",
-                        "receivedAt": "2 days ago",
-                        "summary": "Planning for Q4 objectives.",
-                    },
-                    {
-                        "id": "email-6",
-                        "from": "sarah.smith@outlook.com",
-                        "subject": "Team Building Event",
-                        "receivedAt": "2 days ago",
-                        "summary": "Details about upcoming team event.",
-                    },
                 ] if has_email_intent else [],
-                "calendarEvents": [
-                    {
-                        "id": "event-1",
-                        "title": "Design sync with Flowcore",
-                        "timeRange": "10:30 AM – 11:15 AM",
-                        "location": "Zoom",
-                        "note": "Share final onboarding visuals.",
-                    },
-                    {
-                        "id": "event-2",
-                        "title": "Product + Ops standup",
-                        "timeRange": "1:00 PM – 1:30 PM",
-                        "location": "HQ Atrium",
-                        "note": "Review blockers from yesterday.",
-                    },
-                ] if has_calendar_intent else [],
-                "focus": "Reply to Flowcore with the signed-off flows and join the design sync prepared with the latest visuals." if (has_email_intent and has_calendar_intent) else None,
+                "calendarEvents": calendar_events if has_calendar_intent else [],
+                "focus": (
+                    "Reply to Flowcore with the signed-off flows and join the design sync prepared with the latest visuals."
+                    if (has_email_intent and has_calendar_intent)
+                    else None
+                ),
             }
-            
+
             # Customize response text based on what was requested
             if has_email_intent and has_calendar_intent:
                 response_text = "Here's what I'm seeing in your inbox and calendar."
@@ -227,14 +226,16 @@ async def text_query_pipeline(request_data: dict):
                 response_text = "Here's what I'm seeing in your inbox."
             else:
                 response_text = "Here's what I'm seeing on your calendar."
-            
+
             return JSONResponse({
                 "text": response_text,
                 "userText": user_input,
                 "action": "email_calendar_summary",
                 "actionData": action_data,
             })
-        
+
+          
+         
         # Build chat message array
         messages: List[Dict[str, Any]] = [
             {
@@ -346,7 +347,8 @@ async def voice_pipeline(
             })
 
         email_keywords = re.compile(r"(email|inbox|mail|messages)", re.I)
-        calendar_keywords = re.compile(r"(calendar|schedule|event)", re.I)
+        calendar_keywords = re.compile(r"(calendar|schedule|events?|meetings?)", re.I)
+
         has_email_intent = email_keywords.search(user_input)
         has_calendar_intent = calendar_keywords.search(user_input)
         
@@ -389,6 +391,44 @@ async def voice_pipeline(
             except Exception:
                 audio_base64 = None
 
+            # --- Fetch real Google Calendar events dynamically ---
+
+            from datetime import datetime, timedelta
+
+            calendar_events = []
+            if has_calendar_intent:
+                try:
+                    now = datetime.utcnow().isoformat() + "Z"
+                    tomorrow = (datetime.utcnow() + timedelta(days=1)).isoformat() + "Z"
+                    # TODO: Replace with real user context once available
+                    events_resp = list_events(uid="67812a6f-c76d-46d3-bcd4-ac879fb8f06a", time_min=now, time_max=tomorrow, page_token=None)
+                    print("🧭 Raw Google Calendar API Response:", json.dumps(events_resp, indent=2))
+
+
+                    items = events_resp.get("items", [])
+                    for ev in items:
+                        start = ev.get("start", {}).get("dateTime") or ev.get("start", {}).get("date")
+                        end = ev.get("end", {}).get("dateTime") or ev.get("end", {}).get("date")
+                        location = ev.get("location", "No location")
+                        summary = ev.get("summary", "Untitled Event")
+                        description = ev.get("description", "")
+
+                        start_time = start.split("T")[1][:5] if start and "T" in start else "All day"
+                        end_time = end.split("T")[1][:5] if end and "T" in end else ""
+
+                        calendar_events.append({
+                            "id": ev.get("id", ""),
+                            "title": summary,
+                            "timeRange": f"{start_time} – {end_time}" if end_time else start_time,
+                            "location": location,
+                            "note": description,
+                        })
+                    print(f"✅ Loaded {len(calendar_events)} Google Calendar events for voice pipeline.")
+                except Exception as e:
+                    print(f"⚠️ Error fetching Google Calendar events: {e}")
+                    calendar_events = []
+
+            # --- Combine both email + calendar results ---
             action_data = {
                 "steps": steps,
                 "emails": [
@@ -406,52 +446,13 @@ async def voice_pipeline(
                         "receivedAt": "7:55 AM",
                         "summary": "Requested final slide revisions before the 3 PM prep.",
                     },
-                    {
-                        "id": "email-3",
-                        "from": "kate.foret@gmail.com",
-                        "subject": "Marketing Budget Approval",
-                        "receivedAt": "Yesterday",
-                        "summary": "Marketing budget needs approval.",
-                    },
-                    {
-                        "id": "email-4",
-                        "from": "sam.foleigh@outlook.com",
-                        "subject": "Revised Marketing Budget",
-                        "receivedAt": "Yesterday",
-                        "summary": "Updated marketing budget proposal.",
-                    },
-                    {
-                        "id": "email-5",
-                        "from": "john.doe@gmail.com",
-                        "subject": "Q4 Planning Meeting",
-                        "receivedAt": "2 days ago",
-                        "summary": "Planning for Q4 objectives.",
-                    },
-                    {
-                        "id": "email-6",
-                        "from": "sarah.smith@outlook.com",
-                        "subject": "Team Building Event",
-                        "receivedAt": "2 days ago",
-                        "summary": "Details about upcoming team event.",
-                    },
                 ] if has_email_intent else [],
-                "calendarEvents": [
-                    {
-                        "id": "event-1",
-                        "title": "Design sync with Flowcore",
-                        "timeRange": "10:30 AM – 11:15 AM",
-                        "location": "Zoom",
-                        "note": "Share final onboarding visuals.",
-                    },
-                    {
-                        "id": "event-2",
-                        "title": "Product + Ops standup",
-                        "timeRange": "1:00 PM – 1:30 PM",
-                        "location": "HQ Atrium",
-                        "note": "Review blockers from yesterday.",
-                    },
-                ] if has_calendar_intent else [],
-                "focus": "Reply to Flowcore with the signed-off flows and join the design sync prepared with the latest visuals." if (has_email_intent and has_calendar_intent) else None,
+                "calendarEvents": calendar_events if has_calendar_intent else [],
+                "focus": (
+                    "Reply to Flowcore with the signed-off flows and join the design sync prepared with the latest visuals."
+                    if (has_email_intent and has_calendar_intent)
+                    else None
+                ),
             }
 
             return JSONResponse({
