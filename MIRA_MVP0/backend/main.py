@@ -16,6 +16,7 @@ from payments import router as stripe_router
 from morning_brief_api import router as morning_brief_router
 from temp import router as weather_router
 from Google_Calendar_API import register_google_calendar
+from dashboard_api import router as dashboard_router
 
 app = FastAPI()
 
@@ -46,6 +47,7 @@ register_google_calendar(app)
 app.include_router(outlook_events)
 app.include_router(gmail_reader)
 app.include_router(morning_brief_router)
+app.include_router(dashboard_router)
 
 
 @app.get("/envcheck")

@@ -12,6 +12,20 @@ import {
 	isAuthenticated,
 	clearAuthTokens,
 } from "@/utils/auth";
+import {
+	fetchEmailStats,
+	fetchEventStats,
+	fetchTaskStats,
+	fetchReminderStats,
+	formatEventTime,
+	formatDuration,
+	formatTaskDueDate,
+	formatReminderTime,
+	type EmailStats,
+	type EventStats,
+	type TaskStats,
+	type ReminderStats,
+} from "@/utils/dashboardApi";
 
 function MobileProfileMenu() {
 	const [open, setOpen] = useState(false);
@@ -112,6 +126,16 @@ export default function Dashboard() {
 	const [temperatureC, setTemperatureC] = useState<number | null>(null);
 	const [weatherDescription, setWeatherDescription] = useState<string | null>(null);
 	const [isWeatherLoading, setIsWeatherLoading] = useState<boolean>(false);
+
+	// Dashboard data state
+	const [emailStats, setEmailStats] = useState<EmailStats | null>(null);
+	const [eventStats, setEventStats] = useState<EventStats | null>(null);
+	const [taskStats, setTaskStats] = useState<TaskStats | null>(null);
+	const [reminderStats, setReminderStats] = useState<ReminderStats | null>(null);
+	const [isLoadingEmails, setIsLoadingEmails] = useState<boolean>(true);
+	const [isLoadingEvents, setIsLoadingEvents] = useState<boolean>(true);
+	const [isLoadingTasks, setIsLoadingTasks] = useState<boolean>(true);
+	const [isLoadingReminders, setIsLoadingReminders] = useState<boolean>(true);
 
 	// Check authentication on mount and refresh token if needed
 	useEffect(() => {
@@ -342,6 +366,75 @@ export default function Dashboard() {
 
 		navigator.geolocation.getCurrentPosition(success, failure, { timeout: 10000 });
 	}, []);
+
+	// Fetch email stats
+	useEffect(() => {
+		const loadEmailStats = async () => {
+			setIsLoadingEmails(true);
+			try {
+				const stats = await fetchEmailStats();
+				setEmailStats(stats);
+			} catch (error) {
+				console.error("Failed to load email stats:", error);
+			} finally {
+				setIsLoadingEmails(false);
+			}
+		};
+
+		loadEmailStats();
+	}, []);
+
+	// Fetch event stats
+	useEffect(() => {
+		const loadEventStats = async () => {
+			setIsLoadingEvents(true);
+			try {
+				const stats = await fetchEventStats();
+				setEventStats(stats);
+			} catch (error) {
+				console.error("Failed to load event stats:", error);
+			} finally {
+				setIsLoadingEvents(false);
+			}
+		};
+
+		loadEventStats();
+	}, []);
+
+	// Fetch task stats
+	useEffect(() => {
+		const loadTaskStats = async () => {
+			setIsLoadingTasks(true);
+			try {
+				const stats = await fetchTaskStats();
+				setTaskStats(stats);
+			} catch (error) {
+				console.error("Failed to load task stats:", error);
+			} finally {
+				setIsLoadingTasks(false);
+			}
+		};
+
+		loadTaskStats();
+	}, []);
+
+	// Fetch reminder stats
+	useEffect(() => {
+		const loadReminderStats = async () => {
+			setIsLoadingReminders(true);
+			try {
+				const stats = await fetchReminderStats();
+				setReminderStats(stats);
+			} catch (error) {
+				console.error("Failed to load reminder stats:", error);
+			} finally {
+				setIsLoadingReminders(false);
+			}
+		};
+
+		loadReminderStats();
+	}, []);
+
 	return (
 		<div className="flex flex-col md:flex-row h-screen bg-[#F8F8FB] text-gray-800">
 			{/* Main Content */}
@@ -429,7 +522,7 @@ export default function Dashboard() {
 									</div>
 								</div>
 
-								{/* Commute */}
+								{/* Commute - Placeholder for now */}
 								<div className="flex items-center gap-3">
 									<div className="border border-gray-300 rounded-full p-[6px] flex items-center justify-center">
 										<Image
@@ -440,28 +533,60 @@ export default function Dashboard() {
 										/>
 									</div>
 									<div>
-										<p className="text-[15px] leading-tight">25 min commute</p>
-										<p className="text-gray-500 text-[13.5px]">the office</p>
+										<p className="text-[15px] leading-tight">Commute</p>
+										<p className="text-gray-500 text-[13.5px]">Check traffic</p>
 									</div>
 								</div>
 
-								{/* Meeting */}
-								<div className="flex items-center gap-3">
-									<div className="border border-gray-300 rounded-full p-[6px] flex items-center justify-center">
-										<Image
-											src="/Icons/Property 1=Calendar.svg"
-											alt="Meeting"
-											width={22}
-											height={22}
-										/>
+								{/* Next Meeting - Dynamic */}
+								{isLoadingEvents ? (
+									<div className="flex items-center gap-3">
+										<div className="border border-gray-300 rounded-full p-[6px] flex items-center justify-center">
+											<Image
+												src="/Icons/Property 1=Calendar.svg"
+												alt="Meeting"
+												width={22}
+												height={22}
+											/>
+										</div>
+										<div>
+											<p className="text-[15px] leading-tight">Loading...</p>
+											<p className="text-gray-500 text-[13.5px]">...</p>
+										</div>
 									</div>
-									<div>
-										<p className="text-[15px] leading-tight">Team Standup</p>
-										<p className="text-gray-500 text-[13.5px]">
-											9:00 AM | 15min
-										</p>
+								) : eventStats?.next_event ? (
+									<div className="flex items-center gap-3">
+										<div className="border border-gray-300 rounded-full p-[6px] flex items-center justify-center">
+											<Image
+												src="/Icons/Property 1=Calendar.svg"
+												alt="Meeting"
+												width={22}
+												height={22}
+											/>
+										</div>
+										<div>
+											<p className="text-[15px] leading-tight">{eventStats.next_event.summary}</p>
+											<p className="text-gray-500 text-[13.5px]">
+												{formatEventTime(eventStats.next_event.start)} | {formatDuration(eventStats.next_event.duration)}
+											</p>
+										</div>
 									</div>
-								</div>
+								) : (
+									<div className="flex items-center gap-3">
+										<div className="border border-gray-300 rounded-full p-[6px] flex items-center justify-center">
+											<Image
+												src="/Icons/Property 1=Calendar.svg"
+												alt="Meeting"
+												width={22}
+												height={22}
+											/>
+										</div>
+										<div>
+											<p className="text-[15px] leading-tight">No meetings</p>
+											<p className="text-gray-500 text-[13.5px]">today</p>
+										</div>
+									</div>
+								)}
 							</div>
 						</div>
 
@@ -492,103 +617,131 @@ export default function Dashboard() {
 								Emails
 							</h3>
 
-							{/* Important Emails */}
-							<p className="text-[17px] text-gray-900 mb-0.5 leading-tight">
-								<span className="font-semibold text-[19px]">12</span> Important
-								Emails
-							</p>
-
-							{/* Clock icon line */}
-							<div className="flex items-center gap-1.5 text-[14.5px] text-gray-500 mb-4">
-								<Image
-									src="/Icons/Property 1=Clock.svg"
-									alt="Time"
-									width={16}
-									height={16}
-									className="opacity-80"
-								/>
-								from the last 24 hours
-							</div>
-
-							{/* Priority Distribution */}
-							<p className="text-[16.5px] text-gray-800 mb-2 font-normal">
-								Priority Distribution
-							</p>
-							<div className="flex flex-wrap gap-2 mb-3">
-								{/* High */}
-								<span
-									className="text-white text-[13.5px] px-[8px] py-[2px] rounded-full font-normal"
-									style={{ background: "#F16A6A", borderRadius: "99px" }}
-								>
-									High: 3
-								</span>
-
-								{/* Medium */}
-								<span
-									className="text-white text-[13.5px] px-[8px] py-[2px] rounded-full font-normal"
-									style={{ background: "#FABA2E", borderRadius: "99px" }}
-								>
-									Medium: 5
-								</span>
-
-								{/* Low */}
-								<span
-									className="text-white text-[13.5px] px-[8px] py-[2px] rounded-full font-normal"
-									style={{ background: "#95D6A4", borderRadius: "99px" }}
-								>
-									Low: 4
-								</span>
-							</div>
-
-							{/* Divider */}
-							<hr className="border-gray-200 mb-2" />
-
-							{/* Unread / Trend */}
-							<div className="flex justify-between items-center text-[15px] text-gray-700 mb-2">
-								<div className="flex flex-col leading-[1.1]">
-									<p className="font-normal mb-[2px]">Unread</p>
-									<span className="text-gray-900 font-semibold text-[17px]">
-										8
-									</span>
+							{isLoadingEmails ? (
+								<div className="text-center py-8 text-gray-500">
+									<p>Loading emails...</p>
 								</div>
+							) : emailStats ? (
+								<>
+									{/* Important Emails */}
+									<p className="text-[17px] text-gray-900 mb-0.5 leading-tight">
+										<span className="font-semibold text-[19px]">{emailStats.total_important}</span> Important
+										Emails
+									</p>
 
-								<div className="flex flex-col items-end leading-[1.1]">
-									<p className="font-normal mb-[2px]">Trend</p>
-									<div className="flex items-center gap-[3px]">
-										<svg
-											xmlns="http://www.w3.org/2000/svg"
-											width="16"
-											height="16"
-											viewBox="0 0 24 24"
-											fill="none"
-											stroke="#1E1E1E"
-											strokeWidth="1.8"
-											strokeLinecap="round"
-											strokeLinejoin="round"
-											className="opacity-90"
-										>
-											<path d="M3 7L10 14L14 10L21 17" />
-											<path d="M21 12V17H16" />
-										</svg>
-										<span className="text-gray-900 font-semibold text-[17px]">
-											15%
-										</span>
+									{/* Clock icon line */}
+									<div className="flex items-center gap-1.5 text-[14.5px] text-gray-500 mb-4">
+										<Image
+											src="/Icons/Property 1=Clock.svg"
+											alt="Time"
+											width={16}
+											height={16}
+											className="opacity-80"
+										/>
+										{emailStats.timeframe || "from the last 24 hours"}
 									</div>
+
+									{/* Priority Distribution */}
+									<p className="text-[16.5px] text-gray-800 mb-2 font-normal">
+										Priority Distribution
+									</p>
+									<div className="flex flex-wrap gap-2 mb-3">
+										{/* High */}
+										{emailStats.priority_distribution.high > 0 && (
+											<span
+												className="text-white text-[13.5px] px-[8px] py-[2px] rounded-full font-normal"
+												style={{ background: "#F16A6A", borderRadius: "99px" }}
+											>
+												High: {emailStats.priority_distribution.high}
+											</span>
+										)}
+
+										{/* Medium */}
+										{emailStats.priority_distribution.medium > 0 && (
+											<span
+												className="text-white text-[13.5px] px-[8px] py-[2px] rounded-full font-normal"
+												style={{ background: "#FABA2E", borderRadius: "99px" }}
+											>
+												Medium: {emailStats.priority_distribution.medium}
+											</span>
+										)}
+
+										{/* Low */}
+										{emailStats.priority_distribution.low > 0 && (
+											<span
+												className="text-white text-[13.5px] px-[8px] py-[2px] rounded-full font-normal"
+												style={{ background: "#95D6A4", borderRadius: "99px" }}
+											>
+												Low: {emailStats.priority_distribution.low}
+											</span>
+										)}
+
+										{/* Show message if no emails */}
+										{emailStats.priority_distribution.high === 0 && 
+										 emailStats.priority_distribution.medium === 0 && 
+										 emailStats.priority_distribution.low === 0 && (
+											<span className="text-gray-500 text-[13.5px]">
+												No emails in the last 24 hours
+											</span>
+										)}
+									</div>
+
+									{/* Divider */}
+									<hr className="border-gray-200 mb-2" />
+
+									{/* Unread / Trend */}
+									<div className="flex justify-between items-center text-[15px] text-gray-700 mb-2">
+										<div className="flex flex-col leading-[1.1]">
+											<p className="font-normal mb-[2px]">Unread</p>
+											<span className="text-gray-900 font-semibold text-[17px]">
+												{emailStats.unread}
+											</span>
+										</div>
+
+										<div className="flex flex-col items-end leading-[1.1]">
+											<p className="font-normal mb-[2px]">Trend</p>
+											<div className="flex items-center gap-[3px]">
+												<svg
+													xmlns="http://www.w3.org/2000/svg"
+													width="16"
+													height="16"
+													viewBox="0 0 24 24"
+													fill="none"
+													stroke="#1E1E1E"
+													strokeWidth="1.8"
+													strokeLinecap="round"
+													strokeLinejoin="round"
+													className="opacity-90"
+												>
+													<path d="M3 7L10 14L14 10L21 17" />
+													<path d="M21 12V17H16" />
+												</svg>
+												<span className="text-gray-900 font-semibold text-[17px]">
+													{emailStats.trend}%
+												</span>
+											</div>
+										</div>
+									</div>
+
+									{/* Divider */}
+									<hr className="border-gray-200 mb-2" />
+
+									{/* Top Sender Box */}
+									<div className="bg-[#F8F9FB] border border-gray-200 rounded-xl px-3.5 py-2.5 text-[15px]">
+										<p className="text-gray-600 font-normal leading-tight">
+											Top Sender
+										</p>
+										<p className="text-gray-900 font-medium leading-tight mt-[2px]">
+											{emailStats.top_sender}
+										</p>
+									</div>
+								</>
+							) : (
+								<div className="text-center py-8 text-gray-500">
+									<p>Gmail not connected</p>
+									<p className="text-sm mt-2">Connect your Gmail to see email stats</p>
 								</div>
-							</div>
-
-							{/* Divider */}
-							<hr className="border-gray-200 mb-2" />
-
-							{/* Top Sender Box */}
-							<div className="bg-[#F8F9FB] border border-gray-200 rounded-xl px-3.5 py-2.5 text-[15px]">
-								<p className="text-gray-600 font-normal leading-tight">
-									Top Sender
-								</p>
-								<p className="text-gray-900 font-medium leading-tight mt-[2px]">
-									John Mayer
-								</p>
-							</div>
+							)}
 						</div>
 
 						{/* View All Button */}
@@ -622,110 +775,151 @@ export default function Dashboard() {
 								</h3>
 
 								{/* RSVP Badge */}
-								<span className="text-[13px] px-[10px] py-[3px] bg-gray-50 border border-gray-300 rounded-full text-gray-700 font-medium">
-									3 RSVPs
-								</span>
-							</div>
-
-							{/* Busy Day */}
-							<div
-								className="px-[12px] py-[8px] mb-4"
-								style={{
-									background: "#FDF0EF",
-									border: "0.5px solid #C4C7CC",
-									borderRadius: "8px",
-								}}
-							>
-								<div className="flex items-center gap-[6px] mb-[2px]">
-									<svg
-										xmlns="http://www.w3.org/2000/svg"
-										width="16"
-										height="16"
-										viewBox="0 0 24 24"
-										fill="none"
-										stroke="#F16A6A"
-										strokeWidth="2"
-										strokeLinecap="round"
-										strokeLinejoin="round"
-										className="translate-y-[0.5px]"
-									>
-										<circle cx="12" cy="12" r="10" />
-										<polyline points="12 6 12 12 16 14" />
-									</svg>
-									<span className="text-[15px] font-semibold text-[#000000]">
-										Busy Day
+								{!isLoadingEvents && eventStats && eventStats.rsvp_pending > 0 && (
+									<span className="text-[13px] px-[10px] py-[3px] bg-gray-50 border border-gray-300 rounded-full text-gray-700 font-medium">
+										{eventStats.rsvp_pending} RSVPs
 									</span>
-								</div>
-								<p className="text-[14px] text-[#000000] leading-[1.2] ml-[22px]">
-									6.5h across 4 events
-								</p>
+								)}
 							</div>
 
-							{/* Next Event Section */}
-							<p className="text-[15px] text-gray-800 font-semibold mb-2">
-								Next Event
-							</p>
-							<div className="bg-[#F8F9FB] border border-gray-200 rounded-xl px-4 py-3 mb-4">
-								<p className="text-[16px] font-semibold text-gray-900 mb-2">
-									Team Standup
-								</p>
-
-								{/* Time */}
-								<div className="flex items-center gap-2 text-[14px] text-gray-600 mb-1">
-									<Image
-										src="/Icons/Property 1=Clock.svg"
-										alt="Time"
-										width={14}
-										height={14}
-									/>
-									9:00 AM | 15min
+							{isLoadingEvents ? (
+								<div className="text-center py-8 text-gray-500">
+									<p>Loading events...</p>
 								</div>
+							) : eventStats ? (
+								<>
+									{/* Busy Day */}
+									{eventStats.total_events > 0 && (
+										<div
+											className="px-[12px] py-[8px] mb-4"
+											style={{
+												background: eventStats.busy_level === "busy" ? "#FDF0EF" : eventStats.busy_level === "moderate" ? "#FFF9E6" : "#F0F9FF",
+												border: "0.5px solid #C4C7CC",
+												borderRadius: "8px",
+											}}
+										>
+											<div className="flex items-center gap-[6px] mb-[2px]">
+												<svg
+													xmlns="http://www.w3.org/2000/svg"
+													width="16"
+													height="16"
+													viewBox="0 0 24 24"
+													fill="none"
+													stroke={eventStats.busy_level === "busy" ? "#F16A6A" : eventStats.busy_level === "moderate" ? "#FABA2E" : "#95D6A4"}
+													strokeWidth="2"
+													strokeLinecap="round"
+													strokeLinejoin="round"
+													className="translate-y-[0.5px]"
+												>
+													<circle cx="12" cy="12" r="10" />
+													<polyline points="12 6 12 12 16 14" />
+												</svg>
+												<span className="text-[15px] font-semibold text-[#000000]">
+													{eventStats.busy_level === "busy" ? "Busy Day" : eventStats.busy_level === "moderate" ? "Moderate Day" : "Light Day"}
+												</span>
+											</div>
+											<p className="text-[14px] text-[#000000] leading-[1.2] ml-[22px]">
+												{eventStats.total_hours}h across {eventStats.total_events} event{eventStats.total_events !== 1 ? 's' : ''}
+											</p>
+										</div>
+									)}
 
-								{/* Zoom */}
-								<div className="flex items-center gap-2 text-[14px] text-gray-600 mb-1">
-									<Image
-										src="/Icons/qlementine-icons_camera-16.svg"
-										alt="Zoom"
-										width={14}
-										height={14}
-									/>
-									Zoom
+									{/* Next Event Section */}
+									{eventStats.next_event ? (
+										<>
+											<p className="text-[15px] text-gray-800 font-semibold mb-2">
+												Next Event
+											</p>
+											<div className="bg-[#F8F9FB] border border-gray-200 rounded-xl px-4 py-3 mb-4">
+												<p className="text-[16px] font-semibold text-gray-900 mb-2">
+													{eventStats.next_event.summary}
+												</p>
+
+												{/* Time */}
+												<div className="flex items-center gap-2 text-[14px] text-gray-600 mb-1">
+													<Image
+														src="/Icons/Property 1=Clock.svg"
+														alt="Time"
+														width={14}
+														height={14}
+													/>
+													{formatEventTime(eventStats.next_event.start)} | {formatDuration(eventStats.next_event.duration)}
+												</div>
+
+												{/* Location/Conference */}
+												{(eventStats.next_event.conference_data || eventStats.next_event.location) && (
+													<div className="flex items-center gap-2 text-[14px] text-gray-600 mb-1">
+														<Image
+															src="/Icons/qlementine-icons_camera-16.svg"
+															alt="Location"
+															width={14}
+															height={14}
+														/>
+														{eventStats.next_event.conference_data ? "Video call" : eventStats.next_event.location}
+													</div>
+												)}
+
+												{/* Attendees */}
+												{eventStats.next_event.attendees_count > 0 && (
+													<div className="flex items-center gap-2 text-[14px] text-gray-600">
+														<Image
+															src="/Icons/mingcute_group-line.svg"
+															alt="Members"
+															width={14}
+															height={14}
+														/>
+														{eventStats.next_event.attendees_count} attendee{eventStats.next_event.attendees_count !== 1 ? 's' : ''}
+													</div>
+												)}
+											</div>
+										</>
+									) : (
+										<div className="bg-[#F8F9FB] border border-gray-200 rounded-xl px-4 py-3 mb-4 text-center">
+											<p className="text-[15px] text-gray-600">
+												No upcoming events today
+											</p>
+										</div>
+									)}
+
+									{/* Tags */}
+									<div className="flex flex-wrap gap-2 mb-1">
+										{eventStats.deep_work_blocks > 0 && (
+											<span
+												className="text-white text-[13px] px-[10px] py-[4px] rounded-full font-normal"
+												style={{
+													background: "#95D6A4",
+													borderRadius: "99px",
+												}}
+											>
+												{eventStats.deep_work_blocks} deep work block{eventStats.deep_work_blocks !== 1 ? 's' : ''}
+											</span>
+										)}
+
+										{eventStats.at_risk_tasks > 0 && (
+											<span
+												className="text-white text-[13px] px-[10px] py-[4px] rounded-full font-normal"
+												style={{
+													background: "#F16A6A",
+													borderRadius: "99px",
+												}}
+											>
+												{eventStats.at_risk_tasks} at risk task{eventStats.at_risk_tasks !== 1 ? 's' : ''}
+											</span>
+										)}
+
+										{eventStats.deep_work_blocks === 0 && eventStats.at_risk_tasks === 0 && eventStats.total_events === 0 && (
+											<span className="text-gray-500 text-[13px]">
+												No events scheduled
+											</span>
+										)}
+									</div>
+								</>
+							) : (
+								<div className="text-center py-8 text-gray-500">
+									<p>Calendar not connected</p>
+									<p className="text-sm mt-2">Connect Google Calendar to see events</p>
 								</div>
-
-								{/* Members */}
-								<div className="flex items-center gap-2 text-[14px] text-gray-600">
-									<Image
-										src="/Icons/mingcute_group-line.svg"
-										alt="Members"
-										width={14}
-										height={14}
-									/>
-									Members here
-								</div>
-							</div>
-
-							{/* Tags */}
-							<div className="flex flex-wrap gap-2 mb-1">
-								<span
-									className="text-white text-[13px] px-[10px] py-[4px] rounded-full font-normal"
-									style={{
-										background: "#95D6A4",
-										borderRadius: "99px",
-									}}
-								>
-									2 deep work blocks
-								</span>
-
-								<span
-									className="text-white text-[13px] px-[10px] py-[4px] rounded-full font-normal"
-									style={{
-										background: "#F16A6A",
-										borderRadius: "99px",
-									}}
-								>
-									1 at risk task
-								</span>
-							</div>
+							)}
 						</div>
 
 						{/* View All Button */}
@@ -757,31 +951,55 @@ export default function Dashboard() {
 									Tasks
 								</h3>
 
-								{/* Task Count Badge */}
-								<span className="text-[13px] bg-[#F7D76C] text-[#000000] font-semibold px-[9px] py-[3px] rounded-full shadow-sm">
-									8
+							{/* Task Count Badge */}
+							{isLoadingTasks ? (
+								<span className="text-[13px] bg-gray-200 text-gray-600 font-semibold px-[9px] py-[3px] rounded-full shadow-sm animate-pulse">
+									...
 								</span>
-							</div>
+							) : (
+								<span className="text-[13px] bg-[#F7D76C] text-[#000000] font-semibold px-[9px] py-[3px] rounded-full shadow-sm">
+									{taskStats?.total_tasks || 0}
+								</span>
+							)}
+						</div>
 
-							{/* Task List */}
-							{[
-								{ name: "Finalize dashboard layout", time: "Today, 11:00 AM" },
-								{ name: "Review daily brief copy", time: "Today, 1:30 PM" },
-								{ name: "Sync calendar API", time: "Today, 3:00 PM" },
-							].map((task, i) => (
+						{/* Task List */}
+						{isLoadingTasks ? (
+							<div className="text-center py-8 text-gray-500">
+								<p>Loading tasks...</p>
+							</div>
+						) : taskStats && taskStats.next_tasks.length > 0 ? (
+							taskStats.next_tasks.map((task) => (
 								<div
-									key={i}
+									key={task.id}
 									className="bg-[#F8F9FB] border border-gray-200 rounded-xl px-4 py-2.5 mb-3"
 								>
-									<p className="text-[15px] text-gray-900 font-medium mb-[2px] leading-tight">
-										{task.name}
-									</p>
+									<div className="flex items-start justify-between gap-2 mb-1">
+										<p className="text-[15px] text-gray-900 font-medium leading-tight flex-1">
+											{task.title}
+										</p>
+										{task.source && (
+											<span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
+												task.source === "google" 
+													? "bg-blue-100 text-blue-700" 
+													: "bg-purple-100 text-purple-700"
+											}`}>
+												{task.source === "google" ? "Google" : "MIRA"}
+											</span>
+										)}
+									</div>
 									<p className="text-[13px] text-gray-500 flex items-center gap-1">
 										<span className="text-[18px] leading-none">•</span> Due:{" "}
-										{task.time}
+										{formatTaskDueDate(task.due_date)}
 									</p>
 								</div>
-							))}
+							))
+						) : (
+							<div className="text-center py-8 text-gray-500">
+								<p>No active tasks</p>
+								<p className="text-sm mt-2">Create your first task to get started</p>
+							</div>
+						)}
 						</div>
 
 						{/* Button */}
@@ -813,31 +1031,43 @@ export default function Dashboard() {
 									Reminders
 								</h3>
 
-								{/* Count Badge */}
-								<span className="text-[13px] bg-[#F7D76C] text-[#000000] font-semibold px-[9px] py-[3px] rounded-full shadow-sm">
-									8
+							{/* Count Badge */}
+							{isLoadingReminders ? (
+								<span className="text-[13px] bg-gray-200 text-gray-600 font-semibold px-[9px] py-[3px] rounded-full shadow-sm animate-pulse">
+									...
 								</span>
-							</div>
+							) : (
+								<span className="text-[13px] bg-[#F7D76C] text-[#000000] font-semibold px-[9px] py-[3px] rounded-full shadow-sm">
+									{reminderStats?.total_reminders || 0}
+								</span>
+							)}
+						</div>
 
-							{/* Reminder List */}
-							{[
-								{ name: "Check email summaries", time: "Today, 9:00 AM" },
-								{ name: "Follow up with Megan", time: "Today, 12:00 PM" },
-								{ name: "Submit design updates", time: "Today, 4:30 PM" },
-							].map((reminder, i) => (
+						{/* Reminder List */}
+						{isLoadingReminders ? (
+							<div className="text-center py-8 text-gray-500">
+								<p>Loading reminders...</p>
+							</div>
+						) : reminderStats && reminderStats.next_reminders.length > 0 ? (
+							reminderStats.next_reminders.map((reminder) => (
 								<div
-									key={i}
+									key={reminder.id}
 									className="bg-[#F8F9FB] border border-gray-200 rounded-xl px-4 py-2.5 mb-3"
 								>
 									<p className="text-[15px] text-gray-900 font-medium mb-[2px] leading-tight">
-										{reminder.name}
+										{reminder.title}
 									</p>
 									<p className="text-[13px] text-gray-500 flex items-center gap-1">
-										<span className="text-[18px] leading-none">•</span> Due:{" "}
-										{reminder.time}
+										<span className="text-[18px] leading-none">•</span> {formatReminderTime(reminder.reminder_time)}
 									</p>
 								</div>
-							))}
+							))
+						) : (
+							<div className="text-center py-8 text-gray-500">
+								<p>No active reminders</p>
+								<p className="text-sm mt-2">Create your first reminder to get started</p>
+							</div>
+						)}
 						</div>
 
 						{/* Button */}

@@ -471,6 +471,34 @@ export default function SettingsPage() {
 					localStorage.setItem("gmail_refresh_token", gmailRefreshToken);
 				}
 				
+				// ✨ AUTO-SAVE Gmail credentials to backend immediately
+				try {
+					const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+					const token = await getValidToken();
+					if (token) {
+						const saveGmailRes = await fetch(`${apiBase}/gmail/credentials/save`, {
+							method: "POST",
+							headers: {
+								'Authorization': `Bearer ${token}`,
+								'Content-Type': 'application/json'
+							},
+							body: JSON.stringify({
+								gmail_access_token: gmailAccessToken,
+								gmail_refresh_token: gmailRefreshToken || ''
+							})
+						});
+						
+						if (saveGmailRes.ok) {
+							console.log("Gmail credentials auto-saved to backend");
+						} else {
+							console.error("Failed to auto-save Gmail credentials");
+						}
+					}
+				} catch (error) {
+					console.error("Error auto-saving Gmail credentials:", error);
+					// Continue anyway - user can still use Gmail from localStorage
+				}
+				
 				// Update local state immediately
 				setConnectedEmails(prev => {
 					if (!prev.includes("Gmail")) {
@@ -531,9 +559,9 @@ export default function SettingsPage() {
 				}
 				
 				if (calendarScopeGranted) {
-					alert(`Gmail and Google Calendar connected successfully! Email: ${gmailEmail}. Don't forget to click Save to persist these connections.`);
+					alert(`Gmail and Google Calendar connected successfully! Email: ${gmailEmail}`);
 				} else {
-					alert(`Gmail connected successfully! Email: ${gmailEmail}. Don't forget to click Save to persist this connection.`);
+					alert(`Gmail connected successfully! Email: ${gmailEmail}`);
 				}
 				return;
 			}

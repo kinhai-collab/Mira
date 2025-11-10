@@ -103,6 +103,7 @@ SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/gmail.send",
     "https://www.googleapis.com/auth/calendar.events",
+    "https://www.googleapis.com/auth/tasks",
     "https://www.googleapis.com/auth/userinfo.email"
 ]
 
@@ -232,18 +233,23 @@ async def save_gmail_credentials(
         
         # Update user_profile with Gmail credentials
         gmail_data = {
+            "uid": uid,  # Include uid for upsert
             "gmail_access_token": gmail_access_token,
             "gmail_refresh_token": gmail_refresh_token or "",
             "gmail_token_expiry": (datetime.now(timezone.utc) + timedelta(seconds=3600)).isoformat(),
             "gmail_connected_at": datetime.now(timezone.utc).isoformat()
         }
         
-        # Update user_profile table
-        result = supabase.table("user_profile").update(gmail_data).eq("uid", uid).execute()
+        # Use UPSERT to create or update user_profile table
+        # This handles both cases: row exists or doesn't exist
+        result = supabase.table("user_profile").upsert(gmail_data, on_conflict="uid").execute()
+        
+        print(f"Gmail credentials saved for user {uid}: {result}")
         
         return JSONResponse(content={
             "status": "success",
-            "message": "Gmail credentials saved successfully"
+            "message": "Gmail credentials saved successfully",
+            "debug": {"uid": uid, "has_refresh_token": bool(gmail_refresh_token)}
         })
     except HTTPException:
         raise

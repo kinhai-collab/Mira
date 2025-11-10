@@ -213,10 +213,10 @@ export async function getValidToken(): Promise<string | null> {
 			console.log("Token refreshed successfully");
 			return refreshedToken;
 		} else {
-			// Refresh failed, but return the original token anyway
-			// Backend will validate and return 401 if it's truly invalid
-			console.warn("Token refresh failed, but will try using existing token");
-			return token;
+			// Refresh failed — clear out stored credentials so we can force re-auth
+			console.warn("Token refresh failed, clearing stored tokens.");
+			clearAuthTokens();
+			return null;
 		}
 	}
 	
