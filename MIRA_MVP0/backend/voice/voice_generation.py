@@ -10,7 +10,7 @@ import json
 
 router = APIRouter()
 
-# Initialize ElevenLabs client with API key (lazy import)
+# It it working with hardcode - version 2
 client = None
 
 def get_elevenlabs_client():
@@ -37,7 +37,7 @@ async def generate_voice(text: str = "Hello from Mira!"):
     try:
         # Get the ElevenLabs client (with lazy import)
         elevenlabs_client = get_elevenlabs_client()
-        
+
         voice_id = os.getenv("ELEVENLABS_VOICE_ID")
         if not voice_id:
             raise HTTPException(status_code=500, detail="Missing ELEVENLABS_VOICE_ID")
@@ -52,12 +52,12 @@ async def generate_voice(text: str = "Hello from Mira!"):
 
         # Combine all chunks into one binary MP3 blob
         audio_bytes = b"".join(list(audio_stream))
-        
+
         # Debug: Check the first few bytes to ensure it's valid MP3
         print(f"Audio bytes length: {len(audio_bytes)}")
         print(f"First 16 bytes (hex): {audio_bytes[:16].hex()}")
         print(f"First 16 bytes (ascii): {audio_bytes[:16]}")
-        
+
         # Check if it starts with MP3 sync word (0xFF 0xFB or 0xFF 0xFA) or ID3 tag (0x49 0x44 0x33)
         if len(audio_bytes) >= 3:
             if (audio_bytes[0] == 0xFF and (audio_bytes[1] & 0xE0) == 0xE0) or \
@@ -66,7 +66,7 @@ async def generate_voice(text: str = "Hello from Mira!"):
             else:
                 print("Audio data does not appear to be valid MP3")
                 print("This might be base64 encoded or in a different format")
-                
+
                 # Try to decode as base64 if it looks like base64
                 try:
                     import base64
@@ -76,7 +76,7 @@ async def generate_voice(text: str = "Hello from Mira!"):
                         decoded_bytes = base64.b64decode(audio_bytes)
                         print(f"Decoded bytes length: {len(decoded_bytes)}")
                         print(f"Decoded first 16 bytes (hex): {decoded_bytes[:16].hex()}")
-                        
+
                         # Check if decoded data is valid MP3
                         if len(decoded_bytes) >= 3:
                             if (decoded_bytes[0] == 0xFF and (decoded_bytes[1] & 0xE0) == 0xE0) or \
@@ -87,7 +87,7 @@ async def generate_voice(text: str = "Hello from Mira!"):
                                 print("Decoded data still doesn't look like MP3")
                 except Exception as e:
                     print(f"Base64 decode failed: {e}")
-        
+
         # Validate that we got audio data
         if not audio_bytes:
             raise HTTPException(status_code=500, detail="No audio data received from ElevenLabs")
@@ -316,6 +316,7 @@ async def voice_pipeline(
             })
 
         # 2.5) Intent: Morning brief navigate
+
         morning_brief_keywords = re.compile(r"(morning|daily|today).*(brief|summary|update)", re.I)
         show_brief_keywords = re.compile(r"(show|give|tell|read).*(brief|summary|morning|daily)", re.I)
         if morning_brief_keywords.search(user_input) or show_brief_keywords.search(user_input):
@@ -534,12 +535,12 @@ def generate_voice(text: str) -> tuple[str, str]:
     try:
         # Get the ElevenLabs client (with lazy import)
         elevenlabs_client = get_elevenlabs_client()
-        
+
         voice_id = os.getenv("ELEVENLABS_VOICE_ID")
         if not voice_id:
             print("Warning: ELEVENLABS_VOICE_ID not set, skipping audio generation")
             return "", ""
-        
+
         # Request the audio stream
         audio_stream = elevenlabs_client.text_to_speech.convert(
             voice_id=voice_id,
@@ -547,18 +548,18 @@ def generate_voice(text: str) -> tuple[str, str]:
             text=text,
             output_format="mp3_44100_128",
         )
-        
+
         # Combine all chunks into one binary MP3 blob
         audio_bytes = b"".join(list(audio_stream))
-        
+
         if not audio_bytes:
             print("Warning: No audio data received from ElevenLabs")
             return "", ""
-        
+
         # Generate filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"morning_brief_{timestamp}.mp3"
-        
+
         # Try to save to /tmp for local dev (Lambda can't write to /var/task)
         try:
             os.makedirs("/tmp/speech", exist_ok=True)
@@ -569,13 +570,13 @@ def generate_voice(text: str) -> tuple[str, str]:
         except Exception as save_err:
             print(f"Could not save audio file (Lambda read-only filesystem): {save_err}")
             # Continue - we'll return base64 instead
-        
+
         # Encode to base64 for direct use
         import base64
         audio_base64 = base64.b64encode(audio_bytes).decode("ascii")
-        
+
         return audio_base64, filename
-        
+
     except Exception as e:
         print(f"Error generating voice: {e}")
         import traceback
