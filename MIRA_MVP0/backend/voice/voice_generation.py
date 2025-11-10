@@ -151,7 +151,7 @@ def _detect_speech_vad(wav_path: str, aggressiveness: int = 3, frame_duration_ms
         return frac, total_seconds
 
 
-def _energy_based_speech_check(wav_path: str, dbfs_threshold: float = -40.0) -> float:
+def _energy_based_speech_check(wav_path: str, dbfs_threshold: float = -30.0) -> float:
     """
     Fallback when webrtcvad isn't available: measure dBFS using pydub and return 1.0 if above threshold else 0.0.
     Return value is 0.0 or 1.0 for simplicity.
