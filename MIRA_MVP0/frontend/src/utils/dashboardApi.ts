@@ -6,9 +6,15 @@
 
 import { getValidToken } from "./auth";
 
-const API_BASE_URL =
+const API_BASE_URL = (
 	process.env.NEXT_PUBLIC_API_URL ||
-	"https://xmtg107ehj.execute-api.us-east-2.amazonaws.com";
+	"https://xmtg107ehj.execute-api.us-east-2.amazonaws.com"
+).replace(/\/$/, "");
+
+const buildApiUrl = (path: string) => {
+	const normalizedPath = path.startsWith("/") ? path.slice(1) : path;
+	return `${API_BASE_URL}/${normalizedPath}`;
+};
 
 export interface EmailStats {
 	total_important: number;
@@ -71,12 +77,10 @@ export async function fetchEmailStats(): Promise<EmailStats> {
 			};
 		}
 
-		console.log(
-			"Fetching email stats from:",
-			`${API_BASE_URL}dashboard/emails`
-		);
+		const endpoint = buildApiUrl("dashboard/emails");
+		console.log("Fetching email stats from:", endpoint);
 
-		const response = await fetch(`${API_BASE_URL}dashboard/emails`, {
+		const response = await fetch(endpoint, {
 			method: "GET",
 			headers: {
 				Authorization: `Bearer ${token}`,
@@ -142,12 +146,10 @@ export async function fetchEventStats(): Promise<EventStats> {
 			};
 		}
 
-		console.log(
-			"Fetching event stats from:",
-			`${API_BASE_URL}dashboard/events`
-		);
+		const endpoint = buildApiUrl("dashboard/events");
+		console.log("Fetching event stats from:", endpoint);
 
-		const response = await fetch(`${API_BASE_URL}dashboard/events`, {
+		const response = await fetch(endpoint, {
 			method: "GET",
 			headers: {
 				Authorization: `Bearer ${token}`,
@@ -208,7 +210,9 @@ export async function fetchDashboardSummary(): Promise<DashboardSummary> {
 			throw new Error("No authentication token available");
 		}
 
-		const response = await fetch(`${API_BASE_URL}dashboard/summary`, {
+		const endpoint = buildApiUrl("dashboard/summary");
+
+		const response = await fetch(endpoint, {
 			method: "GET",
 			headers: {
 				Authorization: `Bearer ${token}`,
@@ -326,9 +330,10 @@ export async function fetchTaskStats(): Promise<TaskStats> {
 			};
 		}
 
-		console.log("Fetching task stats from:", `${API_BASE_URL}dashboard/tasks`);
+		const endpoint = buildApiUrl("dashboard/tasks");
+		console.log("Fetching task stats from:", endpoint);
 
-		const response = await fetch(`${API_BASE_URL}dashboard/tasks`, {
+		const response = await fetch(endpoint, {
 			method: "GET",
 			headers: {
 				Authorization: `Bearer ${token}`,
@@ -380,12 +385,10 @@ export async function fetchReminderStats(): Promise<ReminderStats> {
 			};
 		}
 
-		console.log(
-			"Fetching reminder stats from:",
-			`${API_BASE_URL}dashboard/reminders`
-		);
+		const endpoint = buildApiUrl("dashboard/reminders");
+		console.log("Fetching reminder stats from:", endpoint);
 
-		const response = await fetch(`${API_BASE_URL}dashboard/reminders`, {
+		const response = await fetch(endpoint, {
 			method: "GET",
 			headers: {
 				Authorization: `Bearer ${token}`,
@@ -566,13 +569,11 @@ export async function fetchEmailList(
 			};
 		}
 
-		console.log(
-			"Fetching email list from:",
-			`${API_BASE_URL}dashboard/emails/list`
-		);
+		const endpoint = buildApiUrl("dashboard/emails/list");
+		console.log("Fetching email list from:", endpoint);
 
 		const response = await fetch(
-			`${API_BASE_URL}dashboard/emails/list?max_results=${maxResults}&days_back=${daysBack}`,
+			`${endpoint}?max_results=${maxResults}&days_back=${daysBack}`,
 			{
 				method: "GET",
 				headers: {
