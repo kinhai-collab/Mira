@@ -1,12 +1,15 @@
 import os
 import re
 import base64
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Request
 from fastapi.responses import StreamingResponse, JSONResponse
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 import tempfile
 import json
+import httpx
+from openai import OpenAI
+
 
 router = APIRouter()
 
@@ -108,13 +111,48 @@ async def generate_voice(text: str = "Hello from Mira!"):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Voice generation failed: {e}")
 
+async def fetch_dashboard_data(user_token: str, has_email: bool, has_calendar: bool):
+    """
+    Fetches live Gmail and Calendar data for the logged-in user.
+    Calls internal dashboard endpoints with authentication.
+    """
+    base_url = os.getenv("API_BASE_URL", "http://127.0.0.1:8000")
+    headers = {
+        "Authorization": f"Bearer {user_token}",
+        "Content-Type": "application/json",
+    }
+
+    emails = []
+    calendar_events = []
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        if has_email:
+            try:
+                res = await client.get(f"{base_url}/dashboard/emails/list", headers=headers)
+                if res.status_code == 200:
+                    data = res.json()
+                    emails = data.get("emails", data)
+            except Exception as e:
+                print("⚠️ Email fetch failed:", e)
+
+        if has_calendar:
+            try:
+                res = await client.get(f"{base_url}/dashboard/events", headers=headers)
+                if res.status_code == 200:
+                    data = res.json()
+                    calendar_events = data.get("events", data)
+            except Exception as e:
+                print("⚠️ Calendar fetch failed:", e)
+
+    return emails, calendar_events
+
+
 
 @router.post("/text-query")
-async def text_query_pipeline(request_data: dict):
-    """
-    Handles text-based queries without audio transcription.
-    Similar to voice pipeline but accepts direct text input.
-    """
+async def text_query_pipeline(request: Request):
+    request_data = await request.json()
+    print("📩 Incoming text-query data:", request_data)
+
     try:
         user_input = request_data.get("query", "").strip()
         history = request_data.get("history", [])
@@ -144,7 +182,16 @@ async def text_query_pipeline(request_data: dict):
         has_calendar_intent = calendar_keywords.search(user_input)
         
         if has_email_intent or has_calendar_intent:
-            # Determine which steps to show based on what was requested
+            # Try to extract token from environment or a test fallback
+            # ✅ Extract token sent from frontend (if any)
+            user_token = request_data.get("token") or os.getenv("TEST_USER_TOKEN")
+
+            if not user_token:
+                print("⚠️ No token found in request or env; using mock local token.")
+                user_token = "local-dev-token"
+            else:
+                print("✅ Using user_token from frontend (truncated):", user_token[:12], "...")
+
             steps = []
             if has_email_intent:
                 steps.append({"id": "emails", "label": "Checking your inbox for priority emails..."})
@@ -153,88 +200,41 @@ async def text_query_pipeline(request_data: dict):
                 steps.append({"id": "highlights", "label": "Highlighting the most important meetings..."})
             if has_email_intent and has_calendar_intent:
                 steps.append({"id": "conflicts", "label": "Noting any schedule conflicts..."})
-            
-            # Build action data with mock emails
+
+            # ✅ Fetch live data from dashboard routes
+            emails, calendar_events = await fetch_dashboard_data(user_token, has_email_intent, has_calendar_intent)
+
             action_data = {
                 "steps": steps,
-                "emails": [
-                    {
-                        "id": "email-1",
-                        "from": "david.olibear@gmail.com",
-                        "subject": "Project Timeline & Budget Discussion",
-                        "receivedAt": "8:42 AM",
-                        "summary": "Needs sign-off on final user flows before noon.",
-                    },
-                    {
-                        "id": "email-2",
-                        "from": "kate.sponge@outlook.com",
-                        "subject": "Quarterly Budget Review",
-                        "receivedAt": "7:55 AM",
-                        "summary": "Requested final slide revisions before the 3 PM prep.",
-                    },
-                    {
-                        "id": "email-3",
-                        "from": "kate.foret@gmail.com",
-                        "subject": "Marketing Budget Approval",
-                        "receivedAt": "Yesterday",
-                        "summary": "Marketing budget needs approval.",
-                    },
-                    {
-                        "id": "email-4",
-                        "from": "sam.foleigh@outlook.com",
-                        "subject": "Revised Marketing Budget",
-                        "receivedAt": "Yesterday",
-                        "summary": "Updated marketing budget proposal.",
-                    },
-                    {
-                        "id": "email-5",
-                        "from": "john.doe@gmail.com",
-                        "subject": "Q4 Planning Meeting",
-                        "receivedAt": "2 days ago",
-                        "summary": "Planning for Q4 objectives.",
-                    },
-                    {
-                        "id": "email-6",
-                        "from": "sarah.smith@outlook.com",
-                        "subject": "Team Building Event",
-                        "receivedAt": "2 days ago",
-                        "summary": "Details about upcoming team event.",
-                    },
-                ] if has_email_intent else [],
-                "calendarEvents": [
-                    {
-                        "id": "event-1",
-                        "title": "Design sync with Flowcore",
-                        "timeRange": "10:30 AM – 11:15 AM",
-                        "location": "Zoom",
-                        "note": "Share final onboarding visuals.",
-                    },
-                    {
-                        "id": "event-2",
-                        "title": "Product + Ops standup",
-                        "timeRange": "1:00 PM – 1:30 PM",
-                        "location": "HQ Atrium",
-                        "note": "Review blockers from yesterday.",
-                    },
-                ] if has_calendar_intent else [],
-                "focus": "Reply to Flowcore with the signed-off flows and join the design sync prepared with the latest visuals." if (has_email_intent and has_calendar_intent) else None,
+                "emails": emails if has_email_intent else [],
+                "calendarEvents": calendar_events if has_calendar_intent else [],
+                "focus": (
+                    "You have upcoming events and important unread emails — review your schedule and respond accordingly."
+                    if has_email_intent and has_calendar_intent
+                    else None
+                ),
             }
-            
-            # Customize response text based on what was requested
-            if has_email_intent and has_calendar_intent:
-                response_text = "Here's what I'm seeing in your inbox and calendar."
-            elif has_email_intent:
-                response_text = "Here's what I'm seeing in your inbox."
-            else:
-                response_text = "Here's what I'm seeing on your calendar."
-            
+
+            response_text = (
+                "Here's what I'm seeing in your inbox and calendar."
+                if has_email_intent and has_calendar_intent
+                else "Here's what I'm seeing in your inbox."
+                if has_email_intent
+                else "Here's what I'm seeing on your calendar."
+            )
+
             return JSONResponse({
                 "text": response_text,
                 "userText": user_input,
                 "action": "email_calendar_summary",
                 "actionData": action_data,
             })
+
         
+
+
+
+
         # Build chat message array
         messages: List[Dict[str, Any]] = [
             {
@@ -257,8 +257,7 @@ async def text_query_pipeline(request_data: dict):
         # Generate reply using GPT
         response_text = "I'm here to help!"
         try:
-            from openai import OpenAI
-            import os
+           
             oa = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
             comp = oa.chat.completions.create(
                 model="gpt-4o-mini",
@@ -278,9 +277,10 @@ async def text_query_pipeline(request_data: dict):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Text query pipeline failed: {e}")
-
+    
 @router.post("/voice")
 async def voice_pipeline(
+    request: Request,
     audio: UploadFile = File(...),
     history: Optional[str] = Form(None)
 ):
@@ -288,6 +288,14 @@ async def voice_pipeline(
     Accepts recorded audio, transcribes with Whisper, generates a chat reply, and optional TTS audio.
     Returns a JSON body compatible with the frontend voice handler.
     """
+    # 🔑 Extract Authorization token from headers
+    headers = request.headers
+    auth_header = headers.get("authorization")
+    user_token = auth_header.replace("Bearer ", "") if auth_header else None
+
+    if not user_token:
+        # fallback for local development
+        user_token = os.getenv("TEST_USER_TOKEN", "local-dev-token")
     try:
         # 1) Persist upload to temp file (OpenAI SDK expects a real file object)
         with tempfile.NamedTemporaryFile(delete=False, suffix=".webm", dir="/tmp") as tmp:
@@ -298,8 +306,7 @@ async def voice_pipeline(
         # 2) Transcribe with Whisper
         user_input = ""
         try:
-            from openai import OpenAI
-            import os
+            
             oa = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
             with open(tmp_path, "rb") as f:
                 tr = oa.audio.transcriptions.create(file=f, model="whisper-1")
@@ -351,8 +358,19 @@ async def voice_pipeline(
         has_email_intent = email_keywords.search(user_input)
         has_calendar_intent = calendar_keywords.search(user_input)
         
+        
         if has_email_intent or has_calendar_intent:
-            # Determine which steps to show based on what was requested
+            # Try to extract token from environment or a test fallback
+            # ✅ Extract token sent from frontend (if any)
+            user_token = request_data.get("token") or os.getenv("TEST_USER_TOKEN")
+
+            if not user_token:
+                print("⚠️ No token found in request or env; using mock local token.")
+                user_token = "local-dev-token"
+            else:
+                print("✅ Using user_token from frontend (truncated):", user_token[:12], "...")
+
+
             steps = []
             if has_email_intent:
                 steps.append({"id": "emails", "label": "Checking your inbox for priority emails..."})
@@ -361,107 +379,38 @@ async def voice_pipeline(
                 steps.append({"id": "highlights", "label": "Highlighting the most important meetings..."})
             if has_email_intent and has_calendar_intent:
                 steps.append({"id": "conflicts", "label": "Noting any schedule conflicts..."})
-            
-            # Customize voice response based on what was requested
-            if has_email_intent and has_calendar_intent:
-                tts_text = "Let me pull up the latest emails and today's schedule."
-                response_text = "Here's what I'm seeing in your inbox and calendar."
-            elif has_email_intent:
-                tts_text = "Let me check your inbox."
-                response_text = "Here's what I'm seeing in your inbox."
-            else:
-                tts_text = "Let me check your calendar."
-                response_text = "Here's what I'm seeing on your calendar."
-            
-            audio_base64: Optional[str] = None
-            try:
-                el = get_elevenlabs_client()
-                voice_id = os.getenv("ELEVENLABS_VOICE_ID")
-                if voice_id:
-                    stream = el.text_to_speech.convert(
-                        voice_id=voice_id,
-                        model_id="eleven_turbo_v2",
-                        text=tts_text,
-                        output_format="mp3_44100_128",
-                    )
-                    mp3_bytes = b"".join(list(stream))
-                    if mp3_bytes:
-                        audio_base64 = base64.b64encode(mp3_bytes).decode("ascii")
-            except Exception:
-                audio_base64 = None
+
+            # ✅ Fetch live data from dashboard routes
+            emails, calendar_events = await fetch_dashboard_data(user_token, has_email_intent, has_calendar_intent)
 
             action_data = {
                 "steps": steps,
-                "emails": [
-                    {
-                        "id": "email-1",
-                        "from": "david.olibear@gmail.com",
-                        "subject": "Project Timeline & Budget Discussion",
-                        "receivedAt": "8:42 AM",
-                        "summary": "Needs sign-off on final user flows before noon.",
-                    },
-                    {
-                        "id": "email-2",
-                        "from": "kate.sponge@outlook.com",
-                        "subject": "Quarterly Budget Review",
-                        "receivedAt": "7:55 AM",
-                        "summary": "Requested final slide revisions before the 3 PM prep.",
-                    },
-                    {
-                        "id": "email-3",
-                        "from": "kate.foret@gmail.com",
-                        "subject": "Marketing Budget Approval",
-                        "receivedAt": "Yesterday",
-                        "summary": "Marketing budget needs approval.",
-                    },
-                    {
-                        "id": "email-4",
-                        "from": "sam.foleigh@outlook.com",
-                        "subject": "Revised Marketing Budget",
-                        "receivedAt": "Yesterday",
-                        "summary": "Updated marketing budget proposal.",
-                    },
-                    {
-                        "id": "email-5",
-                        "from": "john.doe@gmail.com",
-                        "subject": "Q4 Planning Meeting",
-                        "receivedAt": "2 days ago",
-                        "summary": "Planning for Q4 objectives.",
-                    },
-                    {
-                        "id": "email-6",
-                        "from": "sarah.smith@outlook.com",
-                        "subject": "Team Building Event",
-                        "receivedAt": "2 days ago",
-                        "summary": "Details about upcoming team event.",
-                    },
-                ] if has_email_intent else [],
-                "calendarEvents": [
-                    {
-                        "id": "event-1",
-                        "title": "Design sync with Flowcore",
-                        "timeRange": "10:30 AM – 11:15 AM",
-                        "location": "Zoom",
-                        "note": "Share final onboarding visuals.",
-                    },
-                    {
-                        "id": "event-2",
-                        "title": "Product + Ops standup",
-                        "timeRange": "1:00 PM – 1:30 PM",
-                        "location": "HQ Atrium",
-                        "note": "Review blockers from yesterday.",
-                    },
-                ] if has_calendar_intent else [],
-                "focus": "Reply to Flowcore with the signed-off flows and join the design sync prepared with the latest visuals." if (has_email_intent and has_calendar_intent) else None,
+                "emails": emails if has_email_intent else [],
+                "calendarEvents": calendar_events if has_calendar_intent else [],
+                "focus": (
+                    "You have upcoming events and important unread emails — review your schedule and respond accordingly."
+                    if has_email_intent and has_calendar_intent
+                    else None
+                ),
             }
+
+            response_text = (
+                "Here's what I'm seeing in your inbox and calendar."
+                if has_email_intent and has_calendar_intent
+                else "Here's what I'm seeing in your inbox."
+                if has_email_intent
+                else "Here's what I'm seeing on your calendar."
+            )
 
             return JSONResponse({
                 "text": response_text,
-                "audio": audio_base64,
                 "userText": user_input,
                 "action": "email_calendar_summary",
                 "actionData": action_data,
             })
+
+
+
 
         # 3) Build chat message array
         messages: List[Dict[str, Any]] = [
@@ -484,8 +433,7 @@ async def voice_pipeline(
         # 4) Generate reply
         response_text = "I'm here."
         try:
-            from openai import OpenAI
-            import os
+            
             oa = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
             comp = oa.chat.completions.create(
                 model="gpt-4o-mini",

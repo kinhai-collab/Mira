@@ -132,7 +132,9 @@ type CalendarProvider =
 	| typeof GOOGLE_MEET_PROVIDER
 	| typeof MICROSOFT_TEAMS_PROVIDER;
 
-function resolveCalendarEventProvider(event: VoiceSummaryCalendarEvent): CalendarProvider | null {
+function resolveCalendarEventProvider(
+	event: VoiceSummaryCalendarEvent
+): CalendarProvider | null {
 	const explicit = (event.provider ?? "").toString().toLowerCase();
 	if (explicit.includes("team")) {
 		return MICROSOFT_TEAMS_PROVIDER;
@@ -141,7 +143,9 @@ function resolveCalendarEventProvider(event: VoiceSummaryCalendarEvent): Calenda
 		return GOOGLE_MEET_PROVIDER;
 	}
 
-	const text = `${event.location ?? ""} ${event.note ?? ""} ${event.title ?? ""}`.toLowerCase();
+	const text = `${event.location ?? ""} ${event.note ?? ""} ${
+		event.title ?? ""
+	}`.toLowerCase();
 
 	if (text.includes("google meet") || text.includes("meet.google")) {
 		return GOOGLE_MEET_PROVIDER;
@@ -176,13 +180,28 @@ function SummaryCard({
 	const hasEvents = !!calendarEvents?.length;
 
 	// Count emails by provider (mock for now - you can enhance this based on email.from domain)
-	const gmailCount = emails?.filter(e => e.from.includes('@gmail.com')).length || 0;
+	const gmailCount =
+		emails?.filter((e) => e.from.includes("@gmail.com")).length || 0;
 	const outlookCount = emails?.length ? emails.length - gmailCount : 0;
 	const unreadCount = emails?.length ? Math.ceil(emails.length * 0.6) : 0;
 
-	const meetCount = calendarEvents?.filter(event => resolveCalendarEventProvider(event)?.type === "meet").length || 0;
-	const teamsCount = calendarEvents?.filter(event => resolveCalendarEventProvider(event)?.type === "teams").length || 0;
-	const nextEvent = calendarEvents?.[0];
+	// Ensure calendarEvents is always an array
+	const safeCalendarEvents: VoiceSummaryCalendarEvent[] = Array.isArray(
+		calendarEvents
+	)
+		? calendarEvents
+		: [];
+
+	// Compute meeting counts safely
+	const meetCount = safeCalendarEvents.filter(
+		(event) => resolveCalendarEventProvider(event)?.type === "meet"
+	).length;
+
+	const teamsCount = safeCalendarEvents.filter(
+		(event) => resolveCalendarEventProvider(event)?.type === "teams"
+	).length;
+
+	const nextEvent = safeCalendarEvents[0];
 
 	return (
 		<div className="w-full rounded-[24px] border border-[#e6e9f0] bg-white/85 p-6 text-left shadow-[0_8px_24px_rgba(39,40,41,0.08)] backdrop-blur">
@@ -203,7 +222,11 @@ function SummaryCard({
 								<span className="font-['Outfit',sans-serif] text-[14px] font-light text-[#454547]">
 									24 hours
 								</span>
-								<Icon name="ChevronRight" size={18} className="text-[#454547]" />
+								<Icon
+									name="ChevronRight"
+									size={18}
+									className="text-[#454547]"
+								/>
 							</div>
 							<div className="mt-1 flex items-center gap-3">
 								<div className="flex items-center gap-1">
@@ -269,7 +292,7 @@ function SummaryCard({
 												</p>
 											</div>
 											<p className="font-['Outfit',sans-serif] ml-3 truncate text-[14px] font-light text-[#454547]">
-												From: {email.from.split('@')[0]}
+												From: {email.from.split("@")[0]}
 											</p>
 										</div>
 									</div>
@@ -306,7 +329,7 @@ function SummaryCard({
 													</p>
 												</div>
 												<p className="font-['Outfit',sans-serif] ml-3 truncate text-[14px] font-light text-[#454547]">
-													From: {email.from.split('@')[0]}
+													From: {email.from.split("@")[0]}
 												</p>
 											</div>
 										</div>
@@ -326,7 +349,11 @@ function SummaryCard({
 
 			{/* Calendar section (if there are calendar events) */}
 			{hasEvents && (
-				<div className={`${hasEmails ? "mt-8 border-t border-[#e6e9f0] pt-6" : ""}`}>
+				<div
+					className={`${
+						hasEmails ? "mt-8 border-t border-[#e6e9f0] pt-6" : ""
+					}`}
+				>
 					<div className="flex flex-wrap items-start justify-between gap-4">
 						<div className="flex flex-wrap items-start gap-6">
 							<div className="flex flex-col gap-2">
@@ -342,7 +369,11 @@ function SummaryCard({
 									<span className="font-['Outfit',sans-serif] text-[14px] font-light text-[#454547]">
 										24 hours
 									</span>
-									<Icon name="ChevronRight" size={18} className="text-[#454547]" />
+									<Icon
+										name="ChevronRight"
+										size={18}
+										className="text-[#454547]"
+									/>
 								</div>
 							</div>
 							<div className="flex flex-wrap items-center gap-3">
@@ -376,7 +407,9 @@ function SummaryCard({
 						{nextEvent && (
 							<div className="flex flex-wrap items-center gap-2 text-[14px]">
 								<span className="inline-flex size-2 rounded-full bg-[#5d8bff]" />
-								<span className="font-['Outfit',sans-serif] text-[#454547]">Next Event:</span>
+								<span className="font-['Outfit',sans-serif] text-[#454547]">
+									Next Event:
+								</span>
 								<span className="font-['Outfit',sans-serif] font-medium text-[#272829]">
 									{nextEvent.title}
 								</span>
@@ -387,7 +420,11 @@ function SummaryCard({
 					<div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
 						{calendarEvents?.map((event) => {
 							const provider = resolveCalendarEventProvider(event);
-							const detailSegments = [event.timeRange, event.note, event.location].filter(Boolean) as string[];
+							const detailSegments = [
+								event.timeRange,
+								event.note,
+								event.location,
+							].filter(Boolean) as string[];
 							const hasSegments = detailSegments.length > 0;
 
 							return (
@@ -405,7 +442,11 @@ function SummaryCard({
 												className="h-5 w-5 object-contain"
 											/>
 										) : (
-											<Icon name="Calendar" size={20} className="text-[#735ff8]" />
+											<Icon
+												name="Calendar"
+												size={20}
+												className="text-[#735ff8]"
+											/>
 										)}
 									</div>
 
@@ -420,7 +461,9 @@ function SummaryCard({
 											<div className="flex flex-wrap items-center gap-2 text-[13px] font-light text-[#5a5c61]">
 												{detailSegments.map((segment, index) => (
 													<React.Fragment key={`${event.id}-segment-${index}`}>
-														{index !== 0 && <span className="inline-block h-3 w-px bg-[#e6e9f0]" />}
+														{index !== 0 && (
+															<span className="inline-block h-3 w-px bg-[#e6e9f0]" />
+														)}
 														<span>{segment}</span>
 													</React.Fragment>
 												))}
@@ -436,7 +479,9 @@ function SummaryCard({
 
 			{focusNote && (
 				<div className="mt-6 rounded-2xl border border-[#382099]/15 bg-[#f7f4ff] p-4 text-[#272829]">
-					<p className="text-sm font-semibold text-[#382099]">Suggested focus</p>
+					<p className="text-sm font-semibold text-[#382099]">
+						Suggested focus
+					</p>
 					<p className="mt-2 text-sm text-[#454547]">{focusNote}</p>
 				</div>
 			)}
@@ -459,8 +504,7 @@ export function EmailCalendarOverlay({
 }: EmailCalendarOverlayProps) {
 	if (!visible) return null;
 
-	const statusHeading =
-		stage === "summary" ? "Summary ready" : "Thinking...";
+	const statusHeading = stage === "summary" ? "Summary ready" : "Thinking...";
 	const description =
 		stage === "summary"
 			? "Summarized your emails and events."
@@ -509,7 +553,11 @@ export function EmailCalendarOverlay({
 							disabled={!onMuteToggle}
 							className="flex items-center gap-2 rounded-full border border-[#454547] bg-[#454547] px-4 py-1.5 text-sm font-medium text-white shadow-[0_2px_8px_rgba(39,40,41,0.08)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
 						>
-							<Icon name={isMuted ? "VoiceOff" : "VoiceOn"} size={18} className="invert" />
+							<Icon
+								name={isMuted ? "VoiceOff" : "VoiceOn"}
+								size={18}
+								className="invert"
+							/>
 							{isMuted ? "Muted" : "Mute"}
 						</button>
 					</div>
@@ -527,7 +575,12 @@ export function EmailCalendarOverlay({
 				<div className="mt-4 border-l border-[#382099] pl-6">
 					<ul className="flex flex-col gap-3">
 						{steps.map((step) => (
-							<li key={step.id} className={`flex items-center gap-3 ${stepTextColor(step.status)}`}>
+							<li
+								key={step.id}
+								className={`flex items-center gap-3 ${stepTextColor(
+									step.status
+								)}`}
+							>
 								<StepBullet status={step.status} />
 								<span className="text-sm">{step.label}</span>
 							</li>
@@ -538,10 +591,13 @@ export function EmailCalendarOverlay({
 
 			{stage === "summary" && (
 				<div className="mt-2">
-					<SummaryCard emails={emails} calendarEvents={calendarEvents} focusNote={focusNote} />
+					<SummaryCard
+						emails={emails}
+						calendarEvents={Array.isArray(calendarEvents) ? calendarEvents : []}
+						focusNote={focusNote}
+					/>
 				</div>
 			)}
 		</div>
 	);
 }
-
