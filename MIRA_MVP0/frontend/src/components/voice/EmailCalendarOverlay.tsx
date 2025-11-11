@@ -180,10 +180,21 @@ function SummaryCard({
 	const hasEvents = !!calendarEvents?.length;
 
 	// Count emails by provider (mock for now - you can enhance this based on email.from domain)
+	// Ensure emails is always an array
+	const safeEmails: VoiceSummaryEmail[] = Array.isArray(emails) ? emails : [];
+
+	// Count by provider safely
 	const gmailCount =
-		emails?.filter((e) => e.from.includes("@gmail.com")).length || 0;
-	const outlookCount = emails?.length ? emails.length - gmailCount : 0;
-	const unreadCount = emails?.length ? Math.ceil(emails.length * 0.6) : 0;
+		safeEmails.filter((e) => e?.from?.includes("@gmail.com")).length || 0;
+
+	const outlookCount = safeEmails.length ? safeEmails.length - gmailCount : 0;
+
+	const unreadCount = safeEmails.length
+		? Math.ceil(safeEmails.length * 0.6)
+		: 0;
+
+	// const outlookCount = emails?.length ? emails.length - gmailCount : 0;
+	// const unreadCount = emails?.length ? Math.ceil(emails.length * 0.6) : 0;
 
 	// Ensure calendarEvents is always an array
 	const safeCalendarEvents: VoiceSummaryCalendarEvent[] = Array.isArray(
@@ -202,6 +213,10 @@ function SummaryCard({
 	).length;
 
 	const nextEvent = safeCalendarEvents[0];
+	// Email visibility controls
+	const [visibleCount, setVisibleCount] = React.useState(6);
+	const isAllVisible = visibleCount >= safeEmails.length;
+	const displayedEmails = safeEmails.slice(0, visibleCount);
 
 	return (
 		<div className="w-full rounded-[24px] border border-[#e6e9f0] bg-white/85 p-6 text-left shadow-[0_8px_24px_rgba(39,40,41,0.08)] backdrop-blur">
@@ -267,43 +282,8 @@ function SummaryCard({
 					<div className="grid grid-cols-1 gap-4 md:grid-cols-2">
 						{/* Left Column */}
 						<div className="flex flex-col gap-2">
-							{emails?.slice(0, Math.ceil(emails.length / 2)).map((email) => {
-								const icon = resolveEmailProviderIcon(email.from);
-
-								return (
-									<div
-										key={email.id}
-										className="flex items-center gap-2 rounded-lg border border-[#e6e9f0] bg-white p-2 shadow-sm"
-									>
-										<div className="flex h-10 w-10 items-center justify-center rounded-full border border-[#e6e9f0] bg-white">
-											<Image
-												src={icon.src}
-												alt={`${icon.alt} icon`}
-												width={24}
-												height={24}
-												className="h-6 w-6 object-contain"
-											/>
-										</div>
-										<div className="flex-1 overflow-hidden">
-											<div className="flex items-center gap-1">
-												<div className="h-2 w-2 shrink-0 rounded-full bg-[#eb5caf]" />
-												<p className="font-['Outfit',sans-serif] truncate text-[14px] font-medium text-[#272829]">
-													{email.subject}
-												</p>
-											</div>
-											<p className="font-['Outfit',sans-serif] ml-3 truncate text-[14px] font-light text-[#454547]">
-												From: {email.from.split("@")[0]}
-											</p>
-										</div>
-									</div>
-								);
-							})}
-						</div>
-
-						{/* Right Column */}
-						<div className="flex flex-col gap-2">
-							{emails
-								?.slice(Math.ceil((emails?.length || 0) / 2))
+							{displayedEmails
+								.slice(0, Math.ceil(displayedEmails.length / 2))
 								.map((email) => {
 									const icon = resolveEmailProviderIcon(email.from);
 
@@ -329,7 +309,50 @@ function SummaryCard({
 													</p>
 												</div>
 												<p className="font-['Outfit',sans-serif] ml-3 truncate text-[14px] font-light text-[#454547]">
-													From: {email.from.split("@")[0]}
+													From:{" "}
+													{email?.from
+														? email.from.split("@")[0]
+														: "Unknown Sender"}
+												</p>
+											</div>
+										</div>
+									);
+								})}
+						</div>
+
+						{/* Right Column */}
+						<div className="flex flex-col gap-2">
+							{displayedEmails
+								.slice(Math.ceil(displayedEmails.length / 2))
+								.map((email) => {
+									const icon = resolveEmailProviderIcon(email.from);
+
+									return (
+										<div
+											key={email.id}
+											className="flex items-center gap-2 rounded-lg border border-[#e6e9f0] bg-white p-2 shadow-sm"
+										>
+											<div className="flex h-10 w-10 items-center justify-center rounded-full border border-[#e6e9f0] bg-white">
+												<Image
+													src={icon.src}
+													alt={`${icon.alt} icon`}
+													width={24}
+													height={24}
+													className="h-6 w-6 object-contain"
+												/>
+											</div>
+											<div className="flex-1 overflow-hidden">
+												<div className="flex items-center gap-1">
+													<div className="h-2 w-2 shrink-0 rounded-full bg-[#eb5caf]" />
+													<p className="font-['Outfit',sans-serif] truncate text-[14px] font-medium text-[#272829]">
+														{email.subject}
+													</p>
+												</div>
+												<p className="font-['Outfit',sans-serif] ml-3 truncate text-[14px] font-light text-[#454547]">
+													From:{" "}
+													{email?.from
+														? email.from.split("@")[0]
+														: "Unknown Sender"}
 												</p>
 											</div>
 										</div>
@@ -337,6 +360,43 @@ function SummaryCard({
 								})}
 						</div>
 					</div>
+					{safeEmails.length > 6 && (
+						<div className="mt-6 flex justify-center gap-4">
+							{/* Show More button */}
+							{visibleCount < safeEmails.length && (
+								<button
+									onClick={() =>
+										setVisibleCount((prev) =>
+											Math.min(prev + 6, safeEmails.length)
+										)
+									}
+									className="text-[#382099] font-medium text-sm hover:underline"
+								>
+									Show More
+								</button>
+							)}
+
+							{/* Show All button */}
+							{!isAllVisible && (
+								<button
+									onClick={() => setVisibleCount(safeEmails.length)}
+									className="text-[#382099] font-medium text-sm hover:underline"
+								>
+									Show All
+								</button>
+							)}
+
+							{/* Show Less button */}
+							{visibleCount > 6 && (
+								<button
+									onClick={() => setVisibleCount(6)}
+									className="text-[#382099] font-medium text-sm hover:underline"
+								>
+									Show Less
+								</button>
+							)}
+						</div>
+					)}
 				</>
 			)}
 
@@ -591,11 +651,25 @@ export function EmailCalendarOverlay({
 
 			{stage === "summary" && (
 				<div className="mt-2">
-					<SummaryCard
-						emails={emails}
-						calendarEvents={Array.isArray(calendarEvents) ? calendarEvents : []}
-						focusNote={focusNote}
-					/>
+					{/* Normalize emails safely before passing */}
+					{(() => {
+						const safeEmails: VoiceSummaryEmail[] = Array.isArray(emails)
+							? emails
+							: Array.isArray((emails as any)?.data?.emails)
+							? (emails as any).data.emails
+							: [];
+
+						const safeCalendarEvents: VoiceSummaryCalendarEvent[] =
+							Array.isArray(calendarEvents) ? calendarEvents : [];
+
+						return (
+							<SummaryCard
+								emails={safeEmails}
+								calendarEvents={safeCalendarEvents}
+								focusNote={focusNote}
+							/>
+						);
+					})()}
 				</div>
 			)}
 		</div>
