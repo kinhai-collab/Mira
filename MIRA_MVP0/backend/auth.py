@@ -122,7 +122,7 @@ def gmail_oauth_start(return_to: str = Query(None)):
         "response_type": "code",
         "scope": " ".join(SCOPES),
         "access_type": "offline",   # Request refresh token
-        "prompt": "consent"
+        "prompt": "select_account consent"
     }
     if state:
         params["state"] = state
@@ -370,7 +370,7 @@ def microsoft_oauth_start(purpose: str = Query(None), return_to: str = Query(Non
         "redirect_uri": MICROSOFT_REDIRECT_URI,
         "response_mode": "query",
         "scope": " ".join(MICROSOFT_SCOPES),
-        "prompt": "consent"
+        "prompt": "select_account consent"
     }
     if state:
         params["state"] = state

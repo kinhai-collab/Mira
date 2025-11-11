@@ -57,7 +57,7 @@ def authorize_url(state: str, verifier: str) -> str:
         "scope": " ".join(settings.SCOPES),
         "access_type": "offline",
         "include_granted_scopes": "true",
-        "prompt": "consent",
+        "prompt": "select_account consent",
         "state": state,
         "code_challenge": code_challenge(verifier),
         "code_challenge_method": "S256",
@@ -115,7 +115,7 @@ def upsert_creds(payload):
     return data
 
 def get_creds(uid: str) -> Optional[Dict[str, Any]]:
-    res = sb().table("google_calendar_credentials").select("*").eq("uid", uid).single().execute()
+    res = sb().table("google_calendar_credentials").select("*").eq("uid", uid).maybe_single().execute()
     return res.data if res.data else None
 
 def delete_creds(uid: str):
