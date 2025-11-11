@@ -7,7 +7,8 @@
 import { getValidToken } from "./auth";
 
 const API_BASE_URL =
-	process.env.NEXT_PUBLIC_API_URL || "https://xmtg107ehj.execute-api.us-east-2.amazonaws.com";
+	process.env.NEXT_PUBLIC_API_URL ||
+	"https://xmtg107ehj.execute-api.us-east-2.amazonaws.com";
 
 export interface EmailStats {
 	total_important: number;
@@ -70,9 +71,12 @@ export async function fetchEmailStats(): Promise<EmailStats> {
 			};
 		}
 
-		console.log("Fetching email stats from:", `${API_BASE_URL}/dashboard/emails`);
-		
-		const response = await fetch(`${API_BASE_URL}/dashboard/emails`, {
+		console.log(
+			"Fetching email stats from:",
+			`${API_BASE_URL}dashboard/emails`
+		);
+
+		const response = await fetch(`${API_BASE_URL}dashboard/emails`, {
 			method: "GET",
 			headers: {
 				Authorization: `Bearer ${token}`,
@@ -84,13 +88,16 @@ export async function fetchEmailStats(): Promise<EmailStats> {
 
 		if (!response.ok) {
 			const errorText = await response.text();
-			console.error(`Failed to fetch email stats: ${response.statusText}`, errorText);
+			console.error(
+				`Failed to fetch email stats: ${response.statusText}`,
+				errorText
+			);
 			throw new Error(`Failed to fetch email stats: ${response.statusText}`);
 		}
 
 		const result: ApiResponse<EmailStats> = await response.json();
 		console.log("Email stats result:", result);
-		
+
 		if (result.status === "not_connected") {
 			// Return default values if Gmail not connected
 			return {
@@ -135,9 +142,12 @@ export async function fetchEventStats(): Promise<EventStats> {
 			};
 		}
 
-		console.log("Fetching event stats from:", `${API_BASE_URL}/dashboard/events`);
+		console.log(
+			"Fetching event stats from:",
+			`${API_BASE_URL}dashboard/events`
+		);
 
-		const response = await fetch(`${API_BASE_URL}/dashboard/events`, {
+		const response = await fetch(`${API_BASE_URL}dashboard/events`, {
 			method: "GET",
 			headers: {
 				Authorization: `Bearer ${token}`,
@@ -149,13 +159,16 @@ export async function fetchEventStats(): Promise<EventStats> {
 
 		if (!response.ok) {
 			const errorText = await response.text();
-			console.error(`Failed to fetch event stats: ${response.statusText}`, errorText);
+			console.error(
+				`Failed to fetch event stats: ${response.statusText}`,
+				errorText
+			);
 			throw new Error(`Failed to fetch event stats: ${response.statusText}`);
 		}
 
 		const result: ApiResponse<EventStats> = await response.json();
 		console.log("Event stats result:", result);
-		
+
 		if (result.status === "not_connected") {
 			// Return default values if Calendar not connected
 			return {
@@ -195,7 +208,7 @@ export async function fetchDashboardSummary(): Promise<DashboardSummary> {
 			throw new Error("No authentication token available");
 		}
 
-		const response = await fetch(`${API_BASE_URL}/dashboard/summary`, {
+		const response = await fetch(`${API_BASE_URL}dashboard/summary`, {
 			method: "GET",
 			headers: {
 				Authorization: `Bearer ${token}`,
@@ -204,7 +217,9 @@ export async function fetchDashboardSummary(): Promise<DashboardSummary> {
 		});
 
 		if (!response.ok) {
-			throw new Error(`Failed to fetch dashboard summary: ${response.statusText}`);
+			throw new Error(
+				`Failed to fetch dashboard summary: ${response.statusText}`
+			);
 		}
 
 		const result: ApiResponse<DashboardSummary> = await response.json();
@@ -216,7 +231,7 @@ export async function fetchDashboardSummary(): Promise<DashboardSummary> {
 			fetchEmailStats(),
 			fetchEventStats(),
 		]);
-		
+
 		return {
 			emails,
 			events,
@@ -248,14 +263,14 @@ export function formatDuration(minutes: number): string {
 	if (minutes < 60) {
 		return `${minutes}min`;
 	}
-	
+
 	const hours = Math.floor(minutes / 60);
 	const mins = minutes % 60;
-	
+
 	if (mins === 0) {
 		return `${hours}h`;
 	}
-	
+
 	return `${hours}h ${mins}min`;
 }
 
@@ -266,8 +281,8 @@ export interface Task {
 	due_date: string | null;
 	priority: "high" | "medium" | "low";
 	status: "pending" | "in_progress" | "completed" | "cancelled";
-	source?: "google" | "mira";  // Where the task comes from
-	task_list_name?: string;  // For Google Tasks
+	source?: "google" | "mira"; // Where the task comes from
+	task_list_name?: string; // For Google Tasks
 }
 
 export interface TaskStats {
@@ -311,9 +326,9 @@ export async function fetchTaskStats(): Promise<TaskStats> {
 			};
 		}
 
-		console.log("Fetching task stats from:", `${API_BASE_URL}/dashboard/tasks`);
+		console.log("Fetching task stats from:", `${API_BASE_URL}dashboard/tasks`);
 
-		const response = await fetch(`${API_BASE_URL}/dashboard/tasks`, {
+		const response = await fetch(`${API_BASE_URL}dashboard/tasks`, {
 			method: "GET",
 			headers: {
 				Authorization: `Bearer ${token}`,
@@ -325,7 +340,10 @@ export async function fetchTaskStats(): Promise<TaskStats> {
 
 		if (!response.ok) {
 			const errorText = await response.text();
-			console.error(`Failed to fetch task stats: ${response.statusText}`, errorText);
+			console.error(
+				`Failed to fetch task stats: ${response.statusText}`,
+				errorText
+			);
 			throw new Error(`Failed to fetch task stats: ${response.statusText}`);
 		}
 
@@ -362,9 +380,12 @@ export async function fetchReminderStats(): Promise<ReminderStats> {
 			};
 		}
 
-		console.log("Fetching reminder stats from:", `${API_BASE_URL}/dashboard/reminders`);
+		console.log(
+			"Fetching reminder stats from:",
+			`${API_BASE_URL}dashboard/reminders`
+		);
 
-		const response = await fetch(`${API_BASE_URL}/dashboard/reminders`, {
+		const response = await fetch(`${API_BASE_URL}dashboard/reminders`, {
 			method: "GET",
 			headers: {
 				Authorization: `Bearer ${token}`,
@@ -376,7 +397,10 @@ export async function fetchReminderStats(): Promise<ReminderStats> {
 
 		if (!response.ok) {
 			const errorText = await response.text();
-			console.error(`Failed to fetch reminder stats: ${response.statusText}`, errorText);
+			console.error(
+				`Failed to fetch reminder stats: ${response.statusText}`,
+				errorText
+			);
 			throw new Error(`Failed to fetch reminder stats: ${response.statusText}`);
 		}
 
@@ -406,7 +430,11 @@ export function formatTaskDueDate(dueDate: string | null): string {
 		const date = new Date(dueDate);
 		const now = new Date();
 		const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-		const taskDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+		const taskDate = new Date(
+			date.getFullYear(),
+			date.getMonth(),
+			date.getDate()
+		);
 
 		const diffTime = taskDate.getTime() - today.getTime();
 		const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
@@ -436,7 +464,10 @@ export function formatTaskDueDate(dueDate: string | null): string {
 				hour12: true,
 			})}`;
 		} else {
-			return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+			return date.toLocaleDateString("en-US", {
+				month: "short",
+				day: "numeric",
+			});
 		}
 	} catch (error) {
 		console.error("Error formatting task due date:", error);
@@ -452,7 +483,11 @@ export function formatReminderTime(reminderTime: string): string {
 		const date = new Date(reminderTime);
 		const now = new Date();
 		const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-		const reminderDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+		const reminderDate = new Date(
+			date.getFullYear(),
+			date.getMonth(),
+			date.getDate()
+		);
 
 		const diffTime = reminderDate.getTime() - today.getTime();
 		const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
@@ -531,10 +566,13 @@ export async function fetchEmailList(
 			};
 		}
 
-		console.log("Fetching email list from:", `${API_BASE_URL}/dashboard/emails/list`);
+		console.log(
+			"Fetching email list from:",
+			`${API_BASE_URL}dashboard/emails/list`
+		);
 
 		const response = await fetch(
-			`${API_BASE_URL}/dashboard/emails/list?max_results=${maxResults}&days_back=${daysBack}`,
+			`${API_BASE_URL}dashboard/emails/list?max_results=${maxResults}&days_back=${daysBack}`,
 			{
 				method: "GET",
 				headers: {
@@ -548,7 +586,10 @@ export async function fetchEmailList(
 
 		if (!response.ok) {
 			const errorText = await response.text();
-			console.error(`Failed to fetch email list: ${response.statusText}`, errorText);
+			console.error(
+				`Failed to fetch email list: ${response.statusText}`,
+				errorText
+			);
 			throw new Error(`Failed to fetch email list: ${response.statusText}`);
 		}
 
@@ -572,4 +613,3 @@ export async function fetchEmailList(
 		};
 	}
 }
-
