@@ -220,31 +220,59 @@ async def save_gmail_credentials(
         raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
     
     try:
-        # Get user ID from auth token
+        # Get user ID and email from auth token
         token = authorization.split(" ")[1]
         user_resp = supabase.auth.get_user(token)
         if not user_resp or not user_resp.user:
             raise HTTPException(status_code=401, detail="Invalid token")
         uid = user_resp.user.id
+        user_email = user_resp.user.email
         
         # Save Gmail credentials to user_profile table
-        # We'll store them in a JSON field or as separate fields
         from datetime import datetime, timedelta, timezone
         
-        # Update user_profile with Gmail credentials
-        gmail_data = {
-            "uid": uid,  # Include uid for upsert
-            "gmail_access_token": gmail_access_token,
-            "gmail_refresh_token": gmail_refresh_token or "",
-            "gmail_token_expiry": (datetime.now(timezone.utc) + timedelta(seconds=3600)).isoformat(),
-            "gmail_connected_at": datetime.now(timezone.utc).isoformat()
-        }
+        # Check if user profile already exists
+        existing = supabase.table("user_profile").select("*").eq("uid", uid).execute()
         
-        # Use UPSERT to create or update user_profile table
-        # This handles both cases: row exists or doesn't exist
-        result = supabase.table("user_profile").upsert(gmail_data, on_conflict="uid").execute()
+        if existing.data and len(existing.data) > 0:
+            # User exists - UPDATE only Gmail credentials
+            gmail_data = {
+                "gmail_access_token": gmail_access_token,
+                "gmail_refresh_token": gmail_refresh_token or "",
+                "gmail_token_expiry": (datetime.now(timezone.utc) + timedelta(seconds=3600)).isoformat(),
+                "gmail_connected_at": datetime.now(timezone.utc).isoformat()
+            }
+            
+            # Also ensure Gmail is in connectedEmails list
+            current_connected_emails = existing.data[0].get("connectedEmails", [])
+            if not isinstance(current_connected_emails, list):
+                current_connected_emails = []
+            if "Gmail" not in current_connected_emails:
+                gmail_data["connectedEmails"] = current_connected_emails + ["Gmail"]
+            
+            result = supabase.table("user_profile").update(gmail_data).eq("uid", uid).execute()
+        else:
+            # User doesn't exist - INSERT with all required fields
+            # Get user name from metadata if available
+            user_metadata = user_resp.user.user_metadata or {}
+            first_name = user_metadata.get("given_name") or user_metadata.get("full_name", "").split()[0] or user_email.split("@")[0].capitalize()
+            last_name = user_metadata.get("family_name") or ""
+            
+            gmail_data = {
+                "uid": uid,
+                "email": user_email,
+                "firstName": first_name,
+                "lastName": last_name,
+                "gmail_access_token": gmail_access_token,
+                "gmail_refresh_token": gmail_refresh_token or "",
+                "gmail_token_expiry": (datetime.now(timezone.utc) + timedelta(seconds=3600)).isoformat(),
+                "gmail_connected_at": datetime.now(timezone.utc).isoformat(),
+                "connectedEmails": ["Gmail"]  # Add Gmail to connected emails
+            }
+            
+            result = supabase.table("user_profile").insert(gmail_data).execute()
         
-        print(f"Gmail credentials saved for user {uid}: {result}")
+        print(f"Gmail credentials saved for user {uid}")
         
         return JSONResponse(content={
             "status": "success",

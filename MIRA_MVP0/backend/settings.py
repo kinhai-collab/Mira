@@ -297,13 +297,11 @@ async def get_user_settings(request: Request, authorization: str = Header(...)):
             from Google_Calendar_API.service import get_creds
             google_creds = get_creds(uid)
             if google_creds:
-                # Google Calendar is actually connected
-                # Ensure "Google Calendar" is in the list if it's actually connected
-                if "Google Calendar" not in connected_calendars:
-                    connected_calendars = list(connected_calendars)  # Make a copy
-                    connected_calendars.append("Google Calendar")
+                # Google Calendar credentials exist and are valid
+                # Only keep connection if it's already in the saved list (don't auto-add)
+                pass  # Credentials exist, keep existing connections as-is
             else:
-                # Google Calendar is not connected, remove it from the list if present
+                # Google Calendar credentials don't exist or are invalid - remove connection if present
                 if "Google Calendar" in connected_calendars:
                     connected_calendars = list(connected_calendars)  # Make a copy
                     connected_calendars.remove("Google Calendar")
@@ -321,17 +319,12 @@ async def get_user_settings(request: Request, authorization: str = Header(...)):
         try:
             ms_token = request.cookies.get("ms_access_token")
             if ms_token and check_microsoft_token_validity(ms_token):
-                # Microsoft token is valid - this means both Outlook Calendar AND Outlook email are connected
-                # Outlook Calendar
-                if "Outlook Calendar" not in connected_calendars:
-                    connected_calendars = list(connected_calendars)  # Make a copy
-                    connected_calendars.append("Outlook Calendar")
-                # Outlook Email (same token, Mail.Read scope)
-                if "Outlook" not in connected_emails:
-                    connected_emails = list(connected_emails)  # Make a copy
-                    connected_emails.append("Outlook")
+                # Microsoft token is valid
+                # Only keep connections that are already in the saved list (don't auto-add)
+                # This ensures we only show connections that the user explicitly made
+                pass  # Token is valid, keep existing connections as-is
             else:
-                # Microsoft token is invalid or missing - remove both Outlook Calendar and Outlook email
+                # Microsoft token is invalid or missing - remove Outlook connections if they exist
                 if "Outlook Calendar" in connected_calendars:
                     connected_calendars = list(connected_calendars)  # Make a copy
                     connected_calendars.remove("Outlook Calendar")
@@ -354,26 +347,21 @@ async def get_user_settings(request: Request, authorization: str = Header(...)):
                     # Make a lightweight request to verify token
                     gmail_check = requests.get("https://www.googleapis.com/gmail/v1/users/me/profile", headers=headers, timeout=5)
                     if gmail_check.status_code == 200:
-                        # Gmail token is valid - ensure Gmail is in connected emails
-                        if "Gmail" not in connected_emails:
-                            connected_emails = list(connected_emails)  # Make a copy
-                            connected_emails.append("Gmail")
+                        # Gmail token is valid - keep existing connection status (don't auto-add)
+                        pass  # Token is valid, keep existing connections as-is
                     else:
-                        # Gmail token is invalid - try to refresh if we have refresh token
-                        if gmail_refresh_token:
-                            # Attempt to refresh token (this would need to be implemented)
-                            # For now, if token is invalid, remove Gmail from connected emails
-                            if "Gmail" in connected_emails:
-                                connected_emails = list(connected_emails)  # Make a copy
-                                connected_emails.remove("Gmail")
-                        else:
-                            # No refresh token, remove Gmail
-                            if "Gmail" in connected_emails:
-                                connected_emails = list(connected_emails)  # Make a copy
-                                connected_emails.remove("Gmail")
+                        # Gmail token is invalid - remove Gmail from connected emails if present
+                        if "Gmail" in connected_emails:
+                            connected_emails = list(connected_emails)  # Make a copy
+                            connected_emails.remove("Gmail")
                 except Exception as gmail_check_error:
                     # If we can't check Gmail status, keep the saved status
                     print(f"Warning: Could not verify Gmail token: {gmail_check_error}")
+            else:
+                # No Gmail credentials in backend - remove Gmail if it's in the list
+                if "Gmail" in connected_emails:
+                    connected_emails = list(connected_emails)  # Make a copy
+                    connected_emails.remove("Gmail")
         except Exception as gmail_error:
             # If we can't check Gmail status, continue with saved status
             print(f"Warning: Could not check Gmail connection status: {gmail_error}")
