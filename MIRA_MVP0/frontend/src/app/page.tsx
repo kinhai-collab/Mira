@@ -36,7 +36,9 @@ type VoiceSummaryEventDetail = {
 	focus?: string | null;
 };
 
-const prepareVoiceSteps = (rawSteps: { id: string; label: string }[]): VoiceSummaryStep[] => {
+const prepareVoiceSteps = (
+	rawSteps: { id: string; label: string }[]
+): VoiceSummaryStep[] => {
 	if (!rawSteps.length) {
 		return [];
 	}
@@ -57,11 +59,13 @@ export default function Home() {
 	const [input, setInput] = useState("");
 	const [isListening, setIsListening] = useState(true);
 	const [greeting, setGreeting] = useState<string>("");
-    // Removed unused isMicOn state
+	// Removed unused isMicOn state
 	const [isConversationActive, setIsConversationActive] = useState(false);
 	const [isMuted, setIsMuted] = useState(false);
 	const [isTextMode, setIsTextMode] = useState(false);
-	const [textMessages, setTextMessages] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
+	const [textMessages, setTextMessages] = useState<
+		Array<{ role: "user" | "assistant"; content: string }>
+	>([]);
 	const [isLoadingResponse, setIsLoadingResponse] = useState(false);
 
 	// Added: dynamic location state (defaults to "New York")
@@ -71,7 +75,7 @@ export default function Home() {
 	// Timezone for formatting the date/time for the detected location.
 	// Default to the browser/system timezone — good offline/frontend-only fallback.
 	const [timezone, setTimezone] = useState<string>(
-		() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"	
+		() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
 	);
 
 	// Backend base URL (use your NEXT_PUBLIC_API_URL or fallback to localhost)
@@ -90,12 +94,18 @@ export default function Home() {
 	const [summarySteps, setSummarySteps] = useState<VoiceSummaryStep[]>(() =>
 		prepareVoiceSteps(DEFAULT_SUMMARY_STEPS)
 	);
-	const [summaryStage, setSummaryStage] = useState<"thinking" | "summary">("thinking");
+	const [summaryStage, setSummaryStage] = useState<"thinking" | "summary">(
+		"thinking"
+	);
 	const [summaryEmails, setSummaryEmails] = useState<VoiceSummaryEmail[]>([]);
-	const [summaryEvents, setSummaryEvents] = useState<VoiceSummaryCalendarEvent[]>([]);
+	const [summaryEvents, setSummaryEvents] = useState<
+		VoiceSummaryCalendarEvent[]
+	>([]);
 	const [summaryFocus, setSummaryFocus] = useState<string | null>(null);
 	const [summaryRunId, setSummaryRunId] = useState(0);
-	const [pendingSummaryMessage, setPendingSummaryMessage] = useState<string | null>(null);
+	const [pendingSummaryMessage, setPendingSummaryMessage] = useState<
+		string | null
+	>(null);
 
 	// Added: get system/geolocation and reverse-geocode to a readable place name
 	useEffect(() => {
@@ -105,9 +115,10 @@ export default function Home() {
 				const res = await fetch("https://ipapi.co/json/");
 				if (!res.ok) return;
 				const data = await res.json();
-					const city = data.city || data.region || data.region_code || data.country_name;
-					// ipapi returns a `timezone` field like 'America/New_York'
-					if (data.timezone) setTimezone(data.timezone);
+				const city =
+					data.city || data.region || data.region_code || data.country_name;
+				// ipapi returns a `timezone` field like 'America/New_York'
+				if (data.timezone) setTimezone(data.timezone);
 				if (city) setLocation(city);
 				// ipapi provides approximate lat/lon which we can use for weather lookup
 				if (data.latitude && data.longitude) {
@@ -148,17 +159,19 @@ export default function Home() {
 					data?.address?.county;
 				if (city) setLocation(city);
 
-					// If possible, keep the browser's timezone (Intl); this will usually
-					// match the geolocation. If you need absolute timezone-from-coords,
-					// you'd need a timezone lookup service or library (server or heavy client bundle).
-					setTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
+				// If possible, keep the browser's timezone (Intl); this will usually
+				// match the geolocation. If you need absolute timezone-from-coords,
+				// you'd need a timezone lookup service or library (server or heavy client bundle).
+				setTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
 
-					// Save coordinates for weather lookup
-					setLatitude(latitude);
-					setLongitude(longitude);
+				// Save coordinates for weather lookup
+				setLatitude(latitude);
+				setLongitude(longitude);
 
-					// Fetch weather for these coords (via backend proxy)
-					fetchWeatherForCoords(latitude, longitude).catch((e) => console.error('Weather fetch failed:', e));
+				// Fetch weather for these coords (via backend proxy)
+				fetchWeatherForCoords(latitude, longitude).catch((e) =>
+					console.error("Weather fetch failed:", e)
+				);
 			} catch (err) {
 				console.error("reverse geocode error:", err);
 				await ipFallback();
@@ -173,7 +186,9 @@ export default function Home() {
 			await ipFallback();
 		};
 
-		navigator.geolocation.getCurrentPosition(success, error, { timeout: 10000 });
+		navigator.geolocation.getCurrentPosition(success, error, {
+			timeout: 10000,
+		});
 	}, []);
 
 	const handleMicToggle = () => {
@@ -220,7 +235,7 @@ export default function Home() {
 			// Try to refresh token if expired (for returning users)
 			const { getValidToken } = await import("@/utils/auth");
 			const validToken = await getValidToken();
-			
+
 			if (!validToken) {
 				// No valid token, redirect to login
 				router.push("/login");
@@ -319,23 +334,62 @@ export default function Home() {
 		const handler = (event: Event) => {
 			const customEvent = event as CustomEvent<VoiceSummaryEventDetail>;
 			const detail = customEvent.detail || {};
-			const rawSteps = detail.steps?.length ? detail.steps : DEFAULT_SUMMARY_STEPS;
+			const rawSteps = detail.steps?.length
+				? detail.steps
+				: DEFAULT_SUMMARY_STEPS;
+
+			// Normalize structure
+
+			const rawCal: any = (detail as any).calendarEvents;
+			let normalizedCalendarEvents: VoiceSummaryCalendarEvent[] = [];
+
+			if (Array.isArray(rawCal)) {
+				normalizedCalendarEvents = rawCal;
+			} else if (rawCal?.data?.next_event) {
+				const ev = rawCal.data.next_event;
+				normalizedCalendarEvents = [
+					{
+						id: "next",
+						title: ev.summary || "Untitled Event",
+						timeRange: ev.start
+							? new Date(ev.start).toLocaleTimeString([], {
+									hour: "2-digit",
+									minute: "2-digit",
+							  })
+							: "N/A",
+						location: ev.location || "No location",
+						note: `Duration: ${ev.duration || 0} mins | Attendees: ${
+							ev.attendees_count || 0
+						}`,
+						provider: "google-meet",
+					},
+				];
+			}
+
 			setSummarySteps(prepareVoiceSteps(rawSteps));
 			setSummaryEmails(detail.emails ?? []);
-			setSummaryEvents(detail.calendarEvents ?? []);
+			setSummaryEvents(normalizedCalendarEvents);
 			setSummaryFocus(detail.focus ?? null);
 			setSummaryStage("thinking");
 			setSummaryOverlayVisible(true);
 			setSummaryRunId((id) => id + 1);
+
+			console.log("📅 Normalized calendar events:", normalizedCalendarEvents);
 		};
 
 		if (typeof window !== "undefined") {
-			window.addEventListener("miraEmailCalendarSummary", handler as EventListener);
+			window.addEventListener(
+				"miraEmailCalendarSummary",
+				handler as EventListener
+			);
 		}
 
 		return () => {
 			if (typeof window !== "undefined") {
-				window.removeEventListener("miraEmailCalendarSummary", handler as EventListener);
+				window.removeEventListener(
+					"miraEmailCalendarSummary",
+					handler as EventListener
+				);
 			}
 		};
 	}, []);
@@ -412,28 +466,33 @@ export default function Home() {
 	const fetchWeatherForCoords = async (lat: number, lon: number) => {
 		try {
 			setIsWeatherLoading(true);
-			const url = `/api/weather?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`;
+			const url = `/api/weather?lat=${encodeURIComponent(
+				lat
+			)}&lon=${encodeURIComponent(lon)}`;
 			// Log the URL so if "Failed to fetch" occurs we can see exactly what was attempted.
-			console.log('Fetching weather from (internal proxy):', url);
+			console.log("Fetching weather from (internal proxy):", url);
 			const resp = await fetch(url);
 			if (!resp.ok) {
 				// Try to read response body for diagnostics
-				let details = '';
+				let details = "";
 				try {
 					const txt = await resp.text();
 					details = txt;
 				} catch (e) {
-					details = '<unreadable response body>';
+					details = "<unreadable response body>";
 				}
 				throw new Error(`Weather proxy failed: ${resp.status} ${details}`);
 			}
 			const data = await resp.json();
 			// Expecting backend to return { temperatureC: number } (or similar)
 			const temp = data?.temperatureC ?? data?.temperature ?? data?.tempC;
-			if (typeof temp === 'number') setTemperatureC(temp);
+			if (typeof temp === "number") setTemperatureC(temp);
 		} catch (err) {
 			// Show richer diagnostics in console for easier debugging
-			console.error('Error fetching weather from internal API (/api/weather):', err);
+			console.error(
+				"Error fetching weather from internal API (/api/weather):",
+				err
+			);
 		} finally {
 			setIsWeatherLoading(false);
 		}
@@ -457,7 +516,9 @@ export default function Home() {
 		setIsLoadingResponse(true);
 
 		try {
-			const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+			const apiBase = (
+				process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+			).replace(/\/+$/, "");
 			const { getValidToken } = await import("@/utils/auth");
 			const token = await getValidToken();
 
@@ -470,29 +531,38 @@ export default function Home() {
 				body: JSON.stringify({
 					query: queryText,
 					history: textMessages,
+					token, // ✅ include token in body for backend
 				}),
 			});
 
+			// ✅ log backend response status and any text before throwing
 			if (!response.ok) {
-				throw new Error("Failed to get response");
+				const errorText = await response.text();
+				console.error("❌ Backend returned error:", response.status, errorText);
+				throw new Error(`Backend returned ${response.status}: ${errorText}`);
 			}
 
-			const data = await response.json();
-			
-			// Handle special actions
+			let data;
+			try {
+				data = await response.json();
+			} catch (err) {
+				console.error("❌ Failed to parse JSON from backend:", err);
+				throw new Error("Invalid JSON in backend response");
+			}
+
+			// ✅ Handle navigation actions
 			if (data.action === "navigate" && data.actionTarget) {
-				setTimeout(() => {
-					router.push(data.actionTarget);
-				}, 500);
-				setTextMessages((prev) => [...prev, { role: "assistant", content: data.text || "Navigating..." }]);
+				setTimeout(() => router.push(data.actionTarget), 500);
+				setTextMessages((prev) => [
+					...prev,
+					{ role: "assistant", content: data.text || "Navigating..." },
+				]);
 				return;
 			}
 
+			// ✅ Handle calendar/email summary
 			if (data.action === "email_calendar_summary") {
-				if (data.text) {
-					setPendingSummaryMessage(data.text);
-				}
-
+				if (data.text) setPendingSummaryMessage(data.text);
 				if (typeof window !== "undefined") {
 					window.dispatchEvent(
 						new CustomEvent("miraEmailCalendarSummary", {
@@ -500,19 +570,26 @@ export default function Home() {
 						})
 					);
 				}
-
 				return;
 			}
 
-			// Add assistant response
+			// ✅ Default case — add assistant text reply
 			if (data.text) {
-				setTextMessages((prev) => [...prev, { role: "assistant", content: data.text }]);
+				setTextMessages((prev) => [
+					...prev,
+					{ role: "assistant", content: data.text },
+				]);
+			} else {
+				console.warn("⚠️ No text returned from backend:", data);
 			}
 		} catch (error) {
-			console.error("Error sending text query:", error);
+			console.error("🚨 Error sending text query:", error);
 			setTextMessages((prev) => [
 				...prev,
-				{ role: "assistant", content: "Sorry, I encountered an error processing your request." },
+				{
+					role: "assistant",
+					content: "Sorry, I encountered an error processing your request.",
+				},
 			]);
 		} finally {
 			setIsLoadingResponse(false);
@@ -524,7 +601,9 @@ export default function Home() {
 			<main className="flex-1 flex flex-col items-center justify-center px-4 sm:px-6 md:px-8 relative overflow-y-auto pb-20 md:pb-0">
 				{/* Top-left bar */}
 				<div className="absolute top-4 sm:top-6 left-4 sm:left-10 flex flex-wrap items-center gap-2 sm:gap-3 text-xs sm:text-sm">
-					<span className="font-medium text-gray-800">{getFormattedDate(timezone)}</span>
+					<span className="font-medium text-gray-800">
+						{getFormattedDate(timezone)}
+					</span>
 					<div className="flex items-center gap-1 px-2 sm:px-3 py-1 border border-gray-200 rounded-full bg-white/40 backdrop-blur-sm">
 						<Icon name="Location" size={16} className="text-gray-600" />
 						<span className="text-gray-700 font-medium">
@@ -534,7 +613,11 @@ export default function Home() {
 					<div className="flex items-center gap-1 px-2 sm:px-3 py-1 border border-gray-200 rounded-full bg-white/40 backdrop-blur-sm">
 						<Icon name="Sun" size={16} className="text-yellow-500" />
 						<span className="text-gray-700 font-medium">
-							{isWeatherLoading ? '...' : (temperatureC != null ? `${Math.round(temperatureC)}°` : '—')}
+							{isWeatherLoading
+								? "..."
+								: temperatureC != null
+								? `${Math.round(temperatureC)}°`
+								: "—"}
 						</span>
 					</div>
 				</div>
@@ -595,7 +678,9 @@ export default function Home() {
 						{textMessages.map((msg, idx) => (
 							<div
 								key={idx}
-								className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+								className={`flex ${
+									msg.role === "user" ? "justify-end" : "justify-start"
+								}`}
 							>
 								<div
 									className={`max-w-[80%] rounded-2xl px-4 py-3 ${
@@ -622,65 +707,70 @@ export default function Home() {
 					</div>
 				)}
 
-				{/* Input & Example Prompts */}
-				{!isConversationActive && (
-					<>
-						{/* Input Section */}
-						<div className="relative mt-10 sm:mt-14 w-full max-w-md sm:max-w-xl flex flex-col items-center">
-							<div className="absolute inset-0 rounded-xl bg-gradient-to-r from-[#f4aaff] via-[#d9b8ff] to-[#bfa3ff] opacity-95 blur-[1.5px]"></div>
-							<div className="relative flex items-center rounded-xl bg-white px-4 sm:px-5 py-2 sm:py-2.5 w-full">
-								<input
-									type="text"
-									value={input}
-									onChange={(e) => setInput(e.target.value)}
-									onKeyDown={(e) => {
-										if (e.key === "Enter" && !e.shiftKey) {
-											e.preventDefault();
-											handleTextSubmit();
-										}
-									}}
-									placeholder={
-										isListening ? "I'm listening..." : "Type your request..."
-									}
-									className="flex-1 px-3 sm:px-4 py-1.5 sm:py-2 bg-transparent text-gray-700 placeholder-gray-400 rounded-l-xl focus:outline-none font-medium text-sm sm:text-base"
-									disabled={isLoadingResponse}
-								/>
-								<button
-									type="button"
-									onClick={() => handleTextSubmit()}
-									disabled={isLoadingResponse || !input.trim()}
-									className="flex items-center justify-center w-9 sm:w-10 h-9 sm:h-10 rounded-full bg-white border border-gray-200 shadow-sm hover:shadow-md transition disabled:opacity-50 disabled:cursor-not-allowed"
-								>
-									<Icon name="Send" size={16} />
-								</button>
-							</div>
-						</div>
+				{/* Input Bar — Always Visible */}
+				<div className="relative mt-10 sm:mt-14 w-full max-w-md sm:max-w-xl flex flex-col items-center">
+					<div className="absolute inset-0 rounded-xl bg-gradient-to-r from-[#f4aaff] via-[#d9b8ff] to-[#bfa3ff] opacity-95 blur-[1.5px]"></div>
+					<div className="relative flex items-center rounded-xl bg-white px-4 sm:px-5 py-2 sm:py-2.5 w-full">
+						<input
+							type="text"
+							value={input}
+							onChange={(e) => setInput(e.target.value)}
+							onKeyDown={(e) => {
+								if (e.key === "Enter" && !e.shiftKey) {
+									e.preventDefault();
+									setIsConversationActive(true); // ✅ conversation started
+									handleTextSubmit();
+								}
+							}}
+							placeholder={
+								isListening ? "I'm listening..." : "Type your request..."
+							}
+							className="flex-1 px-3 sm:px-4 py-1.5 sm:py-2 bg-transparent text-gray-700 placeholder-gray-400 rounded-l-xl focus:outline-none font-medium text-sm sm:text-base"
+							disabled={isLoadingResponse}
+						/>
+						<button
+							type="button"
+							onClick={() => {
+								setIsConversationActive(true); // ✅ conversation started
+								handleTextSubmit();
+							}}
+							disabled={isLoadingResponse || !input.trim()}
+							className="flex items-center justify-center w-9 sm:w-10 h-9 sm:h-10 rounded-full bg-white border border-gray-200 shadow-sm hover:shadow-md transition disabled:opacity-50 disabled:cursor-not-allowed"
+						>
+							<Icon name="Send" size={16} />
+						</button>
+					</div>
+				</div>
 
-						{/* Example Prompts */}
-						<div className="mt-8 sm:mt-10 w-full max-w-md sm:max-w-xl text-left">
-							<p className="text-gray-600 font-normal mb-3 text-[12px] sm:text-[13.5px]">
-								Or start with an example below
-							</p>
-							<div className="flex flex-wrap gap-2 sm:gap-2.5">
-								{[
-									"How's my day looking?",
-									"Summarize today's tasks.",
-									"What meetings do I have today?",
-									"Show me my emails and calendar",
-									"Wrap up my day.",
-								].map((example, i) => (
-									<button
-										key={i}
-										onClick={() => handleTextSubmit(example)}
-										disabled={isLoadingResponse}
-										className="px-3 sm:px-3.5 py-1 sm:py-1.5 bg-white border border-gray-200 rounded-full shadow-sm hover:shadow-md transition text-gray-700 text-[12.5px] sm:text-[13.5px] font-normal disabled:opacity-50 disabled:cursor-not-allowed"
-									>
-										{example}
-									</button>
-								))}
-							</div>
+				{/* Example Prompts — Only Visible Before Conversation */}
+				{!isConversationActive && textMessages.length === 0 && (
+					<div className="mt-8 sm:mt-10 w-full max-w-md sm:max-w-xl text-left">
+						<p className="text-gray-600 font-normal mb-3 text-[12px] sm:text-[13.5px]">
+							Or start with an example below
+						</p>
+						<div className="flex flex-wrap gap-2 sm:gap-2.5">
+							{[
+								"How's my day looking?",
+								"Summarize today's tasks.",
+								"What meetings do I have today?",
+								"Show me my emails and calendar",
+								"Show my calender events",
+								"Wrap up my day.",
+							].map((example, i) => (
+								<button
+									key={i}
+									onClick={() => {
+										setIsConversationActive(true); // ✅ hide examples once clicked
+										handleTextSubmit(example);
+									}}
+									disabled={isLoadingResponse}
+									className="px-3 sm:px-3.5 py-1 sm:py-1.5 bg-white border border-gray-200 rounded-full shadow-sm hover:shadow-md transition text-gray-700 text-[12.5px] sm:text-[13.5px] font-normal disabled:opacity-50 disabled:cursor-not-allowed"
+								>
+									{example}
+								</button>
+							))}
 						</div>
-					</>
+					</div>
 				)}
 
 				{/* Email & calendar thinking panel */}
