@@ -73,10 +73,10 @@ export async function fetchEmailStats(): Promise<EmailStats> {
 
 		console.log(
 			"Fetching email stats from:",
-			`${API_BASE_URL}dashboard/emails`
+			`${API_BASE_URL}/dashboard/emails`
 		);
 
-		const response = await fetch(`${API_BASE_URL}dashboard/emails`, {
+		const response = await fetch(`${API_BASE_URL}/dashboard/emails`, {
 			method: "GET",
 			headers: {
 				Authorization: `Bearer ${token}`,
@@ -144,10 +144,10 @@ export async function fetchEventStats(): Promise<EventStats> {
 
 		console.log(
 			"Fetching event stats from:",
-			`${API_BASE_URL}dashboard/events`
+			`${API_BASE_URL}/dashboard/events`
 		);
 
-		const response = await fetch(`${API_BASE_URL}dashboard/events`, {
+		const response = await fetch(`${API_BASE_URL}/dashboard/events`, {
 			method: "GET",
 			headers: {
 				Authorization: `Bearer ${token}`,
@@ -208,7 +208,7 @@ export async function fetchDashboardSummary(): Promise<DashboardSummary> {
 			throw new Error("No authentication token available");
 		}
 
-		const response = await fetch(`${API_BASE_URL}dashboard/summary`, {
+		const response = await fetch(`${API_BASE_URL}/dashboard/summary`, {
 			method: "GET",
 			headers: {
 				Authorization: `Bearer ${token}`,
@@ -326,9 +326,9 @@ export async function fetchTaskStats(): Promise<TaskStats> {
 			};
 		}
 
-		console.log("Fetching task stats from:", `${API_BASE_URL}dashboard/tasks`);
+		console.log("Fetching task stats from:", `${API_BASE_URL}/dashboard/tasks`);
 
-		const response = await fetch(`${API_BASE_URL}dashboard/tasks`, {
+		const response = await fetch(`${API_BASE_URL}/dashboard/tasks`, {
 			method: "GET",
 			headers: {
 				Authorization: `Bearer ${token}`,
@@ -382,10 +382,10 @@ export async function fetchReminderStats(): Promise<ReminderStats> {
 
 		console.log(
 			"Fetching reminder stats from:",
-			`${API_BASE_URL}dashboard/reminders`
+			`${API_BASE_URL}/dashboard/reminders`
 		);
 
-		const response = await fetch(`${API_BASE_URL}dashboard/reminders`, {
+		const response = await fetch(`${API_BASE_URL}/dashboard/reminders`, {
 			method: "GET",
 			headers: {
 				Authorization: `Bearer ${token}`,
@@ -568,11 +568,11 @@ export async function fetchEmailList(
 
 		console.log(
 			"Fetching email list from:",
-			`${API_BASE_URL}dashboard/emails/list`
+			`${API_BASE_URL}/dashboard/emails/list`
 		);
 
 		const response = await fetch(
-			`${API_BASE_URL}dashboard/emails/list?max_results=${maxResults}&days_back=${daysBack}`,
+			`${API_BASE_URL}/dashboard/emails/list?max_results=${maxResults}&days_back=${daysBack}`,
 			{
 				method: "GET",
 				headers: {
