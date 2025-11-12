@@ -56,7 +56,7 @@ def notifications(request: Request):
     if not resource_id or not channel_id:
         return {"status": "ignored"}
 
-    res = sb().table("google_calendar_credentials").select("uid").eq("resource_id", resource_id).eq("channel_id", channel_id).single().execute()
+    res = sb().table("google_calendar_credentials").select("uid").eq("resource_id", resource_id).eq("channel_id", channel_id).maybe_single().execute()
     if not res.data:
         return {"status": "unknown_channel"}
 

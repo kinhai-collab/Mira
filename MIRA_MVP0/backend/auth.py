@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from urllib.parse import urlencode
 from fastapi import Header
 from typing import Optional
+from supabase import create_client, Client
 
 # Load environment variables
 load_dotenv()
@@ -14,6 +15,7 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
 # Dynamic redirect URI based on environment
 def get_redirect_uri():
@@ -101,6 +103,7 @@ SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/gmail.send",
     "https://www.googleapis.com/auth/calendar.events",
+    "https://www.googleapis.com/auth/tasks",
     "https://www.googleapis.com/auth/userinfo.email"
 ]
 
@@ -119,7 +122,7 @@ def gmail_oauth_start(return_to: str = Query(None)):
         "response_type": "code",
         "scope": " ".join(SCOPES),
         "access_type": "offline",   # Request refresh token
-        "prompt": "consent"
+        "prompt": "select_account consent"
     }
     if state:
         params["state"] = state
@@ -151,7 +154,13 @@ def gmail_oauth_callback(code: str = Query(...), state: str = Query(None)):
         raise HTTPException(status_code=400, detail=f"Failed to retrieve access token: {error_msg}")
 
     access_token = token_data["access_token"]
-
+    refresh_token = token_data.get("refresh_token", "")
+    token_scope = token_data.get("scope", "")
+    expires_in = token_data.get("expires_in", 3600)
+    
+    # Check if calendar scopes are included in the token
+    has_calendar_scope = "calendar.events" in token_scope or "calendar" in token_scope.lower()
+    
     # Retrieve Gmail user info
     try:
         headers = {"Authorization": f"Bearer {access_token}"}
@@ -170,15 +179,158 @@ def gmail_oauth_callback(code: str = Query(...), state: str = Query(None)):
             if part.startswith("return_to="):
                 return_to = part.split("=", 1)[1]
     
-    # Always redirect to settings page first (standard flow)
-    # Settings page will handle redirecting back to onboarding if return_to is present
-    from urllib.parse import unquote
-    settings_url = f"{frontend_url}/dashboard/settings?gmail_connected=true&access_token={access_token}&email={email}"
-    if return_to:
-        settings_url += f"&return_to={return_to}"
+    # If return_to is provided and it's an onboarding URL, redirect directly there
+    # Otherwise, redirect to settings page (for users connecting from settings page)
+    from urllib.parse import unquote, quote
+    if return_to and ("/onboarding/step" in return_to):
+        # During onboarding, redirect directly back to the onboarding step
+        # Include all necessary parameters in the URL
+        onboarding_url = f"{return_to}?gmail_connected=true&access_token={access_token}&email={email}"
+        if has_calendar_scope:
+            onboarding_url += f"&calendar_scope_granted=true"
+            if refresh_token:
+                onboarding_url += f"&gmail_refresh_token={refresh_token}"
+        redirect = RedirectResponse(url=onboarding_url)
+        return redirect
+    else:
+        # From settings page or other places, redirect to settings page
+        settings_url = f"{frontend_url}/dashboard/settings?gmail_connected=true&access_token={access_token}&email={email}"
+        if has_calendar_scope:
+            settings_url += f"&calendar_scope_granted=true"
+            if refresh_token:
+                settings_url += f"&gmail_refresh_token={refresh_token}"
+        if return_to:
+            settings_url += f"&return_to={quote(return_to)}"
+        
+        redirect = RedirectResponse(url=settings_url)
+        return redirect
+
+# Endpoint to save Gmail credentials to backend for persistence
+@router.post("/gmail/credentials/save")
+async def save_gmail_credentials(
+    authorization: Optional[str] = Header(default=None),
+    gmail_access_token: str = Body(...),
+    gmail_refresh_token: Optional[str] = Body(default=None)
+):
+    """
+    Save Gmail credentials to backend so connection persists across sessions.
+    This prevents connections from dropping when localStorage is cleared.
+    """
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
     
-    redirect = RedirectResponse(url=settings_url)
-    return redirect
+    try:
+        # Get user ID and email from auth token
+        token = authorization.split(" ")[1]
+        user_resp = supabase.auth.get_user(token)
+        if not user_resp or not user_resp.user:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        uid = user_resp.user.id
+        user_email = user_resp.user.email
+        
+        # Save Gmail credentials to user_profile table
+        from datetime import datetime, timedelta, timezone
+        
+        # Check if user profile already exists
+        existing = supabase.table("user_profile").select("*").eq("uid", uid).execute()
+        
+        if existing.data and len(existing.data) > 0:
+            # User exists - UPDATE only Gmail credentials
+            gmail_data = {
+                "gmail_access_token": gmail_access_token,
+                "gmail_refresh_token": gmail_refresh_token or "",
+                "gmail_token_expiry": (datetime.now(timezone.utc) + timedelta(seconds=3600)).isoformat(),
+                "gmail_connected_at": datetime.now(timezone.utc).isoformat()
+            }
+            
+            # Also ensure Gmail is in connectedEmails list
+            current_connected_emails = existing.data[0].get("connectedEmails", [])
+            if not isinstance(current_connected_emails, list):
+                current_connected_emails = []
+            if "Gmail" not in current_connected_emails:
+                gmail_data["connectedEmails"] = current_connected_emails + ["Gmail"]
+            
+            result = supabase.table("user_profile").update(gmail_data).eq("uid", uid).execute()
+        else:
+            # User doesn't exist - INSERT with all required fields
+            # Get user name from metadata if available
+            user_metadata = user_resp.user.user_metadata or {}
+            first_name = user_metadata.get("given_name") or user_metadata.get("full_name", "").split()[0] or user_email.split("@")[0].capitalize()
+            last_name = user_metadata.get("family_name") or ""
+            
+            gmail_data = {
+                "uid": uid,
+                "email": user_email,
+                "firstName": first_name,
+                "lastName": last_name,
+                "gmail_access_token": gmail_access_token,
+                "gmail_refresh_token": gmail_refresh_token or "",
+                "gmail_token_expiry": (datetime.now(timezone.utc) + timedelta(seconds=3600)).isoformat(),
+                "gmail_connected_at": datetime.now(timezone.utc).isoformat(),
+                "connectedEmails": ["Gmail"]  # Add Gmail to connected emails
+            }
+            
+            result = supabase.table("user_profile").insert(gmail_data).execute()
+        
+        print(f"Gmail credentials saved for user {uid}")
+        
+        return JSONResponse(content={
+            "status": "success",
+            "message": "Gmail credentials saved successfully",
+            "debug": {"uid": uid, "has_refresh_token": bool(gmail_refresh_token)}
+        })
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error saving Gmail credentials: {str(e)}")
+
+# Endpoint to save calendar credentials from Gmail OAuth (when calendar scopes were granted)
+@router.post("/gmail/calendar/save-from-gmail")
+async def save_calendar_from_gmail(
+    authorization: Optional[str] = Header(default=None),
+    gmail_access_token: str = Body(...),
+    gmail_refresh_token: Optional[str] = Body(default=None)
+):
+    """
+    Save Google Calendar credentials using the Gmail OAuth token.
+    This is called when Gmail OAuth includes calendar scopes.
+    """
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+    
+    try:
+        # Get user ID from auth token
+        token = authorization.split(" ")[1]
+        user_resp = supabase.auth.get_user(token)
+        if not user_resp or not user_resp.user:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        uid = user_resp.user.id
+        
+        # Import calendar service functions
+        from Google_Calendar_API.service import upsert_creds
+        from datetime import datetime, timedelta, timezone
+        
+        # Save calendar credentials using the Gmail token
+        payload = {
+            "uid": uid,
+            "email": user_resp.user.email or "unknown@user",
+            "access_token": gmail_access_token,
+            "refresh_token": gmail_refresh_token or "",
+            "expiry": (datetime.now(timezone.utc) + timedelta(seconds=3600)).isoformat(),
+            "scope": "https://www.googleapis.com/auth/calendar.events",
+            "token_type": "Bearer",
+        }
+        
+        upsert_creds(payload)
+        
+        return JSONResponse(content={
+            "status": "success",
+            "message": "Calendar credentials saved from Gmail OAuth"
+        })
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error saving calendar credentials: {str(e)}")
 
 # Microsoft settings
 MICROSOFT_CLIENT_ID = os.getenv("MICROSOFT_CLIENT_ID")
@@ -246,7 +398,7 @@ def microsoft_oauth_start(purpose: str = Query(None), return_to: str = Query(Non
         "redirect_uri": MICROSOFT_REDIRECT_URI,
         "response_mode": "query",
         "scope": " ".join(MICROSOFT_SCOPES),
-        "prompt": "consent"
+        "prompt": "select_account consent"
     }
     if state:
         params["state"] = state

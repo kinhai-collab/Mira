@@ -109,12 +109,17 @@ def oauth_callback(code: str | None = None, state: str | None = None):
     }
     upsert_creds(payload)
 
-    # Always redirect to settings page (standard flow)
-    # Settings page will handle redirecting back to onboarding if return_to is present
+    # If return_to is provided and it's an onboarding URL, redirect directly there
+    # Otherwise, redirect to settings page (for users connecting from settings page)
     frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
-    settings_url = f"{frontend_url}/dashboard/settings?calendar=google&status=connected"
-    if return_to:
-        from urllib.parse import quote
-        settings_url += f"&return_to={quote(return_to)}"
-    
-    return RedirectResponse(settings_url)
+    if return_to and ("/onboarding/step" in return_to):
+        # During onboarding, redirect directly back to the onboarding step
+        onboarding_url = f"{return_to}?calendar=google&status=connected"
+        return RedirectResponse(onboarding_url)
+    else:
+        # From settings page or other places, redirect to settings page
+        settings_url = f"{frontend_url}/dashboard/settings?calendar=google&status=connected"
+        if return_to:
+            from urllib.parse import quote
+            settings_url += f"&return_to={quote(return_to)}"
+        return RedirectResponse(settings_url)
