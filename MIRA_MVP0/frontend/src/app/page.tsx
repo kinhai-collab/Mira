@@ -83,6 +83,70 @@ export default function Home() {
 		process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
 	).replace(/\/+$/, "");
 
+	// --- Outlook helpers  ---
+	const formatTimeRange = (
+	startIso?: string,
+	endIso?: string,
+	tz: string = timezone
+	) => {
+	try {
+		if (!startIso) return "N/A";
+		const s = new Date(startIso);
+		const e = endIso ? new Date(endIso) : null;
+		const opts: Intl.DateTimeFormatOptions = {
+		hour: "2-digit",
+		minute: "2-digit",
+		timeZone: tz,
+		};
+		return e
+		? `${s.toLocaleTimeString([], opts)}–${e.toLocaleTimeString([], opts)}`
+		: s.toLocaleTimeString([], opts);
+	} catch {
+		return "N/A";
+	}
+	};
+
+	const fetchOutlookEvents = async (): Promise<VoiceSummaryCalendarEvent[]> => {
+	// Reuse your token util so the request includes the user’s Outlook access_token
+	const { getValidToken } = await import("@/utils/auth");
+	const token = await getValidToken();
+	if (!token) return [];
+
+	// Hit both Outlook endpoints from your FastAPI backend
+	const [calRes, icsRes] = await Promise.all([
+		fetch(`${apiBase}/outlook/calendar?access_token=${token}&limit=20`),
+		fetch(`${apiBase}/outlook/emails?access_token=${token}&limit=20`),
+	]);
+
+	// Be resilient if either call fails
+	const calJson = (await calRes.json().catch(() => ({ events: [] }))) as {
+		events?: any[];
+	};
+	const icsJson = (await icsRes.json().catch(() => ({ events: [] }))) as {
+		events?: any[];
+	};
+
+	// Merge and de-dup like the backend (subject+start+end)
+	const merged = [...(calJson.events || []), ...(icsJson.events || [])];
+	const seen = new Set<string>();
+	const unique = merged.filter((e: any) => {
+		const key = `${(e.subject || "").trim().toLowerCase()}|${e.start}|${e.end}`;
+		if (seen.has(key)) return false;
+		seen.add(key);
+		return true;
+	});
+
+	// Map backend events to the overlay’s shape
+	return unique.map((e: any) => ({
+		id: e.id || `${e.subject}-${e.start}`,
+		title: e.subject || "(no subject)",
+		timeRange: formatTimeRange(e.start, e.end, timezone),
+		location: e.location || "",
+		note: e.organizer ? `Organizer: ${e.organizer}` : undefined,
+		provider: "outlook",
+	}));
+	};
+
 	// Weather state: store coords and current temperature. We'll call Open-Meteo (no API key)
 	const [latitude, setLatitude] = useState<number | null>(null);
 	const [longitude, setLongitude] = useState<number | null>(null);
@@ -331,7 +395,7 @@ export default function Home() {
 	}, []);
 
 	useEffect(() => {
-		const handler = (event: Event) => {
+		const handler = async (event: Event) => {
 			const customEvent = event as CustomEvent<VoiceSummaryEventDetail>;
 			const detail = customEvent.detail || {};
 			const rawSteps = detail.steps?.length
@@ -345,25 +409,9 @@ export default function Home() {
 
 			if (Array.isArray(rawCal)) {
 				normalizedCalendarEvents = rawCal;
-			} else if (rawCal?.data?.next_event) {
-				const ev = rawCal.data.next_event;
-				normalizedCalendarEvents = [
-					{
-						id: "next",
-						title: ev.summary || "Untitled Event",
-						timeRange: ev.start
-							? new Date(ev.start).toLocaleTimeString([], {
-									hour: "2-digit",
-									minute: "2-digit",
-							  })
-							: "N/A",
-						location: ev.location || "No location",
-						note: `Duration: ${ev.duration || 0} mins | Attendees: ${
-							ev.attendees_count || 0
-						}`,
-						provider: "google-meet",
-					},
-				];
+			} else {
+				// Calls your FastAPI Outlook endpoints and maps to overlay shape
+				normalizedCalendarEvents = await fetchOutlookEvents();
 			}
 
 			setSummarySteps(prepareVoiceSteps(rawSteps));

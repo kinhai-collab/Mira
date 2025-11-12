@@ -7,11 +7,11 @@ requests==2.32.5
 mangum==0.17.0
 awslambdaric==2.0.4
 elevenlabs==2.18.0
-supabase==2.3.4
-stripe==6.67.0
 google-auth
 google-auth-oauthlib
 google-api-python-client
+
+
 
 
 icalendar
