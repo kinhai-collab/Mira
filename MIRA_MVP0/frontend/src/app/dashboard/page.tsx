@@ -25,6 +25,7 @@ import {
 	type TaskStats,
 	type ReminderStats,
 } from "@/utils/dashboardApi";
+import { getWeather } from "@/utils/weather";
 
 function MobileProfileMenu() {
 	const [open, setOpen] = useState(false);
@@ -233,7 +234,7 @@ export default function Dashboard() {
 		};
 	}, []);
 
-	// Fetch weather from the same-origin API route (/api/weather) using coords
+	// Fetch weather using Open-Meteo API directly
 	const fetchWeatherForCoords = useCallback(async (lat: number, lon: number) => {
 		// Helper: map Open-Meteo weathercode to simple description
 		const openMeteoCodeToDesc = (code: number) => {
@@ -274,42 +275,19 @@ export default function Dashboard() {
 		};
 		try {
 			setIsWeatherLoading(true);
-			const url = `/api/weather?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`;
-			console.log('Dashboard: fetching weather from internal proxy:', url);
-			const resp = await fetch(url);
-			if (!resp.ok) {
-				let details = '';
-				try { details = await resp.text(); } catch { details = '<unreadable response body>'; }
-				throw new Error(`Weather proxy failed: ${resp.status} ${details}`);
-			}
-			interface WeatherData {
-				temperatureC?: number;
-				temperature?: number;
-				tempC?: number;
-				description?: string;
-				raw?: {
-					current_weather?: { weathercode?: number };
-					current?: { condition?: { text?: string } };
-				};
-			}
-			const data: WeatherData = await resp.json();
-			const temp = data?.temperatureC ?? data?.temperature ?? data?.tempC ?? null;
+			console.log('Dashboard: fetching weather for coords:', lat, lon);
+			const data = await getWeather(lat, lon);
+			const temp = data?.temperatureC;
 			let desc: string | null = null;
-			// Prefer description from normalized field
-			if (data?.description) desc = data.description;
-			// If provider returned raw Open-Meteo payload, map its weathercode
-			else if (data?.raw?.current_weather?.weathercode !== undefined) {
+			// Map weathercode from Open-Meteo payload
+			if (data?.raw?.current_weather?.weathercode !== undefined) {
 				desc = openMeteoCodeToDesc(Number(data.raw.current_weather.weathercode));
-			}
-			// If provider is weatherapi.com style
-			else if (data?.raw?.current?.condition?.text) {
-				desc = data.raw.current.condition.text;
 			}
 			if (typeof temp === 'number') setTemperatureC(temp);
 			if (desc) setWeatherDescription(desc);
 			if (!desc && temp == null) console.warn('Dashboard: weather response had no usable fields', data);
 		} catch (err) {
-			console.error('Dashboard: Error fetching weather from internal API (/api/weather):', err);
+			console.error('Dashboard: Error fetching weather:', err);
 		} finally {
 			setIsWeatherLoading(false);
 		}

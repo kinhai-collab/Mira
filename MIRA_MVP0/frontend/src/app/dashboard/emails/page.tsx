@@ -6,6 +6,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import { fetchEmailList, type Email } from "@/utils/dashboardApi";
+import { getWeather } from "@/utils/weather";
 
 // Helper: Generate days for a given month
 const generateCalendarDays = (year: number, month: number) => {
@@ -51,19 +52,13 @@ export default function EmailsPage() {
 		loadEmails();
 	}, []);
 
-	// Fetch weather from the same-origin API route (/api/weather) using coords
+	// Fetch weather using Open-Meteo API directly
 	const fetchWeatherForCoords = async (lat: number, lon: number) => {
 		try {
 			setIsWeatherLoading(true);
-			const url = `/api/weather?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`;
-			const resp = await fetch(url);
-			if (!resp.ok) {
-				let details = '';
-				try { details = await resp.text(); } catch { details = '<unreadable response body>'; }
-				throw new Error(`Weather proxy failed: ${resp.status} ${details}`);
-			}
-			const data: { temperatureC?: number; temperature?: number; tempC?: number } = await resp.json();
-			const temp = data?.temperatureC ?? data?.temperature ?? data?.tempC ?? null;
+			console.log('Emails page: fetching weather for coords:', lat, lon);
+			const data = await getWeather(lat, lon);
+			const temp = data?.temperatureC;
 			if (typeof temp === 'number') setTemperatureC(temp);
 		} catch (err) {
 			console.error('Emails page: Error fetching weather:', err);

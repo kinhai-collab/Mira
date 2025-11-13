@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { getStoredUserData, UserData, getValidToken } from "@/utils/auth";
 import { ChevronDown, Sun, MapPin, Bell, Check } from "lucide-react";
+import { getWeather } from "@/utils/weather";
 
 // Custom Checkbox Component (Square for Notifications)
 const CustomCheckbox = ({ checked, onChange, className = "" }: { checked: boolean; onChange: (checked: boolean) => void; className?: string }) => (
@@ -1768,29 +1769,17 @@ export default function SettingsPage() {
 		}
 	};
 
-	// Fetch current weather by calling the same-origin Next.js API route (/api/weather).
-	// This mirrors Home and avoids cross-origin/auth issues when calling an external API.
+	// Fetch current weather using Open-Meteo API directly
 	const fetchWeatherForCoords = async (lat: number, lon: number) => {
 		try {
 			setIsWeatherLoading(true);
-			const url = `/api/weather?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`;
-			console.log('Settings: fetching weather from internal proxy:', url);
-			const resp = await fetch(url);
-			if (!resp.ok) {
-				let details = '';
-				try {
-					details = await resp.text();
-				} catch {
-					details = '<unreadable response body>';
-				}
-				throw new Error(`Weather proxy failed: ${resp.status} ${details}`);
-			}
-			const data = await resp.json();
-			const temp = data?.temperatureC ?? data?.temperature ?? data?.tempC;
+			console.log('Settings: fetching weather for coords:', lat, lon);
+			const data = await getWeather(lat, lon);
+			const temp = data?.temperatureC;
 			if (typeof temp === 'number') setTemperatureC(temp);
 			else console.warn('Settings: weather response did not contain a numeric temperature', data);
 		} catch (err) {
-			console.error('Settings: Error fetching weather from internal API (/api/weather):', err);
+			console.error('Settings: Error fetching weather:', err);
 		} finally {
 			setIsWeatherLoading(false);
 		}
