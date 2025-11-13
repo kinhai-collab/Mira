@@ -77,30 +77,9 @@ export default function Home() {
 		() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
 	);
 
-	// --- Outlook helpers  ---
-	const formatTimeRange = (
-	startIso?: string,
-	endIso?: string,
-	tz: string = timezone
-	) => {
-	try {
-		if (!startIso) return "N/A";
-		const s = new Date(startIso);
-		const e = endIso ? new Date(endIso) : null;
-		const opts: Intl.DateTimeFormatOptions = {
-		hour: "2-digit",
-		minute: "2-digit",
-		timeZone: tz,
-		};
-		return e
-		? `${s.toLocaleTimeString([], opts)}–${e.toLocaleTimeString([], opts)}`
-		: s.toLocaleTimeString([], opts);
-	} catch {
-		return "N/A";
-	}
-	};
+// --- Outlook helpers  ---
 
-	const fetchOutlookEvents = useCallback(async (): Promise<VoiceSummaryCalendarEvent[]> => {
+const fetchOutlookEvents = useCallback(async (): Promise<VoiceSummaryCalendarEvent[]> => {
 	const apiBaseUrl = (
 		process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
 	).replace(/\/+$/, "");
@@ -142,16 +121,39 @@ export default function Home() {
 		return true;
 	});
 
+		// Define helper locally to avoid affecting hook deps
+	const formatTimeRangeLocal = (
+		startIso?: string,
+		endIso?: string,
+		tz: string = timezone
+	) => {
+		try {
+			if (!startIso) return "N/A";
+			const s = new Date(startIso);
+			const e = endIso ? new Date(endIso) : null;
+			const opts: Intl.DateTimeFormatOptions = {
+				hour: "2-digit",
+				minute: "2-digit",
+				timeZone: tz,
+			};
+			return e
+				? `${s.toLocaleTimeString([], opts)}–${e.toLocaleTimeString([], opts)}`
+				: s.toLocaleTimeString([], opts);
+		} catch {
+			return "N/A";
+		}
+	};
+
 	// Map backend events to the overlay's shape
 	return unique.map((e: OutlookEvent) => ({
 		id: e.id || `${e.subject}-${e.start}`,
 		title: e.subject || "(no subject)",
-		timeRange: formatTimeRange(e.start, e.end, timezone),
+		timeRange: formatTimeRangeLocal(e.start, e.end, timezone),
 		location: e.location || "",
 		note: e.organizer ? `Organizer: ${e.organizer}` : undefined,
 		provider: "outlook",
 	}));
-	}, [timezone, formatTimeRange]);
+ }, [timezone]);
 
 	// Weather state: store coords and current temperature. We'll call Open-Meteo (no API key)
 	const [latitude, setLatitude] = useState<number | null>(null);

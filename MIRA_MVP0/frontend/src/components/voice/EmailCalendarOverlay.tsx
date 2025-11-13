@@ -709,34 +709,17 @@ export function EmailCalendarOverlay({
 							provider?: string;
 						}
 
-						// Normalize backend email structure to match VoiceSummaryEmail interface
-						const safeEmails: VoiceSummaryEmail[] = Array.isArray(emails)
-							? emails.map((e: VoiceSummaryEmail | BackendEmail) => ({
-									id: 'id' in e ? e.id : '',
-									from: 'sender_name' in e 
-										? e.sender_name || ('from' in e ? e.from : '') || ('sender_email' in e ? e.sender_email : '') || "Unknown"
-										: 'from' in e ? e.from : "Unknown",
-									senderEmail: 'sender_email' in e 
-										? e.sender_email || ('from' in e ? e.from : '') || ""
-										: 'senderEmail' in e ? e.senderEmail : "",
-									subject: 'subject' in e ? e.subject || "No Subject" : "No Subject",
-									receivedAt: 'timestamp' in e 
-										? e.timestamp || ('receivedAt' in e ? e.receivedAt : '') || ""
-										: 'receivedAt' in e ? e.receivedAt : "",
-									summary: 'snippet' in e 
-										? e.snippet || ('body' in e ? e.body : '') || ""
-										: 'summary' in e ? e.summary : "",
-							  }))
-							: Array.isArray((emails as EmailsResponse)?.data?.emails)
-							? (emails as EmailsResponse).data!.emails!.map((e: BackendEmail) => ({
-									id: e.id,
-									from: e.sender_name || e.from || e.sender_email || "Unknown",
-									senderEmail: e.sender_email || e.from || "",
-									subject: e.subject || "No Subject",
-									receivedAt: e.timestamp || e.receivedAt || "",
-									summary: e.snippet || e.body || "",
-							  }))
-							: [];
+    // Normalize backend email structure to match VoiceSummaryEmail interface
+    const safeEmails: VoiceSummaryEmail[] = Array.isArray(emails)
+        ? emails.map((e: VoiceSummaryEmail | BackendEmail) => ({
+            id: (e as any).id ?? "",
+            from: (e as any).from ?? "",
+            senderEmail: (e as any).sender_email ?? "",
+            subject: (e as any).subject ?? "No Subject",
+            receivedAt: (e as any).receivedAt ?? "",
+            summary: (e as any).snippet ?? (e as any).body ?? "",
+        })) as VoiceSummaryEmail[]
+        : [];
 
 						const safeCalendarEvents: VoiceSummaryCalendarEvent[] =
 							Array.isArray(calendarEvents) ? calendarEvents : [];
