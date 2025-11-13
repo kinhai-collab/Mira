@@ -16,7 +16,7 @@ frontend:
       # NEXT_PUBLIC_SUPABASE_URL: https://oxozhsomntvuyrurfzre.supabase.co
       # NEXT_PUBLIC_SUPABASE_ANON_KEY: your-anon-key-here
   artifacts:
-    baseDirectory: MIRA_MVP0/frontend/out
+    baseDirectory: MIRA_MVP0/frontend/.next
     files:
       - '**/*'
   cache:
