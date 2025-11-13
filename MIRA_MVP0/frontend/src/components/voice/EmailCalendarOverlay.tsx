@@ -15,6 +15,7 @@ export interface VoiceSummaryStep {
 export interface VoiceSummaryEmail {
 	id: string;
 	from: string;
+	senderEmail?: string;
 	subject: string;
 	receivedAt: string;
 	summary?: string;
@@ -171,28 +172,58 @@ function SummaryCard({
 	emails,
 	calendarEvents,
 	focusNote,
+	provider,
 }: {
 	emails?: VoiceSummaryEmail[];
 	calendarEvents?: VoiceSummaryCalendarEvent[];
 	focusNote?: string | null;
+	provider?: string;
 }) {
 	const hasEmails = !!emails?.length;
 	const hasEvents = !!calendarEvents?.length;
 
-	// Count emails by provider (mock for now - you can enhance this based on email.from domain)
-	// Ensure emails is always an array
 	const safeEmails: VoiceSummaryEmail[] = Array.isArray(emails) ? emails : [];
 
-	// Count by provider safely
-	const gmailCount =
-		safeEmails.filter((e) => e?.from?.includes("@gmail.com")).length || 0;
+	// Use provided value or fallback
+	const currentProvider = provider || "gmail";
 
-	const outlookCount = safeEmails.length ? safeEmails.length - gmailCount : 0;
+	// Calculate 24-hour window
+	const now = new Date();
+	const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
-	const unreadCount = safeEmails.length
-		? Math.ceil(safeEmails.length * 0.6)
+	// Filter only recent emails
+	const recentEmails = safeEmails.filter((e) => {
+		if (!e.receivedAt) return false;
+
+		let receivedAt: Date | null = null;
+
+		// Handle numeric timestamps or ISO strings safely
+		if (!isNaN(Number(e.receivedAt))) {
+			// If numeric timestamp (milliseconds)
+			receivedAt = new Date(Number(e.receivedAt));
+		} else {
+			// If ISO string or Gmail RFC 2822 format
+			const parsed = Date.parse(e.receivedAt);
+			if (!isNaN(parsed)) receivedAt = new Date(parsed);
+		}
+
+		return receivedAt && receivedAt > twentyFourHoursAgo && receivedAt <= now;
+	});
+	// Use only recent emails for display and counts
+	const emailsToShow = recentEmails;
+
+	// Count Gmail and Outlook from recent emails
+	let gmailCount = 0;
+	let outlookCount = 0;
+
+	if (currentProvider === "gmail") {
+		gmailCount = emailsToShow.length;
+	} else if (currentProvider === "outlook") {
+		outlookCount = emailsToShow.length;
+	}
+	const unreadCount = emailsToShow.length
+		? Math.ceil(emailsToShow.length * 0.6)
 		: 0;
-
 	// const outlookCount = emails?.length ? emails.length - gmailCount : 0;
 	// const unreadCount = emails?.length ? Math.ceil(emails.length * 0.6) : 0;
 
@@ -227,7 +258,7 @@ function SummaryCard({
 						<div className="flex flex-col gap-2">
 							<div className="flex items-end gap-2">
 								<h3 className="font-['Outfit',sans-serif] text-[24px] font-medium leading-none text-[#272829]">
-									{emails?.length || 0}
+									{emailsToShow.length || 0}
 								</h3>
 								<span className="font-['Outfit',sans-serif] text-[20px] font-normal leading-none text-[#272829]">
 									Important Emails
@@ -311,7 +342,9 @@ function SummaryCard({
 												<p className="font-['Outfit',sans-serif] ml-3 truncate text-[14px] font-light text-[#454547]">
 													From:{" "}
 													{email?.from
-														? email.from.split("@")[0]
+														? email.from.includes("<")
+															? email.from.split("<")[0].trim()
+															: email.from.split("@")[0]
 														: "Unknown Sender"}
 												</p>
 											</div>
@@ -351,7 +384,9 @@ function SummaryCard({
 												<p className="font-['Outfit',sans-serif] ml-3 truncate text-[14px] font-light text-[#454547]">
 													From:{" "}
 													{email?.from
-														? email.from.split("@")[0]
+														? email.from.includes("<")
+															? email.from.split("<")[0].trim()
+															: email.from.split("@")[0]
 														: "Unknown Sender"}
 												</p>
 											</div>
@@ -653,19 +688,41 @@ export function EmailCalendarOverlay({
 				<div className="mt-2">
 					{/* Normalize emails safely before passing */}
 					{(() => {
+						// Normalize backend email structure to match VoiceSummaryEmail interface
 						const safeEmails: VoiceSummaryEmail[] = Array.isArray(emails)
-							? emails
+							? emails.map((e: any) => ({
+									id: e.id,
+									from: e.sender_name || e.from || e.sender_email || "Unknown",
+									senderEmail: e.sender_email || e.from || "",
+
+									subject: e.subject || "No Subject",
+									receivedAt: e.timestamp || e.receivedAt || "",
+									summary: e.snippet || e.body || "",
+							  }))
 							: Array.isArray((emails as any)?.data?.emails)
-							? (emails as any).data.emails
+							? (emails as any).data.emails.map((e: any) => ({
+									id: e.id,
+									from: e.sender_name || e.from || e.sender_email || "Unknown",
+									senderEmail: e.sender_email || e.from || "",
+
+									subject: e.subject || "No Subject",
+									receivedAt: e.timestamp || e.receivedAt || "",
+									summary: e.snippet || e.body || "",
+							  }))
 							: [];
 
 						const safeCalendarEvents: VoiceSummaryCalendarEvent[] =
 							Array.isArray(calendarEvents) ? calendarEvents : [];
+						const provider =
+							(emails as any)?.provider ||
+							(emails as any)?.data?.provider ||
+							"gmail";
 
 						return (
 							<SummaryCard
 								emails={safeEmails}
 								calendarEvents={safeCalendarEvents}
+								provider={provider}
 								focusNote={focusNote}
 							/>
 						);
