@@ -233,46 +233,45 @@ export default function Dashboard() {
 		};
 	}, []);
 
-	// Helper: map Open-Meteo weathercode to simple description
-	const openMeteoCodeToDesc = (code: number) => {
-		// Simplified mapping for common values
-		switch (code) {
-			case 0:
-				return 'Clear';
-			case 1:
-			case 2:
-			case 3:
-				return 'Partly cloudy';
-			case 45:
-			case 48:
-				return 'Fog';
-			case 51:
-			case 53:
-			case 55:
-				return 'Drizzle';
-			case 61:
-			case 63:
-			case 65:
-				return 'Rain';
-			case 71:
-			case 73:
-			case 75:
-				return 'Snow';
-			case 80:
-			case 81:
-			case 82:
-				return 'Showers';
-			case 95:
-			case 96:
-			case 99:
-				return 'Thunderstorm';
-			default:
-				return 'Unknown';
-		}
-	};
-
 	// Fetch weather from the same-origin API route (/api/weather) using coords
 	const fetchWeatherForCoords = useCallback(async (lat: number, lon: number) => {
+		// Helper: map Open-Meteo weathercode to simple description
+		const openMeteoCodeToDesc = (code: number) => {
+			// Simplified mapping for common values
+			switch (code) {
+				case 0:
+					return 'Clear';
+				case 1:
+				case 2:
+				case 3:
+					return 'Partly cloudy';
+				case 45:
+				case 48:
+					return 'Fog';
+				case 51:
+				case 53:
+				case 55:
+					return 'Drizzle';
+				case 61:
+				case 63:
+				case 65:
+					return 'Rain';
+				case 71:
+				case 73:
+				case 75:
+					return 'Snow';
+				case 80:
+				case 81:
+				case 82:
+					return 'Showers';
+				case 95:
+				case 96:
+				case 99:
+					return 'Thunderstorm';
+				default:
+					return 'Unknown';
+			}
+		};
 		try {
 			setIsWeatherLoading(true);
 			const url = `/api/weather?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`;
@@ -314,7 +313,7 @@ export default function Dashboard() {
 		} finally {
 			setIsWeatherLoading(false);
 		}
-	}, [openMeteoCodeToDesc]);
+	}, []);
 
 	// Get coords either via geolocation or IP fallback, then fetch weather
 	useEffect(() => {

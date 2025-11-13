@@ -77,11 +77,6 @@ export default function Home() {
 		() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
 	);
 
-	// Backend base URL (use your NEXT_PUBLIC_API_URL or fallback to localhost)
-	const apiBase = (
-		process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
-	).replace(/\/+$/, "");
-
 	// --- Outlook helpers  ---
 	const formatTimeRange = (
 	startIso?: string,
@@ -109,7 +104,7 @@ export default function Home() {
 	const apiBaseUrl = (
 		process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
 	).replace(/\/+$/, "");
-	// Reuse your token util so the request includes the user’s Outlook access_token
+	// Reuse your token util so the request includes the user's Outlook access_token
 	const { getValidToken } = await import("@/utils/auth");
 	const token = await getValidToken();
 	if (!token) return [];
@@ -156,7 +151,7 @@ export default function Home() {
 		note: e.organizer ? `Organizer: ${e.organizer}` : undefined,
 		provider: "outlook",
 	}));
-	}, [timezone]);
+	}, [timezone, formatTimeRange]);
 
 	// Weather state: store coords and current temperature. We'll call Open-Meteo (no API key)
 	const [latitude, setLatitude] = useState<number | null>(null);

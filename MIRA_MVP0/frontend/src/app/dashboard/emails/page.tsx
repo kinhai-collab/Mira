@@ -160,7 +160,7 @@ export default function EmailsPage() {
 			? "Loading..."
 			: "--";
 
-	const handleDateClick = (day) => {
+	const handleDateClick = (day: number | null) => {
 		if (!day) return;
 		const newDate = new Date(year, month, day);
 		setSelectedDate(newDate);
