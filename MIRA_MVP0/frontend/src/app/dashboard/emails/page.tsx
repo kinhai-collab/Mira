@@ -8,10 +8,10 @@ import { useState, useEffect } from "react";
 import { fetchEmailList, type Email } from "@/utils/dashboardApi";
 
 // Helper: Generate days for a given month
-const generateCalendarDays = (year, month) => {
+const generateCalendarDays = (year: number, month: number) => {
 	const firstDay = new Date(year, month, 1).getDay();
 	const totalDays = new Date(year, month + 1, 0).getDate();
-	const days = [];
+	const days: (number | null)[] = [];
 	for (let i = 0; i < firstDay; i++) days.push(null);
 	for (let i = 1; i <= totalDays; i++) days.push(i);
 	return days;

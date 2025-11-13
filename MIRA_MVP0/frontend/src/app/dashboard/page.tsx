@@ -5,7 +5,7 @@ import Image from "next/image";
 import { Icon } from "@/components/Icon";
 import { useRouter } from "next/navigation";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
 	extractTokenFromUrl,
 	storeAuthToken,
@@ -272,7 +272,7 @@ export default function Dashboard() {
 	};
 
 	// Fetch weather from the same-origin API route (/api/weather) using coords
-	const fetchWeatherForCoords = async (lat: number, lon: number) => {
+	const fetchWeatherForCoords = useCallback(async (lat: number, lon: number) => {
 		try {
 			setIsWeatherLoading(true);
 			const url = `/api/weather?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`;
@@ -314,7 +314,7 @@ export default function Dashboard() {
 		} finally {
 			setIsWeatherLoading(false);
 		}
-	};
+	}, [openMeteoCodeToDesc]);
 
 	// Get coords either via geolocation or IP fallback, then fetch weather
 	useEffect(() => {

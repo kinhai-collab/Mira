@@ -106,6 +106,9 @@ export default function Home() {
 	};
 
 	const fetchOutlookEvents = useCallback(async (): Promise<VoiceSummaryCalendarEvent[]> => {
+	const apiBaseUrl = (
+		process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+	).replace(/\/+$/, "");
 	// Reuse your token util so the request includes the user’s Outlook access_token
 	const { getValidToken } = await import("@/utils/auth");
 	const token = await getValidToken();
@@ -113,8 +116,8 @@ export default function Home() {
 
 	// Hit both Outlook endpoints from your FastAPI backend
 	const [calRes, icsRes] = await Promise.all([
-		fetch(`${apiBase}/outlook/calendar?access_token=${token}&limit=20`),
-		fetch(`${apiBase}/outlook/emails?access_token=${token}&limit=20`),
+		fetch(`${apiBaseUrl}/outlook/calendar?access_token=${token}&limit=20`),
+		fetch(`${apiBaseUrl}/outlook/emails?access_token=${token}&limit=20`),
 	]);
 
 	// Be resilient if either call fails
