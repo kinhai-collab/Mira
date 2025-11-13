@@ -3,6 +3,16 @@
  * This calls the API directly from the frontend since no API key is required
  */
 
+interface OpenMeteoResponse {
+  current_weather?: {
+    temperature?: number;
+    weathercode?: number;
+    windspeed?: number;
+    winddirection?: number;
+    time?: string;
+  };
+}
+
 export interface WeatherData {
   temperatureC: number | null;
   unit: string;
@@ -10,7 +20,7 @@ export interface WeatherData {
   latitude: number;
   longitude: number;
   retrieved_at: string;
-  raw?: any;
+  raw?: OpenMeteoResponse;
 }
 
 export async function getWeather(lat: number, lon: number): Promise<WeatherData> {
