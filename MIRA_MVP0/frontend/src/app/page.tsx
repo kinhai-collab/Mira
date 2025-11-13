@@ -801,6 +801,7 @@ export default function Home() {
 								"How's my day looking?",
 								"Summarize today's tasks.",
 								"What meetings do I have today?",
+								"Show me my emails",
 								"Show me my emails and calendar",
 								"Show my calender events",
 								"Wrap up my day.",
