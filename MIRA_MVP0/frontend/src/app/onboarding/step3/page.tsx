@@ -174,7 +174,7 @@ export default function OnboardingStep3() {
 		};
 		
 		checkConnectionStatus();
-	}, []); // Run only once on mount
+	}, [connectedEmails, connecting, hasAutoConnected]); // Run only once on mount
 
 	const handleGmailConnect = async () => {
 		setConnecting("Gmail");

@@ -9,7 +9,6 @@ import { useState, useEffect } from "react";
 import {
 	extractTokenFromUrl,
 	storeAuthToken,
-	isAuthenticated,
 	clearAuthTokens,
 } from "@/utils/auth";
 import {
@@ -121,8 +120,6 @@ export default function Dashboard() {
 	// Weather & location state for dashboard header
 	const [location, setLocation] = useState<string>("New York");
 	const [isLocationLoading, setIsLocationLoading] = useState<boolean>(true);
-	const [latitude, setLatitude] = useState<number | null>(null);
-	const [longitude, setLongitude] = useState<number | null>(null);
 	const [temperatureC, setTemperatureC] = useState<number | null>(null);
 	const [weatherDescription, setWeatherDescription] = useState<string | null>(null);
 	const [isWeatherLoading, setIsWeatherLoading] = useState<boolean>(false);
@@ -286,7 +283,17 @@ export default function Dashboard() {
 				try { details = await resp.text(); } catch { details = '<unreadable response body>'; }
 				throw new Error(`Weather proxy failed: ${resp.status} ${details}`);
 			}
-			const data: any = await resp.json();
+			interface WeatherData {
+				temperatureC?: number;
+				temperature?: number;
+				tempC?: number;
+				description?: string;
+				raw?: {
+					current_weather?: { weathercode?: number };
+					current?: { condition?: { text?: string } };
+				};
+			}
+			const data: WeatherData = await resp.json();
 			const temp = data?.temperatureC ?? data?.temperature ?? data?.tempC ?? null;
 			let desc: string | null = null;
 			// Prefer description from normalized field
@@ -317,11 +324,8 @@ export default function Dashboard() {
 				if (!res.ok) return;
 				const data = await res.json();
 				const city = data.city || data.region || data.region_code || data.country_name;
-				if (data.timezone) {/* timezone not used here */}
 				if (city) setLocation(city);
 				if (data.latitude && data.longitude) {
-					setLatitude(Number(data.latitude));
-					setLongitude(Number(data.longitude));
 					fetchWeatherForCoords(Number(data.latitude), Number(data.longitude));
 				}
 			} catch (e) { console.error('Dashboard IP fallback error:', e); }
@@ -333,7 +337,6 @@ export default function Dashboard() {
 		const success = async (pos: GeolocationPosition) => {
 			try {
 				const { latitude: lat, longitude: lon } = pos.coords;
-				setLatitude(lat); setLongitude(lon);
 				
 				// Use OpenStreetMap Nominatim reverse geocoding (no key required)
 				const res = await fetch(
@@ -362,10 +365,10 @@ export default function Dashboard() {
 			}
 		};
 
-		const failure = async (err: any) => { console.warn('Dashboard geolocation failed:', err); await ipFallback(); };
+		const failure = async (err: GeolocationPositionError) => { console.warn('Dashboard geolocation failed:', err); await ipFallback(); };
 
 		navigator.geolocation.getCurrentPosition(success, failure, { timeout: 10000 });
-	}, []);
+	}, [fetchWeatherForCoords]);
 
 	// Fetch email stats
 	useEffect(() => {

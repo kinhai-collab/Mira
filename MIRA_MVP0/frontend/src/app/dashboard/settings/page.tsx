@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { isAuthenticated, getStoredUserData, UserData, getValidToken } from "@/utils/auth";
+import { getStoredUserData, UserData, getValidToken } from "@/utils/auth";
 import { ChevronDown, Sun, MapPin, Bell, Check } from "lucide-react";
 
 // Custom Checkbox Component (Square for Notifications)
@@ -114,13 +114,8 @@ export default function SettingsPage() {
 		() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
 	);
 
-	// Backend base URL (use your NEXT_PUBLIC_API_URL or fallback to localhost)
-	const apiBase = (
-		process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
-	).replace(/\/+$/, "");
-
-		// Weather state for settings page
-		const [latitude, setLatitude] = useState<number | null>(null);
+	// Weather state for settings page
+	const [latitude, setLatitude] = useState<number | null>(null);
 		const [longitude, setLongitude] = useState<number | null>(null);
 		const [temperatureC, setTemperatureC] = useState<number | null>(null);
 		const [isWeatherLoading, setIsWeatherLoading] = useState<boolean>(false);
@@ -412,7 +407,7 @@ export default function SettingsPage() {
 			}
 		};
 
-		const error = async (err: GeolocationPositionError | any) => {
+		const error = async (err: GeolocationPositionError) => {
 			console.error("geolocation error:", err);
 			// On permission denied or other errors, try IP-based lookup
 			await ipFallback();
@@ -1764,7 +1759,7 @@ export default function SettingsPage() {
 				day: "numeric",
 				timeZone: tz,
 			}).format(now);
-		} catch (e) {
+		} catch {
 			return new Date().toLocaleDateString(undefined, {
 				weekday: "short",
 				month: "short",
@@ -1785,7 +1780,7 @@ export default function SettingsPage() {
 				let details = '';
 				try {
 					details = await resp.text();
-				} catch (e) {
+				} catch {
 					details = '<unreadable response body>';
 				}
 				throw new Error(`Weather proxy failed: ${resp.status} ${details}`);

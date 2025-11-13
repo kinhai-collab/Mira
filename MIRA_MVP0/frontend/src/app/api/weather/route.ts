@@ -46,7 +46,7 @@ export async function GET(request: Request) {
     };
 
     return NextResponse.json(result);
-  } catch (err: any) {
+  } catch (err) {
     console.error('Server /api/weather error:', err);
     return NextResponse.json({ error: 'Internal server error', details: String(err) }, { status: 500 });
   }

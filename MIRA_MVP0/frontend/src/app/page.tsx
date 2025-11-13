@@ -1,7 +1,7 @@
 /** @format */
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { Icon } from "@/components/Icon";
@@ -105,7 +105,7 @@ export default function Home() {
 	}
 	};
 
-	const fetchOutlookEvents = async (): Promise<VoiceSummaryCalendarEvent[]> => {
+	const fetchOutlookEvents = useCallback(async (): Promise<VoiceSummaryCalendarEvent[]> => {
 	// Reuse your token util so the request includes the user’s Outlook access_token
 	const { getValidToken } = await import("@/utils/auth");
 	const token = await getValidToken();
@@ -153,7 +153,7 @@ export default function Home() {
 		note: e.organizer ? `Organizer: ${e.organizer}` : undefined,
 		provider: "outlook",
 	}));
-	};
+	}, [timezone]);
 
 	// Weather state: store coords and current temperature. We'll call Open-Meteo (no API key)
 	const [latitude, setLatitude] = useState<number | null>(null);
