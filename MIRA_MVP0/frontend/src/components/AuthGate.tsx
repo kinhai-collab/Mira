@@ -124,7 +124,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 		if (authed && pathname === "/landing") {
 			router.push("/");
 		}
-	}, [ready, authed, pathname, router]);
+	}, [ready, authed, pathname, router, publicPaths]);
 
 	// While we're determining auth state, don't render children to avoid flashing protected UI
 	if (!ready) {

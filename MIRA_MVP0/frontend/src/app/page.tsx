@@ -14,7 +14,6 @@ import {
 import {
 	extractTokenFromUrl,
 	storeAuthToken,
-	isAuthenticated,
 } from "@/utils/auth";
 import {
 	startMiraVoice,
@@ -119,25 +118,34 @@ export default function Home() {
 	]);
 
 	// Be resilient if either call fails
+	interface OutlookEvent {
+		id?: string;
+		subject?: string;
+		start?: string;
+		end?: string;
+		location?: string;
+		organizer?: string;
+	}
+	
 	const calJson = (await calRes.json().catch(() => ({ events: [] }))) as {
-		events?: any[];
+		events?: OutlookEvent[];
 	};
 	const icsJson = (await icsRes.json().catch(() => ({ events: [] }))) as {
-		events?: any[];
+		events?: OutlookEvent[];
 	};
 
 	// Merge and de-dup like the backend (subject+start+end)
 	const merged = [...(calJson.events || []), ...(icsJson.events || [])];
 	const seen = new Set<string>();
-	const unique = merged.filter((e: any) => {
+	const unique = merged.filter((e: OutlookEvent) => {
 		const key = `${(e.subject || "").trim().toLowerCase()}|${e.start}|${e.end}`;
 		if (seen.has(key)) return false;
 		seen.add(key);
 		return true;
 	});
 
-	// Map backend events to the overlay’s shape
-	return unique.map((e: any) => ({
+	// Map backend events to the overlay's shape
+	return unique.map((e: OutlookEvent) => ({
 		id: e.id || `${e.subject}-${e.start}`,
 		title: e.subject || "(no subject)",
 		timeRange: formatTimeRange(e.start, e.end, timezone),
@@ -244,7 +252,7 @@ export default function Home() {
 			}
 		};
 
-		const error = async (err: GeolocationPositionError | any) => {
+		const error = async (err: GeolocationPositionError) => {
 			console.error("geolocation error:", err);
 			// On permission denied or other errors, try IP-based lookup
 			await ipFallback();
@@ -254,21 +262,6 @@ export default function Home() {
 			timeout: 10000,
 		});
 	}, []);
-
-	const handleMicToggle = () => {
-		const newState = !isListening;
-		setIsListening(newState);
-		if (newState) {
-			setIsConversationActive(true);
-			startMiraVoice();
-		} else {
-			setIsConversationActive(false);
-			stopMiraVoice();
-			setIsMuted(false);
-			setMiraMute(false);
-		}
-	};
-	// Removed unused handleMicToggle
 
 	const handleMuteToggle = () => {
 		const muteState = !isMuted;
@@ -403,8 +396,7 @@ export default function Home() {
 				: DEFAULT_SUMMARY_STEPS;
 
 			// Normalize structure
-
-			const rawCal: any = (detail as any).calendarEvents;
+			const rawCal: unknown = detail.calendarEvents;
 			let normalizedCalendarEvents: VoiceSummaryCalendarEvent[] = [];
 
 			if (Array.isArray(rawCal)) {
@@ -440,7 +432,7 @@ export default function Home() {
 				);
 			}
 		};
-	}, []);
+	}, [fetchOutlookEvents]);
 
 	useEffect(() => {
 		if (!summaryOverlayVisible || !summarySteps.length) return;
@@ -499,7 +491,7 @@ export default function Home() {
 				day: "numeric",
 				timeZone: tz,
 			}).format(now);
-		} catch (e) {
+		} catch {
 			// Fallback to local formatting if Intl fails for some reason
 			return new Date().toLocaleDateString(undefined, {
 				weekday: "short",
@@ -526,7 +518,7 @@ export default function Home() {
 				try {
 					const txt = await resp.text();
 					details = txt;
-				} catch (e) {
+				} catch {
 					details = "<unreadable response body>";
 				}
 				throw new Error(`Weather proxy failed: ${resp.status} ${details}`);

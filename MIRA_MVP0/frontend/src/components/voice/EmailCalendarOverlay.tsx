@@ -688,23 +688,50 @@ export function EmailCalendarOverlay({
 				<div className="mt-2">
 					{/* Normalize emails safely before passing */}
 					{(() => {
+						// Define backend email types for normalization
+						interface BackendEmail {
+							id: string;
+							sender_name?: string;
+							sender_email?: string;
+							from?: string;
+							subject?: string;
+							timestamp?: string;
+							receivedAt?: string;
+							snippet?: string;
+							body?: string;
+						}
+
+						interface EmailsResponse {
+							data?: {
+								emails?: BackendEmail[];
+								provider?: string;
+							};
+							provider?: string;
+						}
+
 						// Normalize backend email structure to match VoiceSummaryEmail interface
 						const safeEmails: VoiceSummaryEmail[] = Array.isArray(emails)
-							? emails.map((e: any) => ({
-									id: e.id,
-									from: e.sender_name || e.from || e.sender_email || "Unknown",
-									senderEmail: e.sender_email || e.from || "",
-
-									subject: e.subject || "No Subject",
-									receivedAt: e.timestamp || e.receivedAt || "",
-									summary: e.snippet || e.body || "",
+							? emails.map((e: VoiceSummaryEmail | BackendEmail) => ({
+									id: 'id' in e ? e.id : '',
+									from: 'sender_name' in e 
+										? e.sender_name || ('from' in e ? e.from : '') || ('sender_email' in e ? e.sender_email : '') || "Unknown"
+										: 'from' in e ? e.from : "Unknown",
+									senderEmail: 'sender_email' in e 
+										? e.sender_email || ('from' in e ? e.from : '') || ""
+										: 'senderEmail' in e ? e.senderEmail : "",
+									subject: 'subject' in e ? e.subject || "No Subject" : "No Subject",
+									receivedAt: 'timestamp' in e 
+										? e.timestamp || ('receivedAt' in e ? e.receivedAt : '') || ""
+										: 'receivedAt' in e ? e.receivedAt : "",
+									summary: 'snippet' in e 
+										? e.snippet || ('body' in e ? e.body : '') || ""
+										: 'summary' in e ? e.summary : "",
 							  }))
-							: Array.isArray((emails as any)?.data?.emails)
-							? (emails as any).data.emails.map((e: any) => ({
+							: Array.isArray((emails as EmailsResponse)?.data?.emails)
+							? (emails as EmailsResponse).data!.emails!.map((e: BackendEmail) => ({
 									id: e.id,
 									from: e.sender_name || e.from || e.sender_email || "Unknown",
 									senderEmail: e.sender_email || e.from || "",
-
 									subject: e.subject || "No Subject",
 									receivedAt: e.timestamp || e.receivedAt || "",
 									summary: e.snippet || e.body || "",
@@ -714,8 +741,8 @@ export function EmailCalendarOverlay({
 						const safeCalendarEvents: VoiceSummaryCalendarEvent[] =
 							Array.isArray(calendarEvents) ? calendarEvents : [];
 						const provider =
-							(emails as any)?.provider ||
-							(emails as any)?.data?.provider ||
+							(emails as EmailsResponse)?.provider ||
+							(emails as EmailsResponse)?.data?.provider ||
 							"gmail";
 
 						return (
