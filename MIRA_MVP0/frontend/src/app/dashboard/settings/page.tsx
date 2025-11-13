@@ -160,7 +160,7 @@ export default function SettingsPage() {
 	// Load onboarding data from backend
 	const loadOnboardingData = async () => {
 		try {
-			let token = await getValidToken();
+			const token = await getValidToken();
 			if (!token) return;
 
 			const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
@@ -218,7 +218,7 @@ export default function SettingsPage() {
 	// Load user settings from user_profile table
 	const loadUserSettings = async () => {
 		try {
-			let token = await getValidToken();
+			const token = await getValidToken();
 			if (!token) return;
 
 			const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");

@@ -1,5 +1,4 @@
 /** @format */
-// @ts-nocheck
 
 "use client";
 

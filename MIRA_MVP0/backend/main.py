@@ -21,12 +21,18 @@ from dashboard_api import router as dashboard_router
 app = FastAPI()
 
 # Middleware
+import os
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+allowed_origins = [
+    "http://localhost:3000",
+    FRONTEND_URL
+]
+# Remove duplicates
+allowed_origins = list(set(allowed_origins))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "https://main.dd480r9y8ima.amplifyapp.com"
-    ],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
