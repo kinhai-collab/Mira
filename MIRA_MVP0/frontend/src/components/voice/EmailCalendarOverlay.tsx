@@ -710,15 +710,36 @@ export function EmailCalendarOverlay({
 						}
 
     // Normalize backend email structure to match VoiceSummaryEmail interface
+    type EmailBackendRecord = {
+        id?: string;
+        sender_name?: string;
+        sender_email?: string;
+        from?: string;
+        subject?: string;
+        timestamp?: string;
+        receivedAt?: string;
+        snippet?: string;
+        body?: string;
+    };
+
     const safeEmails: VoiceSummaryEmail[] = Array.isArray(emails)
-        ? emails.map((e: VoiceSummaryEmail | BackendEmail) => ({
-            id: (e as any).id ?? "",
-            from: (e as any).from ?? "",
-            senderEmail: (e as any).sender_email ?? "",
-            subject: (e as any).subject ?? "No Subject",
-            receivedAt: (e as any).receivedAt ?? "",
-            summary: (e as any).snippet ?? (e as any).body ?? "",
-        })) as VoiceSummaryEmail[]
+        ? emails.map((e: VoiceSummaryEmail | EmailBackendRecord) => {
+            const backend = e as EmailBackendRecord;
+            const fromVal = backend.from ?? backend.sender_name ?? backend.sender_email ?? "Unknown";
+            const subjectVal = backend.subject ?? "No Subject";
+            const receivedAtVal = backend.timestamp ?? backend.receivedAt ?? "";
+            const idVal = backend.id ?? "";
+            const senderEmailVal = backend.sender_email ?? "";
+            const summaryVal = backend.snippet ?? backend.body ?? "";
+            return {
+                id: idVal,
+                from: String(fromVal),
+                senderEmail: String(senderEmailVal),
+                subject: String(subjectVal),
+                receivedAt: String(receivedAtVal),
+                summary: String(summaryVal),
+            } as VoiceSummaryEmail;
+        })
         : [];
 
 						const safeCalendarEvents: VoiceSummaryCalendarEvent[] =
