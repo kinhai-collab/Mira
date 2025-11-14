@@ -29,6 +29,7 @@ export interface VoiceSummaryCalendarEvent {
 	timeRange: string;
 	location?: string;
 	note?: string;
+	meetingLink?: string | null;
 	provider?: CalendarEventProvider | string | null;
 }
 
@@ -546,11 +547,27 @@ function SummaryCard({
 									</div>
 
 									<div className="flex-1 space-y-2">
-										<div className="flex items-start gap-2">
-											<span className="mt-[6px] inline-flex size-2 shrink-0 rounded-full bg-[#6a80ff]" />
-											<p className="font-['Outfit',sans-serif] text-[14px] font-medium text-[#272829]">
-												{event.title}
-											</p>
+										<div className="flex items-start justify-between gap-2">
+											<div className="flex items-start gap-2 flex-1">
+												<span className="mt-[6px] inline-flex size-2 shrink-0 rounded-full bg-[#6a80ff]" />
+												<p className="font-['Outfit',sans-serif] text-[14px] font-medium text-[#272829]">
+													{event.title}
+												</p>
+											</div>
+											{event.meetingLink && (
+												<a
+													href={event.meetingLink}
+													target="_blank"
+													rel="noopener noreferrer"
+													className="shrink-0 inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-white bg-[#382099] rounded-md hover:bg-[#2d1a7a] transition-colors"
+												>
+													Join
+													<svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+														<path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z" />
+														<path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z" />
+													</svg>
+												</a>
+											)}
 										</div>
 										{hasSegments && (
 											<div className="flex flex-wrap items-center gap-2 text-[13px] font-light text-[#5a5c61]">

@@ -131,7 +131,9 @@ async def fetch_dashboard_data(user_token: str, has_email: bool, has_calendar: b
                 res = await client.get(f"{base_url}/dashboard/emails/list", headers=headers)
                 if res.status_code == 200:
                     data = res.json()
-                    emails = data.get("emails", data)
+                    # Extract emails from nested structure: {status: "success", data: {emails: [...]}}
+                    emails = data.get("data", {}).get("emails", [])
+                    print(f"✅ Fetched {len(emails)} emails from dashboard API")
             except Exception as e:
                 print("⚠️ Email fetch failed:", e)
 
@@ -140,7 +142,9 @@ async def fetch_dashboard_data(user_token: str, has_email: bool, has_calendar: b
                 res = await client.get(f"{base_url}/dashboard/events", headers=headers)
                 if res.status_code == 200:
                     data = res.json()
-                    calendar_events = data.get("events", data)
+                    # Extract events from nested structure: {status: "success", data: {events: [...]}}
+                    calendar_events = data.get("data", {}).get("events", [])
+                    print(f"✅ Fetched {len(calendar_events)} calendar events from dashboard API")
             except Exception as e:
                 print("⚠️ Calendar fetch failed:", e)
 
@@ -360,16 +364,13 @@ async def voice_pipeline(
         
         
         if has_email_intent or has_calendar_intent:
-            # Try to extract token from environment or a test fallback
-            # ✅ Extract token sent from frontend (if any)
-            user_token = request_data.get("token") or os.getenv("TEST_USER_TOKEN")
-
+            # ✅ Use token extracted from Authorization header at top of function (line 298)
+            # user_token already set, just verify it's available
             if not user_token:
-                print("⚠️ No token found in request or env; using mock local token.")
+                print("⚠️ No token found; using mock local token.")
                 user_token = "local-dev-token"
             else:
-                print("✅ Using user_token from frontend (truncated):", user_token[:12], "...")
-
+                print(f"✅ Using user_token from Authorization header (truncated): {user_token[:12]}...")
 
             steps = []
             if has_email_intent:
