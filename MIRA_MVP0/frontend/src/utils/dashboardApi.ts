@@ -34,7 +34,10 @@ export interface NextEvent {
 	start: string;
 	duration: number;
 	location?: string;
-	conference_data?: any;
+	conference_data?: {
+		url?: string;
+		type?: string;
+	};
 	attendees_count: number;
 }
 

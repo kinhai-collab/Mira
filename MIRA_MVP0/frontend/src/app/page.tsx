@@ -1,7 +1,7 @@
 /** @format */
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { Icon } from "@/components/Icon";
@@ -14,13 +14,13 @@ import {
 import {
 	extractTokenFromUrl,
 	storeAuthToken,
-	isAuthenticated,
 } from "@/utils/auth";
 import {
 	startMiraVoice,
 	stopMiraVoice,
 	setMiraMute,
 } from "@/utils/voice/voiceHandler";
+import { getWeather } from "@/utils/weather";
 
 const DEFAULT_SUMMARY_STEPS = [
 	{ id: "emails", label: "Checking your inbox for priority emails..." },
@@ -78,10 +78,90 @@ export default function Home() {
 		() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
 	);
 
-	// Backend base URL (use your NEXT_PUBLIC_API_URL or fallback to localhost)
-	const apiBase = (
+// --- Outlook helpers  ---
+// DISABLED: Outlook integration temporarily disabled due to authentication issues
+// Using Google Calendar and Gmail only
+const fetchOutlookEvents = useCallback(async (): Promise<VoiceSummaryCalendarEvent[]> => {
+	// Return empty array - Outlook integration disabled
+	console.log("⚠️ Outlook integration is disabled. Using Google Calendar/Gmail only.");
+	return [];
+	
+	/* COMMENTED OUT - Outlook API calls causing 401 errors
+	const apiBaseUrl = (
 		process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
 	).replace(/\/+$/, "");
+	// Reuse your token util so the request includes the user's Outlook access_token
+	const { getValidToken } = await import("@/utils/auth");
+	const token = await getValidToken();
+	if (!token) return [];
+
+	// Hit both Outlook endpoints from your FastAPI backend
+	const [calRes, icsRes] = await Promise.all([
+		fetch(`${apiBaseUrl}/outlook/calendar?access_token=${token}&limit=20`),
+		fetch(`${apiBaseUrl}/outlook/emails?access_token=${token}&limit=20`),
+	]);
+
+	// Be resilient if either call fails
+	interface OutlookEvent {
+		id?: string;
+		subject?: string;
+		start?: string;
+		end?: string;
+		location?: string;
+		organizer?: string;
+	}
+	
+	const calJson = (await calRes.json().catch(() => ({ events: [] }))) as {
+		events?: OutlookEvent[];
+	};
+	const icsJson = (await icsRes.json().catch(() => ({ events: [] }))) as {
+		events?: OutlookEvent[];
+	};
+
+	// Merge and de-dup like the backend (subject+start+end)
+	const merged = [...(calJson.events || []), ...(icsJson.events || [])];
+	const seen = new Set<string>();
+	const unique = merged.filter((e: OutlookEvent) => {
+		const key = `${(e.subject || "").trim().toLowerCase()}|${e.start}|${e.end}`;
+		if (seen.has(key)) return false;
+		seen.add(key);
+		return true;
+	});
+
+		// Define helper locally to avoid affecting hook deps
+	const formatTimeRangeLocal = (
+		startIso?: string,
+		endIso?: string,
+		tz: string = timezone
+	) => {
+		try {
+			if (!startIso) return "N/A";
+			const s = new Date(startIso);
+			const e = endIso ? new Date(endIso) : null;
+			const opts: Intl.DateTimeFormatOptions = {
+				hour: "2-digit",
+				minute: "2-digit",
+				timeZone: tz,
+			};
+			return e
+				? `${s.toLocaleTimeString([], opts)}–${e.toLocaleTimeString([], opts)}`
+				: s.toLocaleTimeString([], opts);
+		} catch {
+			return "N/A";
+		}
+	};
+
+	// Map backend events to the overlay's shape
+	return unique.map((e: OutlookEvent) => ({
+		id: e.id || `${e.subject}-${e.start}`,
+		title: e.subject || "(no subject)",
+		timeRange: formatTimeRangeLocal(e.start, e.end, timezone),
+		location: e.location || "",
+		note: e.organizer ? `Organizer: ${e.organizer}` : undefined,
+		provider: "outlook",
+	}));
+	*/
+ }, [timezone]);
 
 	// Weather state: store coords and current temperature. We'll call Open-Meteo (no API key)
 	const [latitude, setLatitude] = useState<number | null>(null);
@@ -180,7 +260,7 @@ export default function Home() {
 			}
 		};
 
-		const error = async (err: GeolocationPositionError | any) => {
+		const error = async (err: GeolocationPositionError) => {
 			console.error("geolocation error:", err);
 			// On permission denied or other errors, try IP-based lookup
 			await ipFallback();
@@ -190,21 +270,6 @@ export default function Home() {
 			timeout: 10000,
 		});
 	}, []);
-
-	const handleMicToggle = () => {
-		const newState = !isListening;
-		setIsListening(newState);
-		if (newState) {
-			setIsConversationActive(true);
-			startMiraVoice();
-		} else {
-			setIsConversationActive(false);
-			stopMiraVoice();
-			setIsMuted(false);
-			setMiraMute(false);
-		}
-	};
-	// Removed unused handleMicToggle
 
 	const handleMuteToggle = () => {
 		const muteState = !isMuted;
@@ -331,7 +396,7 @@ export default function Home() {
 	}, []);
 
 	useEffect(() => {
-		const handler = (event: Event) => {
+		const handler = async (event: Event) => {
 			const customEvent = event as CustomEvent<VoiceSummaryEventDetail>;
 			const detail = customEvent.detail || {};
 			const rawSteps = detail.steps?.length
@@ -339,31 +404,14 @@ export default function Home() {
 				: DEFAULT_SUMMARY_STEPS;
 
 			// Normalize structure
-
-			const rawCal: any = (detail as any).calendarEvents;
+			const rawCal: unknown = detail.calendarEvents;
 			let normalizedCalendarEvents: VoiceSummaryCalendarEvent[] = [];
 
 			if (Array.isArray(rawCal)) {
 				normalizedCalendarEvents = rawCal;
-			} else if (rawCal?.data?.next_event) {
-				const ev = rawCal.data.next_event;
-				normalizedCalendarEvents = [
-					{
-						id: "next",
-						title: ev.summary || "Untitled Event",
-						timeRange: ev.start
-							? new Date(ev.start).toLocaleTimeString([], {
-									hour: "2-digit",
-									minute: "2-digit",
-							  })
-							: "N/A",
-						location: ev.location || "No location",
-						note: `Duration: ${ev.duration || 0} mins | Attendees: ${
-							ev.attendees_count || 0
-						}`,
-						provider: "google-meet",
-					},
-				];
+			} else {
+				// Calls your FastAPI Outlook endpoints and maps to overlay shape
+				normalizedCalendarEvents = await fetchOutlookEvents();
 			}
 
 			setSummarySteps(prepareVoiceSteps(rawSteps));
@@ -392,7 +440,7 @@ export default function Home() {
 				);
 			}
 		};
-	}, []);
+	}, [fetchOutlookEvents]);
 
 	useEffect(() => {
 		if (!summaryOverlayVisible || !summarySteps.length) return;
@@ -451,7 +499,7 @@ export default function Home() {
 				day: "numeric",
 				timeZone: tz,
 			}).format(now);
-		} catch (e) {
+		} catch {
 			// Fallback to local formatting if Intl fails for some reason
 			return new Date().toLocaleDateString(undefined, {
 				weekday: "short",
@@ -461,38 +509,16 @@ export default function Home() {
 		}
 	};
 
-	// Fetch current weather by calling the internal Next.js API route (/api/weather).
-	// Using a same-origin API route avoids CORS and mixed-content issues (http vs https).
+	// Fetch current weather using Open-Meteo API directly
 	const fetchWeatherForCoords = async (lat: number, lon: number) => {
 		try {
 			setIsWeatherLoading(true);
-			const url = `/api/weather?lat=${encodeURIComponent(
-				lat
-			)}&lon=${encodeURIComponent(lon)}`;
-			// Log the URL so if "Failed to fetch" occurs we can see exactly what was attempted.
-			console.log("Fetching weather from (internal proxy):", url);
-			const resp = await fetch(url);
-			if (!resp.ok) {
-				// Try to read response body for diagnostics
-				let details = "";
-				try {
-					const txt = await resp.text();
-					details = txt;
-				} catch (e) {
-					details = "<unreadable response body>";
-				}
-				throw new Error(`Weather proxy failed: ${resp.status} ${details}`);
-			}
-			const data = await resp.json();
-			// Expecting backend to return { temperatureC: number } (or similar)
-			const temp = data?.temperatureC ?? data?.temperature ?? data?.tempC;
+			console.log("Fetching weather for coords:", lat, lon);
+			const data = await getWeather(lat, lon);
+			const temp = data?.temperatureC;
 			if (typeof temp === "number") setTemperatureC(temp);
 		} catch (err) {
-			// Show richer diagnostics in console for easier debugging
-			console.error(
-				"Error fetching weather from internal API (/api/weather):",
-				err
-			);
+			console.error("Error fetching weather:", err);
 		} finally {
 			setIsWeatherLoading(false);
 		}
@@ -753,6 +779,7 @@ export default function Home() {
 								"How's my day looking?",
 								"Summarize today's tasks.",
 								"What meetings do I have today?",
+								"Show me my emails",
 								"Show me my emails and calendar",
 								"Show my calender events",
 								"Wrap up my day.",

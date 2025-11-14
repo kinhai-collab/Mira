@@ -22,7 +22,6 @@ export default function OnboardingStep4() {
 			const calendarStatus = urlParams.get("status");
 			const msConnected = urlParams.get("ms_connected");
 			const msEmail = urlParams.get("email");
-			const returnTo = urlParams.get("return_to");
 
 			// Handle Google Calendar callback FIRST (before auto-connect logic)
 			if (calendarConnected === "google" && calendarStatus === "connected") {
@@ -112,7 +111,7 @@ export default function OnboardingStep4() {
 		};
 		
 		checkConnectionStatus();
-	}, []); // Run only once on mount
+	}, [connectedCalendars, connecting, hasAutoConnected]); // Run only once on mount
 
 	const handleGoogleCalendarConnect = async () => {
 		setConnecting("Google Calendar");

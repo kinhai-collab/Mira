@@ -294,7 +294,7 @@ export default function MorningBrief() {
 		};
 
 		fetchMorningBrief();
-	}, []);
+	}, [router]);
 
 	// Auto-advance from thinking stage after loading completes
 	useEffect(() => {

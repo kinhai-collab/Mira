@@ -2,11 +2,17 @@ import os
 import re
 import base64
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Request
+import re
+import base64
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Request
 from fastapi.responses import StreamingResponse, JSONResponse
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 import tempfile
 import json
+import httpx
+from openai import OpenAI
+
 import subprocess
 import shutil
 import wave
@@ -88,6 +94,7 @@ from openai import OpenAI
 
 router = APIRouter()
 
+# It it working with hardcode - version 2
 # It it working with hardcode - version 2
 client = None
 
@@ -457,6 +464,519 @@ async def generate_voice(text: str = "Hello from Mira!"):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Voice generation failed: {e}")
 
+async def fetch_dashboard_data(user_token: str, has_email: bool, has_calendar: bool):
+    """
+    Fetches live Gmail and Calendar data for the logged-in user.
+    Calls internal dashboard endpoints with authentication.
+    """
+    base_url = os.getenv("API_BASE_URL", "http://127.0.0.1:8000")
+    headers = {
+        "Authorization": f"Bearer {user_token}",
+        "Content-Type": "application/json",
+    }
+
+    emails = []
+    calendar_events = []
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        if has_email:
+            try:
+                res = await client.get(f"{base_url}/dashboard/emails/list", headers=headers)
+                if res.status_code == 200:
+                    data = res.json()
+                    # Extract emails from nested structure: {status: "success", data: {emails: [...]}}
+                    emails = data.get("data", {}).get("emails", [])
+                    print(f"✅ Fetched {len(emails)} emails from dashboard API")
+            except Exception as e:
+                print("⚠️ Email fetch failed:", e)
+
+        if has_calendar:
+            try:
+                res = await client.get(f"{base_url}/dashboard/events", headers=headers)
+                if res.status_code == 200:
+                    data = res.json()
+                    # Extract events from nested structure: {status: "success", data: {events: [...]}}
+                    calendar_events = data.get("data", {}).get("events", [])
+                    print(f"✅ Fetched {len(calendar_events)} calendar events from dashboard API")
+            except Exception as e:
+                print("⚠️ Calendar fetch failed:", e)
+
+    return emails, calendar_events
+
+
+
+@router.post("/text-query")
+async def text_query_pipeline(request: Request):
+    request_data = await request.json()
+    print("📩 Incoming text-query data:", request_data)
+
+    try:
+        user_input = request_data.get("query", "").strip()
+        history = request_data.get("history", [])
+        
+        if not user_input or len(user_input) < 1:
+            return JSONResponse({
+                "text": "",
+                "userText": user_input,
+            })
+        
+        # Check for morning brief intent
+        import re, base64
+        morning_brief_keywords = re.compile(r"(morning|daily|today).*(brief|summary|update)", re.I)
+        show_brief_keywords = re.compile(r"(show|give|tell|read).*(brief|summary|morning|daily)", re.I)
+        if morning_brief_keywords.search(user_input) or show_brief_keywords.search(user_input):
+            return JSONResponse({
+                "text": "Opening your morning brief now.",
+                "userText": user_input,
+                "action": "navigate",
+                "actionTarget": "/scenarios/morning-brief",
+            })
+        
+        # Check for email/calendar summary intent
+        email_keywords = re.compile(r"(email|inbox|mail|messages)", re.I)
+        calendar_keywords = re.compile(r"(calendar|schedule|event)", re.I)
+        has_email_intent = email_keywords.search(user_input)
+        has_calendar_intent = calendar_keywords.search(user_input)
+        
+        if has_email_intent or has_calendar_intent:
+            # Try to extract token from environment or a test fallback
+            # ✅ Extract token sent from frontend (if any)
+            user_token = request_data.get("token") or os.getenv("TEST_USER_TOKEN")
+
+            if not user_token:
+                print("⚠️ No token found in request or env; using mock local token.")
+                user_token = "local-dev-token"
+            else:
+                print("✅ Using user_token from frontend (truncated):", user_token[:12], "...")
+
+            steps = []
+            if has_email_intent:
+                steps.append({"id": "emails", "label": "Checking your inbox for priority emails..."})
+            if has_calendar_intent:
+                steps.append({"id": "calendar", "label": "Reviewing today's calendar events..."})
+                steps.append({"id": "highlights", "label": "Highlighting the most important meetings..."})
+            if has_email_intent and has_calendar_intent:
+                steps.append({"id": "conflicts", "label": "Noting any schedule conflicts..."})
+
+            # ✅ Fetch live data from dashboard routes
+            emails, calendar_events = await fetch_dashboard_data(user_token, has_email_intent, has_calendar_intent)
+
+            action_data = {
+                "steps": steps,
+                "emails": emails if has_email_intent else [],
+                "calendarEvents": calendar_events if has_calendar_intent else [],
+                "focus": (
+                    "You have upcoming events and important unread emails — review your schedule and respond accordingly."
+                    if has_email_intent and has_calendar_intent
+                    else None
+                ),
+            }
+
+            response_text = (
+                "Here's what I'm seeing in your inbox and calendar."
+                if has_email_intent and has_calendar_intent
+                else "Here's what I'm seeing in your inbox."
+                if has_email_intent
+                else "Here's what I'm seeing on your calendar."
+            )
+
+            return JSONResponse({
+                "text": response_text,
+                "userText": user_input,
+                "action": "email_calendar_summary",
+                "actionData": action_data,
+            })
+
+        
+
+
+
+
+        # Build chat message array
+        messages: List[Dict[str, Any]] = [
+            {
+                "role": "system",
+                "content": (
+                    "You are Mira, a warm, helpful assistant. Keep answers concise and friendly."
+                ),
+            },
+        ]
+        
+        # Add history
+        if isinstance(history, list):
+            for msg in history[-10:]:  # Keep last 10 messages for context
+                if isinstance(msg, dict) and "role" in msg and "content" in msg:
+                    messages.append({"role": msg["role"], "content": msg["content"]})
+        
+        # Add current user query
+        messages.append({"role": "user", "content": user_input})
+        
+        # Generate reply using GPT
+        response_text = "I'm here to help!"
+        try:
+           
+            oa = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+            comp = oa.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=messages,
+                temperature=0.8,
+                max_tokens=300,
+            )
+            response_text = (comp.choices[0].message.content or "I'm here to help!").strip()
+        except Exception as e:
+            print(f"Error generating response: {e}")
+            response_text = "Sorry, I encountered an issue generating a response."
+        
+        return JSONResponse({
+            "text": response_text,
+            "userText": user_input,
+        })
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Text query pipeline failed: {e}")
+    
+async def fetch_dashboard_data(user_token: str, has_email: bool, has_calendar: bool):
+    """
+    Fetches live Gmail and Calendar data for the logged-in user.
+    Calls internal dashboard endpoints with authentication.
+    """
+    base_url = os.getenv("API_BASE_URL", "http://127.0.0.1:8000")
+    headers = {
+        "Authorization": f"Bearer {user_token}",
+        "Content-Type": "application/json",
+    }
+
+    emails = []
+    calendar_events = []
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        if has_email:
+            try:
+                res = await client.get(f"{base_url}/dashboard/emails/list", headers=headers)
+                if res.status_code == 200:
+                    data = res.json()
+                    # Extract emails from nested structure: {status: "success", data: {emails: [...]}}
+                    emails = data.get("data", {}).get("emails", [])
+                    print(f"✅ Fetched {len(emails)} emails from dashboard API")
+            except Exception as e:
+                print("⚠️ Email fetch failed:", e)
+
+        if has_calendar:
+            try:
+                res = await client.get(f"{base_url}/dashboard/events", headers=headers)
+                if res.status_code == 200:
+                    data = res.json()
+                    # Extract events from nested structure: {status: "success", data: {events: [...]}}
+                    calendar_events = data.get("data", {}).get("events", [])
+                    print(f"✅ Fetched {len(calendar_events)} calendar events from dashboard API")
+            except Exception as e:
+                print("⚠️ Calendar fetch failed:", e)
+
+    return emails, calendar_events
+
+
+
+@router.post("/text-query")
+async def text_query_pipeline(request: Request):
+    request_data = await request.json()
+    print("📩 Incoming text-query data:", request_data)
+
+    try:
+        user_input = request_data.get("query", "").strip()
+        history = request_data.get("history", [])
+        
+        if not user_input or len(user_input) < 1:
+            return JSONResponse({
+                "text": "",
+                "userText": user_input,
+            })
+        
+        # Check for morning brief intent
+        import re, base64
+        morning_brief_keywords = re.compile(r"(morning|daily|today).*(brief|summary|update)", re.I)
+        show_brief_keywords = re.compile(r"(show|give|tell|read).*(brief|summary|morning|daily)", re.I)
+        if morning_brief_keywords.search(user_input) or show_brief_keywords.search(user_input):
+            return JSONResponse({
+                "text": "Opening your morning brief now.",
+                "userText": user_input,
+                "action": "navigate",
+                "actionTarget": "/scenarios/morning-brief",
+            })
+        
+        # Check for email/calendar summary intent
+        email_keywords = re.compile(r"(email|inbox|mail|messages)", re.I)
+        calendar_keywords = re.compile(r"(calendar|schedule|event)", re.I)
+        has_email_intent = email_keywords.search(user_input)
+        has_calendar_intent = calendar_keywords.search(user_input)
+        
+        if has_email_intent or has_calendar_intent:
+            # Try to extract token from environment or a test fallback
+            # ✅ Extract token sent from frontend (if any)
+            user_token = request_data.get("token") or os.getenv("TEST_USER_TOKEN")
+
+            if not user_token:
+                print("⚠️ No token found in request or env; using mock local token.")
+                user_token = "local-dev-token"
+            else:
+                print("✅ Using user_token from frontend (truncated):", user_token[:12], "...")
+
+            steps = []
+            if has_email_intent:
+                steps.append({"id": "emails", "label": "Checking your inbox for priority emails..."})
+            if has_calendar_intent:
+                steps.append({"id": "calendar", "label": "Reviewing today's calendar events..."})
+                steps.append({"id": "highlights", "label": "Highlighting the most important meetings..."})
+            if has_email_intent and has_calendar_intent:
+                steps.append({"id": "conflicts", "label": "Noting any schedule conflicts..."})
+
+            # ✅ Fetch live data from dashboard routes
+            emails, calendar_events = await fetch_dashboard_data(user_token, has_email_intent, has_calendar_intent)
+
+            action_data = {
+                "steps": steps,
+                "emails": emails if has_email_intent else [],
+                "calendarEvents": calendar_events if has_calendar_intent else [],
+                "focus": (
+                    "You have upcoming events and important unread emails — review your schedule and respond accordingly."
+                    if has_email_intent and has_calendar_intent
+                    else None
+                ),
+            }
+
+            response_text = (
+                "Here's what I'm seeing in your inbox and calendar."
+                if has_email_intent and has_calendar_intent
+                else "Here's what I'm seeing in your inbox."
+                if has_email_intent
+                else "Here's what I'm seeing on your calendar."
+            )
+
+            return JSONResponse({
+                "text": response_text,
+                "userText": user_input,
+                "action": "email_calendar_summary",
+                "actionData": action_data,
+            })
+
+        
+
+
+
+
+        # Build chat message array
+        messages: List[Dict[str, Any]] = [
+            {
+                "role": "system",
+                "content": (
+                    "You are Mira, a warm, helpful assistant. Keep answers concise and friendly."
+                ),
+            },
+        ]
+        
+        # Add history
+        if isinstance(history, list):
+            for msg in history[-10:]:  # Keep last 10 messages for context
+                if isinstance(msg, dict) and "role" in msg and "content" in msg:
+                    messages.append({"role": msg["role"], "content": msg["content"]})
+        
+        # Add current user query
+        messages.append({"role": "user", "content": user_input})
+        
+        # Generate reply using GPT
+        response_text = "I'm here to help!"
+        try:
+           
+            oa = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+            comp = oa.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=messages,
+                temperature=0.8,
+                max_tokens=300,
+            )
+            response_text = (comp.choices[0].message.content or "I'm here to help!").strip()
+        except Exception as e:
+            print(f"Error generating response: {e}")
+            response_text = "Sorry, I encountered an issue generating a response."
+        
+        return JSONResponse({
+            "text": response_text,
+            "userText": user_input,
+        })
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Text query pipeline failed: {e}")
+    
+async def fetch_dashboard_data(user_token: str, has_email: bool, has_calendar: bool):
+    """
+    Fetches live Gmail and Calendar data for the logged-in user.
+    Calls internal dashboard endpoints with authentication.
+    """
+    base_url = os.getenv("API_BASE_URL", "http://127.0.0.1:8000")
+    headers = {
+        "Authorization": f"Bearer {user_token}",
+        "Content-Type": "application/json",
+    }
+
+    emails = []
+    calendar_events = []
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        if has_email:
+            try:
+                res = await client.get(f"{base_url}/dashboard/emails/list", headers=headers)
+                if res.status_code == 200:
+                    data = res.json()
+                    # Extract emails from nested structure: {status: "success", data: {emails: [...]}}
+                    emails = data.get("data", {}).get("emails", [])
+                    print(f"✅ Fetched {len(emails)} emails from dashboard API")
+            except Exception as e:
+                print("⚠️ Email fetch failed:", e)
+
+        if has_calendar:
+            try:
+                res = await client.get(f"{base_url}/dashboard/events", headers=headers)
+                if res.status_code == 200:
+                    data = res.json()
+                    # Extract events from nested structure: {status: "success", data: {events: [...]}}
+                    calendar_events = data.get("data", {}).get("events", [])
+                    print(f"✅ Fetched {len(calendar_events)} calendar events from dashboard API")
+            except Exception as e:
+                print("⚠️ Calendar fetch failed:", e)
+
+    return emails, calendar_events
+
+
+
+@router.post("/text-query")
+async def text_query_pipeline(request: Request):
+    request_data = await request.json()
+    print("📩 Incoming text-query data:", request_data)
+
+    try:
+        user_input = request_data.get("query", "").strip()
+        history = request_data.get("history", [])
+        
+        if not user_input or len(user_input) < 1:
+            return JSONResponse({
+                "text": "",
+                "userText": user_input,
+            })
+        
+        # Check for morning brief intent
+        import re, base64
+        morning_brief_keywords = re.compile(r"(morning|daily|today).*(brief|summary|update)", re.I)
+        show_brief_keywords = re.compile(r"(show|give|tell|read).*(brief|summary|morning|daily)", re.I)
+        if morning_brief_keywords.search(user_input) or show_brief_keywords.search(user_input):
+            return JSONResponse({
+                "text": "Opening your morning brief now.",
+                "userText": user_input,
+                "action": "navigate",
+                "actionTarget": "/scenarios/morning-brief",
+            })
+        
+        # Check for email/calendar summary intent
+        email_keywords = re.compile(r"(email|inbox|mail|messages)", re.I)
+        calendar_keywords = re.compile(r"(calendar|schedule|event)", re.I)
+        has_email_intent = email_keywords.search(user_input)
+        has_calendar_intent = calendar_keywords.search(user_input)
+        
+        if has_email_intent or has_calendar_intent:
+            # Try to extract token from environment or a test fallback
+            # ✅ Extract token sent from frontend (if any)
+            user_token = request_data.get("token") or os.getenv("TEST_USER_TOKEN")
+
+            if not user_token:
+                print("⚠️ No token found in request or env; using mock local token.")
+                user_token = "local-dev-token"
+            else:
+                print("✅ Using user_token from frontend (truncated):", user_token[:12], "...")
+
+            steps = []
+            if has_email_intent:
+                steps.append({"id": "emails", "label": "Checking your inbox for priority emails..."})
+            if has_calendar_intent:
+                steps.append({"id": "calendar", "label": "Reviewing today's calendar events..."})
+                steps.append({"id": "highlights", "label": "Highlighting the most important meetings..."})
+            if has_email_intent and has_calendar_intent:
+                steps.append({"id": "conflicts", "label": "Noting any schedule conflicts..."})
+
+            # ✅ Fetch live data from dashboard routes
+            emails, calendar_events = await fetch_dashboard_data(user_token, has_email_intent, has_calendar_intent)
+
+            action_data = {
+                "steps": steps,
+                "emails": emails if has_email_intent else [],
+                "calendarEvents": calendar_events if has_calendar_intent else [],
+                "focus": (
+                    "You have upcoming events and important unread emails — review your schedule and respond accordingly."
+                    if has_email_intent and has_calendar_intent
+                    else None
+                ),
+            }
+
+            response_text = (
+                "Here's what I'm seeing in your inbox and calendar."
+                if has_email_intent and has_calendar_intent
+                else "Here's what I'm seeing in your inbox."
+                if has_email_intent
+                else "Here's what I'm seeing on your calendar."
+            )
+
+            return JSONResponse({
+                "text": response_text,
+                "userText": user_input,
+                "action": "email_calendar_summary",
+                "actionData": action_data,
+            })
+
+        
+
+
+
+
+        # Build chat message array
+        messages: List[Dict[str, Any]] = [
+            {
+                "role": "system",
+                "content": (
+                    "You are Mira, a warm, helpful assistant. Keep answers concise and friendly."
+                ),
+            },
+        ]
+        
+        # Add history
+        if isinstance(history, list):
+            for msg in history[-10:]:  # Keep last 10 messages for context
+                if isinstance(msg, dict) and "role" in msg and "content" in msg:
+                    messages.append({"role": msg["role"], "content": msg["content"]})
+        
+        # Add current user query
+        messages.append({"role": "user", "content": user_input})
+        
+        # Generate reply using GPT
+        response_text = "I'm here to help!"
+        try:
+           
+            oa = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+            comp = oa.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=messages,
+                temperature=0.8,
+                max_tokens=300,
+            )
+            response_text = (comp.choices[0].message.content or "I'm here to help!").strip()
+        except Exception as e:
+            print(f"Error generating response: {e}")
+            response_text = "Sorry, I encountered an issue generating a response."
+        
+        return JSONResponse({
+            "text": response_text,
+            "userText": user_input,
+        })
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Text query pipeline failed: {e}")
+    
 async def fetch_dashboard_data(user_token: str, has_email: bool, has_calendar: bool):
     """
     Fetches live Gmail and Calendar data for the logged-in user.

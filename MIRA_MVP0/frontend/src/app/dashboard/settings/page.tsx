@@ -4,8 +4,9 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { isAuthenticated, getStoredUserData, UserData, getValidToken } from "@/utils/auth";
+import { getStoredUserData, UserData, getValidToken } from "@/utils/auth";
 import { ChevronDown, Sun, MapPin, Bell, Check } from "lucide-react";
+import { getWeather } from "@/utils/weather";
 
 // Custom Checkbox Component (Square for Notifications)
 const CustomCheckbox = ({ checked, onChange, className = "" }: { checked: boolean; onChange: (checked: boolean) => void; className?: string }) => (
@@ -114,13 +115,8 @@ export default function SettingsPage() {
 		() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
 	);
 
-	// Backend base URL (use your NEXT_PUBLIC_API_URL or fallback to localhost)
-	const apiBase = (
-		process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
-	).replace(/\/+$/, "");
-
-		// Weather state for settings page
-		const [latitude, setLatitude] = useState<number | null>(null);
+	// Weather state for settings page
+	const [latitude, setLatitude] = useState<number | null>(null);
 		const [longitude, setLongitude] = useState<number | null>(null);
 		const [temperatureC, setTemperatureC] = useState<number | null>(null);
 		const [isWeatherLoading, setIsWeatherLoading] = useState<boolean>(false);
@@ -412,7 +408,7 @@ export default function SettingsPage() {
 			}
 		};
 
-		const error = async (err: GeolocationPositionError | any) => {
+		const error = async (err: GeolocationPositionError) => {
 			console.error("geolocation error:", err);
 			// On permission denied or other errors, try IP-based lookup
 			await ipFallback();
@@ -1764,7 +1760,7 @@ export default function SettingsPage() {
 				day: "numeric",
 				timeZone: tz,
 			}).format(now);
-		} catch (e) {
+		} catch {
 			return new Date().toLocaleDateString(undefined, {
 				weekday: "short",
 				month: "short",
@@ -1773,29 +1769,17 @@ export default function SettingsPage() {
 		}
 	};
 
-	// Fetch current weather by calling the same-origin Next.js API route (/api/weather).
-	// This mirrors Home and avoids cross-origin/auth issues when calling an external API.
+	// Fetch current weather using Open-Meteo API directly
 	const fetchWeatherForCoords = async (lat: number, lon: number) => {
 		try {
 			setIsWeatherLoading(true);
-			const url = `/api/weather?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`;
-			console.log('Settings: fetching weather from internal proxy:', url);
-			const resp = await fetch(url);
-			if (!resp.ok) {
-				let details = '';
-				try {
-					details = await resp.text();
-				} catch (e) {
-					details = '<unreadable response body>';
-				}
-				throw new Error(`Weather proxy failed: ${resp.status} ${details}`);
-			}
-			const data = await resp.json();
-			const temp = data?.temperatureC ?? data?.temperature ?? data?.tempC;
+			console.log('Settings: fetching weather for coords:', lat, lon);
+			const data = await getWeather(lat, lon);
+			const temp = data?.temperatureC;
 			if (typeof temp === 'number') setTemperatureC(temp);
 			else console.warn('Settings: weather response did not contain a numeric temperature', data);
 		} catch (err) {
-			console.error('Settings: Error fetching weather from internal API (/api/weather):', err);
+			console.error('Settings: Error fetching weather:', err);
 		} finally {
 			setIsWeatherLoading(false);
 		}

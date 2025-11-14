@@ -5,11 +5,10 @@ import Image from "next/image";
 import { Icon } from "@/components/Icon";
 import { useRouter } from "next/navigation";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
 	extractTokenFromUrl,
 	storeAuthToken,
-	isAuthenticated,
 	clearAuthTokens,
 } from "@/utils/auth";
 import {
@@ -26,6 +25,7 @@ import {
 	type TaskStats,
 	type ReminderStats,
 } from "@/utils/dashboardApi";
+import { getWeather } from "@/utils/weather";
 
 function MobileProfileMenu() {
 	const [open, setOpen] = useState(false);
@@ -121,8 +121,6 @@ export default function Dashboard() {
 	// Weather & location state for dashboard header
 	const [location, setLocation] = useState<string>("New York");
 	const [isLocationLoading, setIsLocationLoading] = useState<boolean>(true);
-	const [latitude, setLatitude] = useState<number | null>(null);
-	const [longitude, setLongitude] = useState<number | null>(null);
 	const [temperatureC, setTemperatureC] = useState<number | null>(null);
 	const [weatherDescription, setWeatherDescription] = useState<string | null>(null);
 	const [isWeatherLoading, setIsWeatherLoading] = useState<boolean>(false);
@@ -236,78 +234,64 @@ export default function Dashboard() {
 		};
 	}, []);
 
-	// Helper: map Open-Meteo weathercode to simple description
-	const openMeteoCodeToDesc = (code: number) => {
-		// Simplified mapping for common values
-		switch (code) {
-			case 0:
-				return 'Clear';
-			case 1:
-			case 2:
-			case 3:
-				return 'Partly cloudy';
-			case 45:
-			case 48:
-				return 'Fog';
-			case 51:
-			case 53:
-			case 55:
-				return 'Drizzle';
-			case 61:
-			case 63:
-			case 65:
-				return 'Rain';
-			case 71:
-			case 73:
-			case 75:
-				return 'Snow';
-			case 80:
-			case 81:
-			case 82:
-				return 'Showers';
-			case 95:
-			case 96:
-			case 99:
-				return 'Thunderstorm';
-			default:
-				return 'Unknown';
-		}
-	};
-
-	// Fetch weather from the same-origin API route (/api/weather) using coords
-	const fetchWeatherForCoords = async (lat: number, lon: number) => {
+	// Fetch weather using Open-Meteo API directly
+	const fetchWeatherForCoords = useCallback(async (lat: number, lon: number) => {
+		// Helper: map Open-Meteo weathercode to simple description
+		const openMeteoCodeToDesc = (code: number) => {
+			// Simplified mapping for common values
+			switch (code) {
+				case 0:
+					return 'Clear';
+				case 1:
+				case 2:
+				case 3:
+					return 'Partly cloudy';
+				case 45:
+				case 48:
+					return 'Fog';
+				case 51:
+				case 53:
+				case 55:
+					return 'Drizzle';
+				case 61:
+				case 63:
+				case 65:
+					return 'Rain';
+				case 71:
+				case 73:
+				case 75:
+					return 'Snow';
+				case 80:
+				case 81:
+				case 82:
+					return 'Showers';
+				case 95:
+				case 96:
+				case 99:
+					return 'Thunderstorm';
+				default:
+					return 'Unknown';
+			}
+		};
 		try {
 			setIsWeatherLoading(true);
-			const url = `/api/weather?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`;
-			console.log('Dashboard: fetching weather from internal proxy:', url);
-			const resp = await fetch(url);
-			if (!resp.ok) {
-				let details = '';
-				try { details = await resp.text(); } catch { details = '<unreadable response body>'; }
-				throw new Error(`Weather proxy failed: ${resp.status} ${details}`);
-			}
-			const data: any = await resp.json();
-			const temp = data?.temperatureC ?? data?.temperature ?? data?.tempC ?? null;
+			console.log('Dashboard: fetching weather for coords:', lat, lon);
+			const data = await getWeather(lat, lon);
+			const temp = data?.temperatureC;
 			let desc: string | null = null;
-			// Prefer description from normalized field
-			if (data?.description) desc = data.description;
-			// If provider returned raw Open-Meteo payload, map its weathercode
-			else if (data?.raw?.current_weather?.weathercode !== undefined) {
+			// Map weathercode from Open-Meteo payload
+			if (data?.raw?.current_weather?.weathercode !== undefined) {
 				desc = openMeteoCodeToDesc(Number(data.raw.current_weather.weathercode));
-			}
-			// If provider is weatherapi.com style
-			else if (data?.raw?.current?.condition?.text) {
-				desc = data.raw.current.condition.text;
 			}
 			if (typeof temp === 'number') setTemperatureC(temp);
 			if (desc) setWeatherDescription(desc);
 			if (!desc && temp == null) console.warn('Dashboard: weather response had no usable fields', data);
 		} catch (err) {
-			console.error('Dashboard: Error fetching weather from internal API (/api/weather):', err);
+			console.error('Dashboard: Error fetching weather:', err);
 		} finally {
 			setIsWeatherLoading(false);
 		}
-	};
+	}, []);
 
 	// Get coords either via geolocation or IP fallback, then fetch weather
 	useEffect(() => {
@@ -317,11 +301,8 @@ export default function Dashboard() {
 				if (!res.ok) return;
 				const data = await res.json();
 				const city = data.city || data.region || data.region_code || data.country_name;
-				if (data.timezone) {/* timezone not used here */}
 				if (city) setLocation(city);
 				if (data.latitude && data.longitude) {
-					setLatitude(Number(data.latitude));
-					setLongitude(Number(data.longitude));
 					fetchWeatherForCoords(Number(data.latitude), Number(data.longitude));
 				}
 			} catch (e) { console.error('Dashboard IP fallback error:', e); }
@@ -333,7 +314,6 @@ export default function Dashboard() {
 		const success = async (pos: GeolocationPosition) => {
 			try {
 				const { latitude: lat, longitude: lon } = pos.coords;
-				setLatitude(lat); setLongitude(lon);
 				
 				// Use OpenStreetMap Nominatim reverse geocoding (no key required)
 				const res = await fetch(
@@ -362,10 +342,10 @@ export default function Dashboard() {
 			}
 		};
 
-		const failure = async (err: any) => { console.warn('Dashboard geolocation failed:', err); await ipFallback(); };
+		const failure = async (err: GeolocationPositionError) => { console.warn('Dashboard geolocation failed:', err); await ipFallback(); };
 
 		navigator.geolocation.getCurrentPosition(success, failure, { timeout: 10000 });
-	}, []);
+	}, [fetchWeatherForCoords]);
 
 	// Fetch email stats
 	useEffect(() => {

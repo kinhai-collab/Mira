@@ -4,6 +4,7 @@ from typing import Optional
 import requests
 from datetime import datetime, timedelta, timezone
 import os
+import re
 from dotenv import load_dotenv
 from googleapiclient.discovery import build
 
@@ -205,18 +206,34 @@ async def get_event_stats(authorization: Optional[str] = Header(default=None)):
         creds_row = get_creds(user["id"])
         if not creds_row:
             print(f"⚠️ Dashboard: No Google Calendar credentials found for user {user['id']}")
+            # ✅ Return both next_event and full events list for frontend visualization
             return {
-                "status": "not_connected",
-                "message": "Google Calendar not connected",
+                "status": "success",
                 "data": {
-                    "total_events": 0,
-                    "total_hours": 0.0,
-                    "rsvp_pending": 0,
-                    "busy_level": "light",
-                    "deep_work_blocks": 0,
-                    "at_risk_tasks": 0,
-                    "next_event": None
-                }
+                    "total_events": total_events,
+                    "total_hours": total_hours,
+                    "rsvp_pending": rsvp_pending,
+                    "busy_level": busy_level,
+                    "deep_work_blocks": deep_work_blocks,
+                    "at_risk_tasks": at_risk_tasks,
+                    "next_event": next_event,
+                    "events": [
+                        {
+                            "summary": e.get("summary", "Untitled Event"),
+                            "start": e.get("start", {}).get("dateTime") or e.get("start", {}).get("date"),
+                            "end": e.get("end", {}).get("dateTime") or e.get("end", {}).get("date"),
+                            "duration": (
+                                (datetime.fromisoformat((e.get("end", {}).get("dateTime") or e.get("end", {}).get("date")).replace("Z", "+00:00")) -
+                                datetime.fromisoformat((e.get("start", {}).get("dateTime") or e.get("start", {}).get("date")).replace("Z", "+00:00"))
+                                ).total_seconds() / 60
+                                if e.get("start") and e.get("end") else 0
+                            ),
+                            "location": e.get("location"),
+                            "attendees_count": len(e.get("attendees", [])),
+                        }
+                        for e in events
+                    ],
+                },
             }
 
         
@@ -328,6 +345,112 @@ async def get_event_stats(authorization: Optional[str] = Header(default=None)):
         
         print(f"✅ Dashboard: Event analysis complete - {total_events} events, {total_hours}h total, busy level: {busy_level}")
         
+        # Format events for frontend display (needed for homepage overlay)
+        formatted_events = []
+        for event in events:
+            start = event.get("start", {})
+            end = event.get("end", {})
+            start_time = start.get("dateTime") or start.get("date")
+            end_time = end.get("dateTime") or end.get("date")
+            
+            # Format time range for display
+            time_range = "All day"
+            if start_time and end_time:
+                try:
+                    start_dt = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
+                    end_dt = datetime.fromisoformat(end_time.replace("Z", "+00:00"))
+                    time_range = f"{start_dt.strftime('%I:%M %p')} - {end_dt.strftime('%I:%M %p')}"
+                except Exception:
+                    time_range = "Time TBD"
+            
+            # Get original description for provider detection and meeting link extraction
+            raw_description = event.get("description", "")
+            
+            # Extract meeting link from description or conferenceData
+            meeting_link = ""
+            if event.get("conferenceData"):
+                # Try to get hangout link from conferenceData (Google Meet)
+                entry_points = event.get("conferenceData", {}).get("entryPoints", [])
+                for entry in entry_points:
+                    if entry.get("entryPointType") == "video":
+                        meeting_link = entry.get("uri", "")
+                        break
+            
+            # If no link from conferenceData, extract from description
+            if not meeting_link and raw_description:
+                # Extract Teams or Meet links
+                teams_match = re.search(r'https://teams\.(?:live|microsoft)\.com/[^\s<>]+', raw_description)
+                meet_match = re.search(r'https://meet\.google\.com/[^\s<>]+', raw_description)
+                zoom_match = re.search(r'https://[\w-]+\.zoom\.us/[^\s<>]+', raw_description)
+                
+                if teams_match:
+                    meeting_link = teams_match.group(0)
+                elif meet_match:
+                    meeting_link = meet_match.group(0)
+                elif zoom_match:
+                    meeting_link = zoom_match.group(0)
+            
+            # Detect meeting provider
+            provider = "other"
+            if event.get("conferenceData"):
+                conference_solution = event.get("conferenceData", {}).get("conferenceSolution", {}).get("name", "").lower()
+                if "meet" in conference_solution:
+                    provider = "google-meet"
+                elif "teams" in conference_solution:
+                    provider = "microsoft-teams"
+            elif raw_description:
+                desc_lower = raw_description.lower()
+                if "teams.microsoft" in desc_lower or "teams.live.com" in desc_lower or "microsoft teams meeting" in desc_lower:
+                    provider = "microsoft-teams"
+                elif "meet.google" in desc_lower or "google meet" in desc_lower:
+                    provider = "google-meet"
+                elif "zoom" in desc_lower:
+                    provider = "zoom"
+            
+            # Clean up description for display (keep it short and readable)
+            description = raw_description
+            if description:
+                # Extract only the first meaningful sentence/paragraph before meeting details
+                meeting_indicators = [
+                    'Microsoft Teams meeting',
+                    'Join on your computer',
+                    'Click here to join',
+                    'Meeting ID:',
+                    'Join online meeting',
+                    '_____________________',
+                    '________________',
+                ]
+                
+                # Find the first occurrence of any meeting indicator
+                split_pos = len(description)
+                for indicator in meeting_indicators:
+                    pos = description.find(indicator)
+                    if pos != -1 and pos < split_pos:
+                        split_pos = pos
+                
+                # Take only the text before meeting details
+                description = description[:split_pos].strip()
+                
+                # Remove any URLs from the description (we have them separately)
+                description = re.sub(r'https?://\S+', '', description)
+                
+                # Remove extra whitespace and newlines
+                description = re.sub(r'\s+', ' ', description).strip()
+                
+                # Truncate to 100 characters for better display
+                if len(description) > 100:
+                    description = description[:97] + "..."
+            
+            formatted_events.append({
+                "id": event.get("id", ""),
+                "title": event.get("summary", "Untitled Event"),
+                "timeRange": time_range,
+                "location": event.get("location", ""),
+                "note": description if description else None,
+                "meetingLink": meeting_link if meeting_link else None,
+                "provider": provider
+            })
+        
         return {
             "status": "success",
             "data": {
@@ -337,7 +460,8 @@ async def get_event_stats(authorization: Optional[str] = Header(default=None)):
                 "next_event": next_event,
                 "busy_level": busy_level,
                 "deep_work_blocks": deep_work_blocks,
-                "at_risk_tasks": at_risk_tasks
+                "at_risk_tasks": at_risk_tasks,
+                "events": formatted_events  # ✅ Added events list for homepage overlay
             }
         }
     
@@ -703,6 +827,7 @@ async def get_email_list(
         return {
             "status": "success",
             "data": {
+                "provider": "gmail", 
                 "emails": emails_list,
                 "total_count": len(emails_list)
             }
