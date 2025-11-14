@@ -302,7 +302,7 @@ function SummaryCard({
 							</div>
 						</div>
 						<div className="flex items-center gap-1">
-							<div className="h-2 w-2 rounded-full bg-[#eb5caf]" />
+							<div className="h-2 w-2 rounded-full bg-[#F16A6A]" />
 							<span className="font-['Outfit',sans-serif] text-[14px] font-light text-[#454547]">
 								{unreadCount} unread
 							</span>
@@ -334,7 +334,7 @@ function SummaryCard({
 											</div>
 											<div className="flex-1 overflow-hidden">
 												<div className="flex items-center gap-1">
-													<div className="h-2 w-2 shrink-0 rounded-full bg-[#eb5caf]" />
+													<div className="h-2 w-2 shrink-0 rounded-full bg-[#F16A6A]" />
 													<p className="font-['Outfit',sans-serif] truncate text-[14px] font-medium text-[#272829]">
 														{email.subject}
 													</p>
@@ -376,7 +376,7 @@ function SummaryCard({
 											</div>
 											<div className="flex-1 overflow-hidden">
 												<div className="flex items-center gap-1">
-													<div className="h-2 w-2 shrink-0 rounded-full bg-[#eb5caf]" />
+													<div className="h-2 w-2 shrink-0 rounded-full bg-[#F16A6A]" />
 													<p className="font-['Outfit',sans-serif] truncate text-[14px] font-medium text-[#272829]">
 														{email.subject}
 													</p>
