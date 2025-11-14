@@ -805,7 +805,7 @@ async def text_query_pipeline(request: Request):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Text query pipeline failed: {e}")
-    
+
 async def fetch_dashboard_data(user_token: str, has_email: bool, has_calendar: bool):
     """
     Fetches live Gmail and Calendar data for the logged-in user.
