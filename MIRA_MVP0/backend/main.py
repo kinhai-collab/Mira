@@ -8,7 +8,8 @@ from auth import router as auth_router
 from greetings import router as greetings_router
 from tts_server import router as tts_router
 from gmail_events import router as gmail_events
-from outlook_events import router as outlook_events
+# DISABLED: Outlook integration temporarily disabled due to authentication issues
+# from outlook_events import router as outlook_events
 from voice.voice_generation import router as voice_router
 from settings import router as settings
 from gmail_reader import router as gmail_reader
@@ -50,7 +51,8 @@ app.include_router(stripe_router, prefix="/api")
 app.include_router(weather_router)
 # Simple HTML Page for manual testing
 register_google_calendar(app)
-app.include_router(outlook_events)
+# DISABLED: Outlook integration temporarily disabled due to authentication issues
+# app.include_router(outlook_events)
 app.include_router(gmail_reader)
 app.include_router(morning_brief_router)
 app.include_router(dashboard_router)

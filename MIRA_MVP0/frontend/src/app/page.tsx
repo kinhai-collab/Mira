@@ -79,8 +79,14 @@ export default function Home() {
 	);
 
 // --- Outlook helpers  ---
-
+// DISABLED: Outlook integration temporarily disabled due to authentication issues
+// Using Google Calendar and Gmail only
 const fetchOutlookEvents = useCallback(async (): Promise<VoiceSummaryCalendarEvent[]> => {
+	// Return empty array - Outlook integration disabled
+	console.log("⚠️ Outlook integration is disabled. Using Google Calendar/Gmail only.");
+	return [];
+	
+	/* COMMENTED OUT - Outlook API calls causing 401 errors
 	const apiBaseUrl = (
 		process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
 	).replace(/\/+$/, "");
@@ -154,6 +160,7 @@ const fetchOutlookEvents = useCallback(async (): Promise<VoiceSummaryCalendarEve
 		note: e.organizer ? `Organizer: ${e.organizer}` : undefined,
 		provider: "outlook",
 	}));
+	*/
  }, [timezone]);
 
 	// Weather state: store coords and current temperature. We'll call Open-Meteo (no API key)
