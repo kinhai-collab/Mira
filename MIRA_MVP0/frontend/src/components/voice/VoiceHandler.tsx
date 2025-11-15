@@ -21,7 +21,8 @@ export default function VoiceHandler() {
 			const formData = new FormData();
 			formData.append("audio", audioBlob, "user_input.webm");
 
-			const res = await fetch("/api/voice", { method: "POST", body: formData });
+			const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+			const res = await fetch(`${apiBase}/api/voice`, { method: "POST", body: formData });
 			const audio = await res.blob();
 			const url = URL.createObjectURL(audio);
 			const audioEl = new Audio(url);
