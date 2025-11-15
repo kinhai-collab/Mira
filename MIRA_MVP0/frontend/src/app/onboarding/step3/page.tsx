@@ -11,63 +11,170 @@ export default function OnboardingStep3() {
 	const router = useRouter();
 	const [connectedEmails, setConnectedEmails] = useState<string[]>([]);
 	const [connecting, setConnecting] = useState<string | null>(null);
+	const [hasAutoConnected, setHasAutoConnected] = useState(false); // Track if we've already tried auto-connect
 
 	// Check for Gmail and Outlook connection status on component mount
 	useEffect(() => {
-		// Check URL parameters for OAuth callbacks
-		const urlParams = new URLSearchParams(window.location.search);
-		const gmailConnected = urlParams.get("gmail_connected");
-		const gmailAccessToken = urlParams.get("access_token");
-		const gmailEmail = urlParams.get("email");
-		const msConnected = urlParams.get("ms_connected");
-		const msEmail = urlParams.get("email");
+		const checkConnectionStatus = async () => {
+			// Check URL parameters for OAuth callbacks
+			const urlParams = new URLSearchParams(window.location.search);
+			const gmailConnected = urlParams.get("gmail_connected");
+			const gmailAccessToken = urlParams.get("access_token");
+			const gmailEmail = urlParams.get("email");
+			const msConnected = urlParams.get("ms_connected");
+			const msEmail = urlParams.get("email");
 
-		// Handle Gmail callback
-		if (gmailConnected === "true" && gmailAccessToken && gmailEmail) {
-			// Store Gmail access token
-			localStorage.setItem("gmail_access_token", gmailAccessToken);
-			localStorage.setItem("gmail_email", gmailEmail);
-			
-			// Add Gmail to connected emails (but don't auto-save - user must click Save)
-			setConnectedEmails(prev => {
-				if (!prev.includes("Gmail")) {
-					return [...prev, "Gmail"];
+			// Handle Gmail callback FIRST (before auto-connect logic)
+			if (gmailConnected === "true" && gmailAccessToken && gmailEmail) {
+				// Store Gmail access token
+				localStorage.setItem("gmail_access_token", gmailAccessToken);
+				localStorage.setItem("gmail_email", gmailEmail);
+				// Also save refresh token if available (for persistence)
+				const gmailRefreshToken = urlParams.get("gmail_refresh_token") || urlParams.get("refresh_token");
+				if (gmailRefreshToken) {
+					localStorage.setItem("gmail_refresh_token", gmailRefreshToken);
 				}
-				return prev;
-			});
+				
+				// Add Gmail to connected emails (but don't auto-save - user must click Save)
+				setConnectedEmails(prev => {
+					if (!prev.includes("Gmail")) {
+						return [...prev, "Gmail"];
+					}
+					return prev;
+				});
 
-			// Clear URL parameters
-			window.history.replaceState({}, document.title, window.location.pathname);
-			
-			// Show success message
-			alert(`Gmail connected successfully! Email: ${gmailEmail}`);
-		} 
-		// Handle Microsoft/Outlook callback
-		else if (msConnected === "true" && msEmail) {
-			// Note: Microsoft access token is stored in HttpOnly cookie by backend
-			// We just mark Outlook as connected locally (but don't auto-save - user must click Save)
-			setConnectedEmails(prev => {
-				if (!prev.includes("Outlook")) {
-					return [...prev, "Outlook"];
+				// Check if calendar scopes were also granted - if so, save calendar credentials
+				const calendarScopeGranted = urlParams.get("calendar_scope_granted") === "true";
+				if (calendarScopeGranted) {
+					try {
+						const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+						const { getValidToken } = await import("@/utils/auth");
+						const token = await getValidToken();
+						if (token) {
+							const gmailRefreshToken = urlParams.get("gmail_refresh_token") || urlParams.get("refresh_token");
+							const saveCalendarRes = await fetch(`${apiBase}/gmail/calendar/save-from-gmail`, {
+								method: "POST",
+								headers: {
+									'Authorization': `Bearer ${token}`,
+									'Content-Type': 'application/json'
+								},
+								body: JSON.stringify({
+									gmail_access_token: gmailAccessToken,
+									gmail_refresh_token: gmailRefreshToken
+								})
+							});
+							
+							if (saveCalendarRes.ok) {
+								console.log("Calendar credentials saved from Gmail OAuth in step 3");
+							}
+						}
+					} catch (error) {
+						console.error("Error saving calendar credentials from Gmail:", error);
+					}
 				}
-				return prev;
-			});
 
-			// Clear URL parameters
-			window.history.replaceState({}, document.title, window.location.pathname);
-			
-			// Show success message
-			alert(`Outlook connected successfully! Email: ${msEmail}`);
-		} else {
-			// Check if user has existing connections (indicating successful connection)
-			const gmailToken = localStorage.getItem("gmail_access_token");
-			if (gmailToken && !connectedEmails.includes("Gmail")) {
-				setConnectedEmails(prev => [...prev, "Gmail"]);
+				// Clear URL parameters
+				window.history.replaceState({}, document.title, window.location.pathname);
+				
+				// Mark that we've handled the callback, so auto-connect won't run
+				setHasAutoConnected(true);
+				
+				// Show success message
+				if (calendarScopeGranted) {
+					alert(`Gmail and Google Calendar connected successfully! Email: ${gmailEmail}`);
+				} else {
+					alert(`Gmail connected successfully! Email: ${gmailEmail}`);
+				}
+				return; // Exit early - don't run auto-connect logic
+			} 
+			// Handle Microsoft/Outlook callback
+			else if (msConnected === "true" && msEmail) {
+				// Note: Microsoft access token is stored in HttpOnly cookie by backend
+				// We just mark Outlook as connected locally (but don't auto-save - user must click Save)
+				setConnectedEmails(prev => {
+					if (!prev.includes("Outlook")) {
+						return [...prev, "Outlook"];
+					}
+					return prev;
+				});
+
+				// Clear URL parameters
+				window.history.replaceState({}, document.title, window.location.pathname);
+				
+				// Show success message
+				alert(`Outlook connected successfully! Email: ${msEmail}`);
+				return; // Exit early
 			}
-			// For Outlook, we can't check localStorage (token in cookie), but we can check if user was redirected here
-			// The connection state will be maintained through the onboarding flow
-		}
-	}, [connectedEmails]);
+			
+			// Check if Gmail is already connected via backend/user_settings
+			// IMPORTANT: Just because user signed up with Google doesn't mean Gmail API is connected
+			// We need to verify via backend that Gmail was actually connected via separate OAuth flow
+			try {
+				const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+				const token = localStorage.getItem("access_token") || localStorage.getItem("token");
+				if (token) {
+					const settingsRes = await fetch(`${apiBase}/user_settings`, {
+						headers: {
+							'Authorization': `Bearer ${token}`,
+							'Content-Type': 'application/json'
+						},
+						credentials: 'include'
+					});
+					
+					if (settingsRes.ok) {
+						const settingsResult = await settingsRes.json();
+						if (settingsResult?.status === 'success' && settingsResult?.data) {
+							const connectedEmailsList = settingsResult.data.connectedEmails || [];
+							if (connectedEmailsList.length > 0) {
+								setConnectedEmails(prev => {
+									// Merge with existing, avoiding duplicates
+									const merged = [...prev];
+									connectedEmailsList.forEach((email: string) => {
+										if (!merged.includes(email)) {
+											merged.push(email);
+										}
+									});
+									return merged;
+								});
+								// If Gmail is already connected (saved in database), don't auto-connect
+								if (connectedEmailsList.includes("Gmail")) {
+									setHasAutoConnected(true);
+									return; // Exit - Gmail is already connected
+								}
+							}
+						}
+					}
+				}
+			} catch (error) {
+				console.error("Error checking email connection status:", error);
+			}
+			
+			// NOTE: We do NOT check localStorage for gmail_access_token here because:
+			// 1. Signing up with Google via Supabase doesn't grant Gmail API access
+			// 2. Gmail requires a separate OAuth flow with specific scopes
+			// 3. Only mark as connected if OAuth callback confirms it OR backend confirms it's saved
+			
+			// Only auto-connect if:
+			// 1. User signed up with Google
+			// 2. Gmail is not already connected
+			// 3. We haven't already tried to auto-connect
+			// 4. We're not in the middle of connecting
+			const provider = localStorage.getItem("mira_provider");
+			if (
+				provider === "google" && 
+				!connectedEmails.includes("Gmail") && 
+				!hasAutoConnected &&
+				connecting !== "Gmail"
+			) {
+				console.log("User signed up with Google, auto-connecting Gmail...");
+				setHasAutoConnected(true); // Mark that we've tried
+				// Auto-trigger Gmail connection
+				setTimeout(() => handleGmailConnect(), 500); // Small delay to avoid race conditions
+			}
+		};
+		
+		checkConnectionStatus();
+	}, [connectedEmails, connecting, hasAutoConnected]); // Run only once on mount
 
 	const handleGmailConnect = async () => {
 		setConnecting("Gmail");

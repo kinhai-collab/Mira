@@ -379,6 +379,21 @@ async function recordOnce(): Promise<void> {
 						}
 					}
 
+					if (data.action === "email_calendar_summary") {
+						try {
+							if (typeof window !== "undefined") {
+								window.dispatchEvent(
+									new CustomEvent("miraEmailCalendarSummary", {
+										detail: data.actionData ?? {},
+									})
+								);
+								console.log("📤 Dispatched miraEmailCalendarSummary event");
+							}
+						} catch (e) {
+							console.warn("Failed to dispatch email/calendar summary event", e);
+						}
+					}
+
 					// Only process if we have meaningful text (not empty or error)
 					if (data.text && data.text.trim().length > 0 && !data.error) {
 						if (data.userText && data.userText.trim().length > 0) {

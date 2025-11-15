@@ -1,12 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { isAuthenticated, getValidToken, getStoredToken } from "@/utils/auth";
+import {
+	isAuthenticated,
+	getValidToken,
+	getStoredToken,
+	clearAuthTokens,
+} from "@/utils/auth";
 
 export default function AuthGate({ children }: { children: React.ReactNode }) {
 	// Public routes that should not be forced to landing
-	const publicPaths = [
+	const publicPaths = useMemo(() => [
 		"/landing",
 		"/login",
 		"/signup",
@@ -17,7 +22,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 		"/signup/complete",
 		"/signup/success",
 		"/signup/verify",
-	];
+	], []);
 
 	const pathname = usePathname();
 	const router = useRouter();
@@ -27,6 +32,34 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
 	useEffect(() => {
 		if (!pathname) return;
+		if (typeof window === "undefined") return;
+
+		const inactivityTimeoutMinutes =
+			Number(process.env.NEXT_PUBLIC_INACTIVITY_TIMEOUT_MINUTES) || 1440; // default 24h
+		const inactivityTimeoutMs = inactivityTimeoutMinutes * 60 * 1000;
+		const now = Date.now();
+
+		try {
+			const lastVisitRaw = localStorage.getItem("mira_last_visit");
+			if (lastVisitRaw) {
+				const lastVisit = Number(lastVisitRaw);
+				if (!Number.isNaN(lastVisit) && now - lastVisit > inactivityTimeoutMs) {
+					if (process.env.NODE_ENV !== "production") {
+						console.debug("AuthGate detected long inactivity. Clearing session.");
+					}
+					clearAuthTokens();
+					localStorage.removeItem("mira_first_visit");
+				}
+			}
+		} catch (error) {
+			console.warn("AuthGate could not evaluate inactivity timeout:", error);
+		}
+
+		try {
+			localStorage.setItem("mira_last_visit", String(now));
+		} catch (error) {
+			console.warn("AuthGate could not update last visit timestamp:", error);
+		}
 
 		// quick synchronous check first (fast UI response)
 		const quick = isAuthenticated();
@@ -91,7 +124,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 		if (authed && pathname === "/landing") {
 			router.push("/");
 		}
-	}, [ready, authed, pathname, router]);
+	}, [ready, authed, pathname, router, publicPaths]);
 
 	// While we're determining auth state, don't render children to avoid flashing protected UI
 	if (!ready) {

@@ -1,17 +1,18 @@
 /** @format */
-// @ts-nocheck
 
 "use client";
 
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { fetchEmailList, type Email } from "@/utils/dashboardApi";
+import { getWeather } from "@/utils/weather";
 
 // Helper: Generate days for a given month
-const generateCalendarDays = (year, month) => {
+const generateCalendarDays = (year: number, month: number) => {
 	const firstDay = new Date(year, month, 1).getDay();
 	const totalDays = new Date(year, month + 1, 0).getDate();
-	const days = [];
+	const days: (number | null)[] = [];
 	for (let i = 0; i < firstDay; i++) days.push(null);
 	for (let i = 1; i <= totalDays; i++) days.push(i);
 	return days;
@@ -23,59 +24,110 @@ export default function EmailsPage() {
 	const [activeTab, setActiveTab] = useState("All");
 	const [showCalendar, setShowCalendar] = useState(false);
 	const [selectedDate, setSelectedDate] = useState(new Date());
-	const [selectedEmail, setSelectedEmail] = useState(null);
+	const [selectedEmail, setSelectedEmail] = useState<Email | null>(null);
 	const [showEmailPopup, setShowEmailPopup] = useState(false);
+	const [emails, setEmails] = useState<Email[]>([]);
+	const [isLoading, setIsLoading] = useState(true);
 
-	const emails = [
-		{
-			name: "John Mayer",
-			subject: "Q4 Budget Review",
-			time: "18m ago",
-			priority: "high",
-		},
-		{
-			name: "Michael Brown",
-			subject: "User Feedback Analysis",
-			time: "30m ago",
-			priority: "medium",
-		},
-		{
-			name: "Alice Smith",
-			subject: "Product Launch Plan",
-			time: "45m ago",
-			priority: "medium",
-		},
-		{
-			name: "Lisa Park",
-			subject: "Design Review",
-			time: "1h ago",
-			priority: "low",
-		},
-		{
-			name: "Marcus Law",
-			subject: "Roadmap Review",
-			time: "1h ago",
-			priority: "high",
-		},
-		{
-			name: "Tom Wilson",
-			subject: "Weekly Report",
-			time: "1h ago",
-			priority: "medium",
-		},
-		{
-			name: "Rachel Green",
-			subject: "Marketing Campaign",
-			time: "2h ago",
-			priority: "low",
-		},
-		{
-			name: "David Lee",
-			subject: "HR Policy Update",
-			time: "3h ago",
-			priority: "low",
-		},
-	];
+	// Weather & location state
+	const [location, setLocation] = useState<string>("New York");
+	const [isLocationLoading, setIsLocationLoading] = useState<boolean>(true);
+	const [temperatureC, setTemperatureC] = useState<number | null>(null);
+	const [isWeatherLoading, setIsWeatherLoading] = useState<boolean>(false);
+
+	// Fetch emails on component mount
+	useEffect(() => {
+		const loadEmails = async () => {
+			setIsLoading(true);
+			try {
+				const emailData = await fetchEmailList(50, 7); // Get last 50 emails from past 7 days
+				setEmails(emailData.emails);
+			} catch (error) {
+				console.error("Failed to load emails:", error);
+			} finally {
+				setIsLoading(false);
+			}
+		};
+
+		loadEmails();
+	}, []);
+
+	// Fetch weather using Open-Meteo API directly
+	const fetchWeatherForCoords = async (lat: number, lon: number) => {
+		try {
+			setIsWeatherLoading(true);
+			console.log('Emails page: fetching weather for coords:', lat, lon);
+			const data = await getWeather(lat, lon);
+			const temp = data?.temperatureC;
+			if (typeof temp === 'number') setTemperatureC(temp);
+		} catch (err) {
+			console.error('Emails page: Error fetching weather:', err);
+		} finally {
+			setIsWeatherLoading(false);
+		}
+	};
+
+	// Get coords either via geolocation or IP fallback, then fetch weather
+	useEffect(() => {
+		const ipFallback = async () => {
+			try {
+				const res = await fetch('https://ipapi.co/json/');
+				if (!res.ok) return;
+				const data = await res.json();
+				const city = data.city || data.region || data.region_code || data.country_name;
+				if (city) setLocation(city);
+				if (data.latitude && data.longitude) {
+					fetchWeatherForCoords(Number(data.latitude), Number(data.longitude));
+				}
+			} catch (e) {
+				console.error('Emails page IP fallback error:', e);
+			} finally {
+				setIsLocationLoading(false);
+			}
+		};
+
+		if (!('geolocation' in navigator)) {
+			ipFallback();
+			return;
+		}
+
+		const success = async (pos: GeolocationPosition) => {
+			try {
+				const { latitude: lat, longitude: lon } = pos.coords;
+				
+				// Use OpenStreetMap Nominatim reverse geocoding
+				const res = await fetch(
+					`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}`
+				);
+				if (!res.ok) {
+					await ipFallback();
+					return;
+				}
+				const data = await res.json();
+				const city =
+					data?.address?.city ||
+					data?.address?.town ||
+					data?.address?.village ||
+					data?.address?.state ||
+					data?.address?.county;
+				if (city) setLocation(city);
+				
+				fetchWeatherForCoords(lat, lon).catch((e) => console.error(e));
+			} catch (err) {
+				console.error('Emails page reverse geocode error:', err);
+				await ipFallback();
+			} finally {
+				setIsLocationLoading(false);
+			}
+		};
+
+		const failure = async (err: GeolocationPositionError) => {
+			console.warn('Emails page geolocation failed:', err);
+			await ipFallback();
+		};
+
+		navigator.geolocation.getCurrentPosition(success, failure, { timeout: 10000 });
+	}, []);
 
 	const colorMap = {
 		high: { bar: "#F16A6A", bg: "#FDE7E7", text: "#D94C4C" },
@@ -87,13 +139,23 @@ export default function EmailsPage() {
 		activeTab === "All"
 			? emails
 			: emails.filter((e) => e.priority === activeTab.toLowerCase());
+	
+	const totalImportantCount = filteredEmails.length;
 
 	const today = new Date();
 	const year = selectedDate.getFullYear();
 	const month = selectedDate.getMonth();
 	const days = generateCalendarDays(year, month);
 
-	const handleDateClick = (day) => {
+	const displayLocation = isLocationLoading ? "Locating..." : location || "New York";
+	const displayTemperature =
+		temperatureC != null
+			? `${Math.round(temperatureC)}°C`
+			: isWeatherLoading
+			? "Loading..."
+			: "--";
+
+	const handleDateClick = (day: number | null) => {
 		if (!day) return;
 		const newDate = new Date(year, month, day);
 		setSelectedDate(newDate);
@@ -121,7 +183,7 @@ export default function EmailsPage() {
 							width={14}
 							height={14}
 						/>
-						<span>New York</span>
+						<span className="text-gray-700">{displayLocation}</span>
 					</span>
 
 					<span className="flex items-center gap-1 bg-white border border-gray-200 rounded-full px-3 py-1 shadow-sm">
@@ -131,7 +193,7 @@ export default function EmailsPage() {
 							width={14}
 							height={14}
 						/>
-						<span>20°</span>
+						<span className="text-gray-700">{displayTemperature}</span>
 					</span>
 				</div>
 
@@ -171,19 +233,21 @@ export default function EmailsPage() {
 				<div className="flex justify-between items-center px-6 py-5 border-b border-[#E7E7E7] bg-[#F8F9FB]">
 					<div className="flex items-center gap-4">
 						<p className="text-[16px] text-gray-800 font-normal">
-							12 Important Emails
+							{isLoading ? "Loading..." : `${totalImportantCount} ${totalImportantCount === 1 ? "Email" : "Emails"}`}
 						</p>
-						<div className="flex items-center gap-2">
-							<span className="text-[13px] bg-[#F16A6A] text-white px-3 py-[3px] rounded-full font-normal">
-								High: {emails.filter((e) => e.priority === "high").length}
-							</span>
-							<span className="text-[13px] bg-[#FABA2E] text-white px-3 py-[3px] rounded-full font-normal">
-								Medium: {emails.filter((e) => e.priority === "medium").length}
-							</span>
-							<span className="text-[13px] bg-[#95D6A4] text-white px-3 py-[3px] rounded-full font-normal">
-								Low: {emails.filter((e) => e.priority === "low").length}
-							</span>
-						</div>
+						{!isLoading && (
+							<div className="flex items-center gap-2">
+								<span className="text-[13px] bg-[#F16A6A] text-white px-3 py-[3px] rounded-full font-normal">
+									High: {emails.filter((e) => e.priority === "high").length}
+								</span>
+								<span className="text-[13px] bg-[#FABA2E] text-white px-3 py-[3px] rounded-full font-normal">
+									Medium: {emails.filter((e) => e.priority === "medium").length}
+								</span>
+								<span className="text-[13px] bg-[#95D6A4] text-white px-3 py-[3px] rounded-full font-normal">
+									Low: {emails.filter((e) => e.priority === "low").length}
+								</span>
+							</div>
+						)}
 					</div>
 
 					{/* Calendar */}
@@ -284,76 +348,85 @@ export default function EmailsPage() {
 
 				{/* Email Rows */}
 				<div className="divide-y divide-gray-100">
-					{filteredEmails.map((email, index) => {
-						const initials = email.name
-							.split(" ")
-							.map((n) => n[0])
-							.join("");
-						const colors = colorMap[email.priority];
-
-						return (
-							<div
-								key={index}
-								className="flex justify-between items-baseline px-6 py-4 hover:bg-[#F9F9FC] transition-all"
-							>
-								<div className="flex items-center gap-3 min-w-0">
-									<div
-										className="w-1.5 h-6 rounded-full"
-										style={{ backgroundColor: colors.bar }}
-									></div>
-									<div
-										className="w-10 h-10 flex items-center justify-center rounded-full text-[14px] font-normal"
-										style={{ backgroundColor: colors.bg, color: colors.text }}
-									>
-										{initials}
-									</div>
-									<div className="min-w-0">
-										<p className="text-gray-900 truncate text-[15px]">
-											{email.name}
-										</p>
-										<p className="text-gray-600 text-[14px] truncate">
-											{email.subject}
-										</p>
-									</div>
-								</div>
-
-								<div className="flex items-center gap-4 pr-2 min-w-[180px]">
-									<button
-										onClick={() => {
-											setSelectedEmail(email);
-											setShowEmailPopup(true);
-										}}
-										className="border border-[#A5A5A5] rounded-full px-5 py-[3px] text-[14px] font-normal hover:bg-gray-50"
-									>
-										View
-									</button>
-
-									<div className="flex items-center gap-[6px] text-gray-500 text-[13px]">
-										<svg
-											xmlns="http://www.w3.org/2000/svg"
-											width="15"
-											height="15"
-											viewBox="0 0 24 24"
-											fill="none"
-											stroke="currentColor"
-											strokeWidth="1.8"
-											strokeLinecap="round"
-											strokeLinejoin="round"
-										>
-											<circle cx="12" cy="12" r="10" />
-											<polyline points="12 6 12 12 16 14" />
-										</svg>
-										<span>{email.time}</span>
-									</div>
-								</div>
+					{isLoading ? (
+						<div className="text-center py-12 text-gray-500">
+							<div className="animate-pulse">
+								<p className="text-[16px]">Loading emails...</p>
 							</div>
-						);
-					})}
-
-					{filteredEmails.length === 0 && (
+						</div>
+					) : filteredEmails.length === 0 ? (
 						<p className="text-center py-6 text-gray-400 text-[14px]">
-							No emails found for this category.
+							{emails.length === 0 ? "No emails found. Connect your Gmail to see emails." : "No emails found for this category."}
 						</p>
+					) : (
+						filteredEmails.map((email, index) => {
+							const initials = email.sender_name
+								.split(" ")
+								.map((n) => n[0])
+								.join("");
+							const colors = colorMap[email.priority];
+
+							return (
+								<div
+									key={email.id || index}
+									className="flex justify-between items-baseline px-6 py-4 hover:bg-[#F9F9FC] transition-all"
+								>
+									<div className="flex items-center gap-3 min-w-0">
+										<div
+											className="w-1.5 h-6 rounded-full"
+											style={{ backgroundColor: colors.bar }}
+										></div>
+										<div
+											className="w-10 h-10 flex items-center justify-center rounded-full text-[14px] font-normal"
+											style={{ backgroundColor: colors.bg, color: colors.text }}
+										>
+											{initials}
+										</div>
+										<div className="min-w-0 flex-1">
+											<p className="text-gray-900 truncate text-[15px] flex items-center gap-2">
+												{email.sender_name}
+												{email.is_unread && (
+													<span className="inline-block w-2 h-2 bg-blue-500 rounded-full"></span>
+												)}
+											</p>
+											<p className="text-gray-600 text-[14px] truncate">
+												{email.subject}
+											</p>
+										</div>
+									</div>
+
+									<div className="flex items-center gap-4 pr-2 min-w-[180px]">
+										<button
+											onClick={() => {
+												setSelectedEmail(email);
+												setShowEmailPopup(true);
+											}}
+											className="border border-[#A5A5A5] rounded-full px-5 py-[3px] text-[14px] font-normal hover:bg-gray-50"
+										>
+											View
+										</button>
+
+										<div className="flex items-center gap-[6px] text-gray-500 text-[13px]">
+											<svg
+												xmlns="http://www.w3.org/2000/svg"
+												width="15"
+												height="15"
+												viewBox="0 0 24 24"
+												fill="none"
+												stroke="currentColor"
+												strokeWidth="1.8"
+												strokeLinecap="round"
+												strokeLinejoin="round"
+											>
+												<circle cx="12" cy="12" r="10" />
+												<polyline points="12 6 12 12 16 14" />
+											</svg>
+											<span>{email.time_ago}</span>
+										</div>
+									</div>
+								</div>
+							);
+						})
 					)}
 				</div>
 			</div>
@@ -382,23 +455,23 @@ export default function EmailsPage() {
 												: "#49A15A",
 									}}
 								>
-									{selectedEmail.name
+									{selectedEmail.sender_name
 										.split(" ")
 										.map((n) => n[0])
 										.join("")}
 								</div>
 
-								<div>
-									<p className="text-gray-800 text-[15px] font-medium">
-										{selectedEmail.name}
+								<div className="flex-1 min-w-0">
+									<p className="text-gray-800 text-[15px] font-medium truncate">
+										{selectedEmail.sender_name}
 									</p>
-									<p className="text-gray-600 text-[13px]">
-										{selectedEmail.subject}
+									<p className="text-gray-600 text-[13px] truncate">
+										{selectedEmail.sender_email}
 									</p>
 								</div>
 
 								<span
-									className={`ml-3 text-[13px] px-3 py-[3px] rounded-full ${
+									className={`ml-3 text-[13px] px-3 py-[3px] rounded-full whitespace-nowrap ${
 										selectedEmail.priority === "high"
 											? "bg-[#F16A6A] text-white"
 											: selectedEmail.priority === "medium"
@@ -411,7 +484,7 @@ export default function EmailsPage() {
 								</span>
 							</div>
 
-							<div className="text-[13px] text-gray-500 flex items-center gap-2">
+							<div className="text-[13px] text-gray-500 flex items-center gap-2 ml-4">
 								<svg
 									xmlns="http://www.w3.org/2000/svg"
 									width="15"
@@ -426,19 +499,47 @@ export default function EmailsPage() {
 									<circle cx="12" cy="12" r="10" />
 									<polyline points="12 6 12 12 16 14" />
 								</svg>
-								<span>Oct 26, 2025, 2:11PM (2 days ago)</span>
+								<span>
+									{new Date(selectedEmail.timestamp).toLocaleString("en-US", {
+										month: "short",
+										day: "numeric",
+										year: "numeric",
+										hour: "numeric",
+										minute: "2-digit",
+										hour12: true,
+									})}{" "}
+									({selectedEmail.time_ago})
+								</span>
 							</div>
 						</div>
 
+						{/* Email Subject */}
+						<div className="px-5 py-3 border-b border-gray-100 bg-[#FAFAFA]">
+							<p className="text-gray-900 text-[16px] font-semibold">
+								{selectedEmail.subject}
+							</p>
+						</div>
+
 						{/* Content */}
-						<div className="flex-1 flex items-center justify-center text-gray-400 text-[18px]">
-							Place for your email content
+						<div className="flex-1 overflow-y-auto p-5">
+							{selectedEmail.body ? (
+								<div
+									className="text-gray-700 text-[14px] leading-relaxed whitespace-pre-wrap"
+									dangerouslySetInnerHTML={{
+										__html: selectedEmail.body.replace(/\n/g, "<br />"),
+									}}
+								/>
+							) : (
+								<div className="text-center text-gray-400 text-[16px] py-12">
+									No content available
+								</div>
+							)}
 						</div>
 
 						{/* Close Button */}
 						<button
 							onClick={() => setShowEmailPopup(false)}
-							className="absolute top-4 right-4 text-gray-400 hover:text-gray-700 transition"
+							className="absolute top-4 right-4 text-gray-400 hover:text-gray-700 transition text-[24px] w-8 h-8 flex items-center justify-center"
 						>
 							✕
 						</button>
