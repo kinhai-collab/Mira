@@ -358,7 +358,7 @@ async def generate_voice(text: str = "Hello from Mira!"):
         )
 
         # Combine all chunks into one binary MP3 blob (normalize types)
-try:
+        try:
             audio_bytes = _stream_to_bytes(audio_stream)
             logging.info(f"Audio bytes length: {len(audio_bytes)}")
             try:
