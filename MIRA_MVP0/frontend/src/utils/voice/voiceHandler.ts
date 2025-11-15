@@ -219,7 +219,6 @@ async function monitorForInterruption(): Promise<boolean> {
 			let checkCount = 0;
 			let highEnergyCount = 0;
 			const maxChecks = 50; // Check for up to 5 seconds
-			const requiredConsecutive = 3; // Require 3 consecutive high energy frames
 			
 			const checkInterval = setInterval(() => {
 				if (!isAudioPlaying) {
