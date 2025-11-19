@@ -294,7 +294,7 @@ export default function MorningBrief() {
 		};
 
 		fetchMorningBrief();
-	}, [router]);
+	}, []);
 
 	// Auto-advance from thinking stage after loading completes
 	useEffect(() => {
@@ -494,18 +494,6 @@ export default function MorningBrief() {
 								{/* Play Audio Button */}
 								{(briefData.audio_base64 || briefData.audio_url) && (
 									<div className="mb-4 flex justify-center">
-										<button
-											onClick={playAudio}
-											className="px-6 py-3 bg-[#6245A7] text-white rounded-full font-medium hover:bg-[#7C5BEF] transition flex items-center gap-2"
-										>
-											<Image
-												src="/Icons/Property 1=VoiceOn.svg"
-												alt="Play"
-												width={20}
-												height={20}
-											/>
-											<span>Play Morning Brief</span>
-										</button>
 									</div>
 								)}
 								{stage === "recommendation" && (
