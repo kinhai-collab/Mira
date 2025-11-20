@@ -735,8 +735,8 @@ const fetchOutlookEvents = useCallback(async (): Promise<VoiceSummaryCalendarEve
 
 				{/* Input Bar — Always Visible */}
 				<div className="relative mt-10 sm:mt-14 w-full max-w-md sm:max-w-xl flex flex-col items-center">
-					<div className="absolute inset-0 rounded-xl bg-gradient-to-r from-[#f4aaff] via-[#d9b8ff] to-[#bfa3ff] opacity-95 blur-[1.5px]"></div>
-					<div className="relative flex items-center rounded-xl bg-white px-4 sm:px-5 py-2 sm:py-2.5 w-full">
+					<div className="w-full rounded-[24px] bg-gradient-to-r from-[#F4A4D3] to-[#B5A6F7] p-[1.5px] shadow-[0_12px_35px_rgba(181,166,247,0.45)]">
+						<div className="flex items-center rounded-[22px] bg-white px-4 sm:px-5 py-2 sm:py-2.5 w-full">
 						<input
 							type="text"
 							value={input}
@@ -765,6 +765,7 @@ const fetchOutlookEvents = useCallback(async (): Promise<VoiceSummaryCalendarEve
 						>
 							<Icon name="Send" size={16} />
 						</button>
+						</div>
 					</div>
 				</div>
 
