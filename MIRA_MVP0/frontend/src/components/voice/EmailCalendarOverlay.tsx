@@ -225,8 +225,6 @@ function SummaryCard({
 	const unreadCount = emailsToShow.length
 		? Math.ceil(emailsToShow.length * 0.6)
 		: 0;
-	// const outlookCount = emails?.length ? emails.length - gmailCount : 0;
-	// const unreadCount = emails?.length ? Math.ceil(emails.length * 0.6) : 0;
 
 	// Ensure calendarEvents is always an array
 	const safeCalendarEvents: VoiceSummaryCalendarEvent[] = Array.isArray(

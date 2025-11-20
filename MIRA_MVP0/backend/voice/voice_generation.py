@@ -2,9 +2,7 @@
 import re
 import base64
 import asyncio
-import re
-import base64
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Request, Request
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Request
 from fastapi.responses import StreamingResponse, JSONResponse
 from datetime import datetime
 from typing import Optional, List, Dict, Any
@@ -12,10 +10,23 @@ import tempfile
 import json
 import httpx
 from openai import OpenAI
-from memory_service import get_memory_service
-from memory_manager import get_memory_manager
-from intelligent_learner import get_intelligent_learner
 from settings import get_uid_from_token
+
+# Optional memory imports - handle gracefully if modules don't exist
+try:
+    from memory_service import get_memory_service
+except ImportError:
+    get_memory_service = None
+
+try:
+    from memory_manager import get_memory_manager
+except ImportError:
+    get_memory_manager = None
+
+try:
+    from intelligent_learner import get_intelligent_learner
+except ImportError:
+    get_intelligent_learner = None
 
 import subprocess
 import shutil
@@ -641,7 +652,8 @@ async def text_query_pipeline(request: Request):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Text query pipeline failed: {e}")
-    async def fetch_dashboard_data(user_token: str, has_email: bool, has_calendar: bool):
+
+async def fetch_dashboard_data(user_token: str, has_email: bool, has_calendar: bool):
     """
     Fetches live Gmail and Calendar data for the logged-in user.
     Calls internal dashboard endpoints with authentication.
@@ -697,10 +709,10 @@ async def text_query_pipeline(request: Request):
                 print(f"Could not extract user ID from token: {e}")
                 user_id = "anonymous"  # Fallback for development
         
-        # Get memory service
-        memory_service = get_memory_service()
-        memory_manager = get_memory_manager()
-        intelligent_learner = get_intelligent_learner()
+        # Get memory service (handle gracefully if modules don't exist)
+        memory_service = get_memory_service() if get_memory_service else None
+        memory_manager = get_memory_manager() if get_memory_manager else None
+        intelligent_learner = get_intelligent_learner() if get_intelligent_learner else None
         
         if not user_input or len(user_input) < 1:
             return JSONResponse({
@@ -729,6 +741,7 @@ async def text_query_pipeline(request: Request):
         if has_email_intent or has_calendar_intent:
             # Try to extract token from environment or a test fallback
             # ✅ Extract token sent from frontend (if any)
+            user_token = request_data.get("token") or os.getenv("TEST_USER_TOKEN")
 
             if not user_token:
                 print("⚠️ No token found in request or env; using mock local token.")
@@ -784,7 +797,7 @@ async def text_query_pipeline(request: Request):
         # Retrieve relevant memories for context
         relevant_memories = []
         memory_context = ""
-        if user_id and user_id != "anonymous":
+        if user_id and user_id != "anonymous" and memory_service:
             try:
                 relevant_memories = memory_service.retrieve_relevant_memories(
                     user_id=user_id,
@@ -863,19 +876,21 @@ async def text_query_pipeline(request: Request):
         
         # Store conversation in memory (async, don't wait)
         if user_id and user_id != "anonymous" and response_text != "Sorry, I encountered an issue generating a response.":
-            # Fire and forget - don't wait for completion
-            asyncio.create_task(memory_manager.store_conversation(
-                user_id=user_id,
-                user_message=user_input,
-                assistant_response=response_text
-            ))
+            if memory_manager:
+                # Fire and forget - don't wait for completion
+                asyncio.create_task(memory_manager.store_conversation(
+                    user_id=user_id,
+                    user_message=user_input,
+                    assistant_response=response_text
+                ))
 
             # Analyze conversation for learning (async)
-            asyncio.create_task(intelligent_learner.analyze_conversation(
-                user_id=user_id,
-                user_message=user_input,
-                assistant_response=response_text
-            ))
+            if intelligent_learner:
+                asyncio.create_task(intelligent_learner.analyze_conversation(
+                    user_id=user_id,
+                    user_message=user_input,
+                    assistant_response=response_text
+                ))
         
         return JSONResponse({
             "text": response_text,
@@ -903,22 +918,7 @@ async def voice_pipeline(
     if not user_token:
         # fallback for local development
         user_token = os.getenv("TEST_USER_TOKEN", "local-dev-token")
-    # 🔑 Extract Authorization token from headers
-    headers = request.headers
-    auth_header = headers.get("authorization")
-    user_token = auth_header.replace("Bearer ", "") if auth_header else None
-
-    if not user_token:
-        # fallback for local development
-        user_token = os.getenv("TEST_USER_TOKEN", "local-dev-token")
-    # 🔑 Extract Authorization token from headers
-    headers = request.headers
-    auth_header = headers.get("authorization")
-    user_token = auth_header.replace("Bearer ", "") if auth_header else None
-
-    if not user_token:
-        # fallback for local development
-        user_token = os.getenv("TEST_USER_TOKEN", "local-dev-token")
+    
     try:
         # 1) Persist upload to temp file (OpenAI SDK expects a real file object)
         with tempfile.NamedTemporaryFile(delete=False, suffix=".webm", dir="/tmp") as tmp:
@@ -977,8 +977,10 @@ async def voice_pipeline(
                 print(f"Could not extract user ID from token: {e}")
                 user_id = "anonymous"  # Fallback for development
         
-        # Get memory service
-        memory_service = get_memory_service()
+        # Get memory service (handle gracefully if modules don't exist)
+        memory_service = get_memory_service() if get_memory_service else None
+        memory_manager = get_memory_manager() if get_memory_manager else None
+        intelligent_learner = get_intelligent_learner() if get_intelligent_learner else None
 
         # 2.5) Intent: Morning brief navigate
 
@@ -1074,7 +1076,7 @@ async def voice_pipeline(
         # Retrieve relevant memories for context
         memory_context = ""
         personalization_context = ""
-        if user_id and user_id != "anonymous":
+        if user_id and user_id != "anonymous" and memory_manager and intelligent_learner:
             try:
                 # Use the efficient memory manager for context retrieval
                 memory_context = memory_manager.get_relevant_context(
@@ -1179,7 +1181,7 @@ Mischievous: "Oh, I see what you did thereâ€¦ clever move!"""
             audio_base64 = None
 
         # Store conversation in memory (async, don't wait)
-        if user_id and user_id != "anonymous" and response_text not in ["I'm here.", "Sorry, something went wrong while generating my response."]:
+        if user_id and user_id != "anonymous" and response_text not in ["I'm here.", "Sorry, something went wrong while generating my response."] and memory_service:
             # Fire and forget - don't wait for completion
             asyncio.create_task(memory_service.store_conversation_memory_async(
                 user_id=user_id,
