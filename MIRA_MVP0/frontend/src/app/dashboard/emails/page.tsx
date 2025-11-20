@@ -141,6 +141,8 @@ export default function EmailsPage() {
 			: emails.filter((e) => e.priority === activeTab.toLowerCase());
 	
 	const totalImportantCount = filteredEmails.length;
+	
+	const totalImportantCount = filteredEmails.length;
 
 	const today = new Date();
 	const year = selectedDate.getFullYear();

@@ -18,6 +18,11 @@ from morning_brief_api import router as morning_brief_router
 from temp import router as weather_router
 from Google_Calendar_API import register_google_calendar
 from dashboard_api import router as dashboard_router
+# Optional memory router import - handle gracefully if module doesn't exist
+try:
+    from memory_router import router as memory_router
+except ImportError:
+    memory_router = None
 from calendar_actions import router as calendar_actions_router
 app = FastAPI()
 
@@ -47,6 +52,8 @@ app.include_router(tts_router)
 app.include_router(gmail_events)
 app.include_router(voice_router, prefix="/api")
 app.include_router(settings)
+if memory_router is not None:
+    app.include_router(memory_router, prefix="/api/memory")
 app.include_router(stripe_router, prefix="/api")
 app.include_router(weather_router)
 # Simple HTML Page for manual testing

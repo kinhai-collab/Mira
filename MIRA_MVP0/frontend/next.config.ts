@@ -3,25 +3,18 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-	output: 'export',
+	// Note: removed `output: 'export'` to allow server-side API routes
+	// If you need a fully static export, keep `output: 'export'` and
+	// host the weather proxy separately (or call your backend directly).
 	trailingSlash: true,
 	images: {
 		unoptimized: true,
-		// Allow loading avatars from Google (Next.js 15+ uses remotePatterns)
-		remotePatterns: [
-			{
-				protocol: 'https',
-				hostname: 'lh3.googleusercontent.com',
-			},
-			{
-				protocol: 'https',
-				hostname: 'lh4.googleusercontent.com',
-			},
-			{
-				protocol: 'https',
-				hostname: 'lh5.googleusercontent.com',
-			},
-		],
+		// Allow loading avatars from Google
+		domains: [
+			"lh3.googleusercontent.com",
+			"lh4.googleusercontent.com",
+			"lh5.googleusercontent.com"
+		]
 	},
 	outputFileTracingRoot: __dirname,
 	// Note: rewrites are not supported with static export
