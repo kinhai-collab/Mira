@@ -206,19 +206,34 @@ async def get_event_stats(authorization: Optional[str] = Header(default=None)):
         creds_row = get_creds(user["id"])
         if not creds_row:
             print(f"⚠️ Dashboard: No Google Calendar credentials found for user {user['id']}")
+            # ✅ Return both next_event and full events list for frontend visualization
             return {
-                "status": "not_connected",
-                "message": "Calendar not connected",
+                "status": "success",
                 "data": {
-                    "total_events": 0,
-                    "total_hours": 0,
-                    "rsvp_pending": 0,
-                    "next_event": None,
-                    "busy_level": "light",
-                    "deep_work_blocks": 0,
-                    "at_risk_tasks": 0,
-                    "events": []
-                }
+                    "total_events": total_events,
+                    "total_hours": total_hours,
+                    "rsvp_pending": rsvp_pending,
+                    "busy_level": busy_level,
+                    "deep_work_blocks": deep_work_blocks,
+                    "at_risk_tasks": at_risk_tasks,
+                    "next_event": next_event,
+                    "events": [
+                        {
+                            "summary": e.get("summary", "Untitled Event"),
+                            "start": e.get("start", {}).get("dateTime") or e.get("start", {}).get("date"),
+                            "end": e.get("end", {}).get("dateTime") or e.get("end", {}).get("date"),
+                            "duration": (
+                                (datetime.fromisoformat((e.get("end", {}).get("dateTime") or e.get("end", {}).get("date")).replace("Z", "+00:00")) -
+                                datetime.fromisoformat((e.get("start", {}).get("dateTime") or e.get("start", {}).get("date")).replace("Z", "+00:00"))
+                                ).total_seconds() / 60
+                                if e.get("start") and e.get("end") else 0
+                            ),
+                            "location": e.get("location"),
+                            "attendees_count": len(e.get("attendees", [])),
+                        }
+                        for e in events
+                    ],
+                },
             }
 
         
