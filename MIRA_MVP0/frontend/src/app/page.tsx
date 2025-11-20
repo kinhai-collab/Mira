@@ -422,8 +422,6 @@ const fetchOutlookEvents = useCallback(async (): Promise<VoiceSummaryCalendarEve
 			setSummaryStage("thinking");
 			setSummaryOverlayVisible(true);
 			setSummaryRunId((id) => id + 1);
-
-			console.log("📅 Normalized calendar events:", normalizedCalendarEvents);
 		};
 
 		if (typeof window !== "undefined") {

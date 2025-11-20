@@ -791,12 +791,16 @@ async def get_email_list(
                     "id": msg_id,
                     "sender_name": sender_name,
                     "sender_email": sender_email,
+                    "from": sender,  # ✅ Added for EmailCalendarOverlay compatibility
+                    "senderEmail": sender_email,  # ✅ Added for EmailCalendarOverlay compatibility
                     "subject": subject,
                     "snippet": snippet,
                     "body": body,
+                    "summary": snippet,  # ✅ Added for EmailCalendarOverlay compatibility
                     "priority": priority,
                     "time_ago": time_ago,
                     "timestamp": email_datetime.isoformat(),
+                    "receivedAt": email_datetime.isoformat(),  # ✅ Added for EmailCalendarOverlay compatibility
                     "is_unread": is_unread,
                     "labels": labels
                 }
