@@ -1,7 +1,7 @@
 /** @format */
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { Icon } from "@/components/Icon";
@@ -12,15 +12,21 @@ import {
 	type VoiceSummaryStep,
 } from "@/components/voice/EmailCalendarOverlay";
 import {
+	EmailCalendarOverlay,
+	type VoiceSummaryCalendarEvent,
+	type VoiceSummaryEmail,
+	type VoiceSummaryStep,
+} from "@/components/voice/EmailCalendarOverlay";
+import {
 	extractTokenFromUrl,
 	storeAuthToken,
-	isAuthenticated,
 } from "@/utils/auth";
 import {
 	startMiraVoice,
 	stopMiraVoice,
 	setMiraMute,
 } from "@/utils/voice/voiceHandler";
+import { getWeather } from "@/utils/weather";
 
 const DEFAULT_SUMMARY_STEPS = [
 	{ id: "emails", label: "Checking your inbox for priority emails..." },
@@ -60,8 +66,14 @@ export default function Home() {
 	const [isListening, setIsListening] = useState(true);
 	const [greeting, setGreeting] = useState<string>("");
 	// Removed unused isMicOn state
+	// Removed unused isMicOn state
 	const [isConversationActive, setIsConversationActive] = useState(false);
 	const [isMuted, setIsMuted] = useState(false);
+	const [isTextMode, setIsTextMode] = useState(false);
+	const [textMessages, setTextMessages] = useState<
+		Array<{ role: "user" | "assistant"; content: string }>
+	>([]);
+	const [isLoadingResponse, setIsLoadingResponse] = useState(false);
 	const [isTextMode, setIsTextMode] = useState(false);
 	const [textMessages, setTextMessages] = useState<
 		Array<{ role: "user" | "assistant"; content: string }>
@@ -76,12 +88,93 @@ export default function Home() {
 	// Default to the browser/system timezone — good offline/frontend-only fallback.
 	const [timezone, setTimezone] = useState<string>(
 		() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
+		() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
 	);
 
-	// Backend base URL (use your NEXT_PUBLIC_API_URL or fallback to localhost)
-	const apiBase = (
+// --- Outlook helpers  ---
+// DISABLED: Outlook integration temporarily disabled due to authentication issues
+// Using Google Calendar and Gmail only
+const fetchOutlookEvents = useCallback(async (): Promise<VoiceSummaryCalendarEvent[]> => {
+	// Return empty array - Outlook integration disabled
+	console.log("⚠️ Outlook integration is disabled. Using Google Calendar/Gmail only.");
+	return [];
+	
+	/* COMMENTED OUT - Outlook API calls causing 401 errors
+	const apiBaseUrl = (
 		process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
 	).replace(/\/+$/, "");
+	// Reuse your token util so the request includes the user's Outlook access_token
+	const { getValidToken } = await import("@/utils/auth");
+	const token = await getValidToken();
+	if (!token) return [];
+
+	// Hit both Outlook endpoints from your FastAPI backend
+	const [calRes, icsRes] = await Promise.all([
+		fetch(`${apiBaseUrl}/outlook/calendar?access_token=${token}&limit=20`),
+		fetch(`${apiBaseUrl}/outlook/emails?access_token=${token}&limit=20`),
+	]);
+
+	// Be resilient if either call fails
+	interface OutlookEvent {
+		id?: string;
+		subject?: string;
+		start?: string;
+		end?: string;
+		location?: string;
+		organizer?: string;
+	}
+	
+	const calJson = (await calRes.json().catch(() => ({ events: [] }))) as {
+		events?: OutlookEvent[];
+	};
+	const icsJson = (await icsRes.json().catch(() => ({ events: [] }))) as {
+		events?: OutlookEvent[];
+	};
+
+	// Merge and de-dup like the backend (subject+start+end)
+	const merged = [...(calJson.events || []), ...(icsJson.events || [])];
+	const seen = new Set<string>();
+	const unique = merged.filter((e: OutlookEvent) => {
+		const key = `${(e.subject || "").trim().toLowerCase()}|${e.start}|${e.end}`;
+		if (seen.has(key)) return false;
+		seen.add(key);
+		return true;
+	});
+
+		// Define helper locally to avoid affecting hook deps
+	const formatTimeRangeLocal = (
+		startIso?: string,
+		endIso?: string,
+		tz: string = timezone
+	) => {
+		try {
+			if (!startIso) return "N/A";
+			const s = new Date(startIso);
+			const e = endIso ? new Date(endIso) : null;
+			const opts: Intl.DateTimeFormatOptions = {
+				hour: "2-digit",
+				minute: "2-digit",
+				timeZone: tz,
+			};
+			return e
+				? `${s.toLocaleTimeString([], opts)}–${e.toLocaleTimeString([], opts)}`
+				: s.toLocaleTimeString([], opts);
+		} catch {
+			return "N/A";
+		}
+	};
+
+	// Map backend events to the overlay's shape
+	return unique.map((e: OutlookEvent) => ({
+		id: e.id || `${e.subject}-${e.start}`,
+		title: e.subject || "(no subject)",
+		timeRange: formatTimeRangeLocal(e.start, e.end, timezone),
+		location: e.location || "",
+		note: e.organizer ? `Organizer: ${e.organizer}` : undefined,
+		provider: "outlook",
+	}));
+	*/
+ }, [timezone]);
 
 	// Weather state: store coords and current temperature. We'll call Open-Meteo (no API key)
 	const [latitude, setLatitude] = useState<number | null>(null);
@@ -90,6 +183,22 @@ export default function Home() {
 	const [isWeatherLoading, setIsWeatherLoading] = useState<boolean>(false);
 
 	const greetingCalledRef = useRef(false);
+	const [summaryOverlayVisible, setSummaryOverlayVisible] = useState(false);
+	const [summarySteps, setSummarySteps] = useState<VoiceSummaryStep[]>(() =>
+		prepareVoiceSteps(DEFAULT_SUMMARY_STEPS)
+	);
+	const [summaryStage, setSummaryStage] = useState<"thinking" | "summary">(
+		"thinking"
+	);
+	const [summaryEmails, setSummaryEmails] = useState<VoiceSummaryEmail[]>([]);
+	const [summaryEvents, setSummaryEvents] = useState<
+		VoiceSummaryCalendarEvent[]
+	>([]);
+	const [summaryFocus, setSummaryFocus] = useState<string | null>(null);
+	const [summaryRunId, setSummaryRunId] = useState(0);
+	const [pendingSummaryMessage, setPendingSummaryMessage] = useState<
+		string | null
+	>(null);
 	const [summaryOverlayVisible, setSummaryOverlayVisible] = useState(false);
 	const [summarySteps, setSummarySteps] = useState<VoiceSummaryStep[]>(() =>
 		prepareVoiceSteps(DEFAULT_SUMMARY_STEPS)
@@ -115,6 +224,10 @@ export default function Home() {
 				const res = await fetch("https://ipapi.co/json/");
 				if (!res.ok) return;
 				const data = await res.json();
+				const city =
+					data.city || data.region || data.region_code || data.country_name;
+				// ipapi returns a `timezone` field like 'America/New_York'
+				if (data.timezone) setTimezone(data.timezone);
 				const city =
 					data.city || data.region || data.region_code || data.country_name;
 				// ipapi returns a `timezone` field like 'America/New_York'
@@ -163,11 +276,22 @@ export default function Home() {
 				// match the geolocation. If you need absolute timezone-from-coords,
 				// you'd need a timezone lookup service or library (server or heavy client bundle).
 				setTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
+				// If possible, keep the browser's timezone (Intl); this will usually
+				// match the geolocation. If you need absolute timezone-from-coords,
+				// you'd need a timezone lookup service or library (server or heavy client bundle).
+				setTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
 
 				// Save coordinates for weather lookup
 				setLatitude(latitude);
 				setLongitude(longitude);
+				// Save coordinates for weather lookup
+				setLatitude(latitude);
+				setLongitude(longitude);
 
+				// Fetch weather for these coords (via backend proxy)
+				fetchWeatherForCoords(latitude, longitude).catch((e) =>
+					console.error("Weather fetch failed:", e)
+				);
 				// Fetch weather for these coords (via backend proxy)
 				fetchWeatherForCoords(latitude, longitude).catch((e) =>
 					console.error("Weather fetch failed:", e)
@@ -180,7 +304,7 @@ export default function Home() {
 			}
 		};
 
-		const error = async (err: GeolocationPositionError | any) => {
+		const error = async (err: GeolocationPositionError) => {
 			console.error("geolocation error:", err);
 			// On permission denied or other errors, try IP-based lookup
 			await ipFallback();
@@ -191,18 +315,10 @@ export default function Home() {
 		});
 	}, []);
 
-	const handleMicToggle = () => {
-		const newState = !isListening;
-		setIsListening(newState);
-		if (newState) {
-			setIsConversationActive(true);
-			startMiraVoice();
-		} else {
-			setIsConversationActive(false);
-			stopMiraVoice();
-			setIsMuted(false);
-			setMiraMute(false);
-		}
+	const handleMuteToggle = () => {
+		const muteState = !isMuted;
+		setIsMuted(muteState);
+		setMiraMute(muteState);
 	};
 	// Removed unused handleMicToggle
 
@@ -238,11 +354,21 @@ export default function Home() {
 
 			if (!validToken) {
 				// No valid token, redirect to login
+			// Try to refresh token if expired (for returning users)
+			const { getValidToken } = await import("@/utils/auth");
+			const validToken = await getValidToken();
+
+			if (!validToken) {
+				// No valid token, redirect to login
 				router.push("/login");
 				return;
 			}
 
 			try {
+				const apiBase = (
+					process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+				).replace(/\/+$/, "");
+				const email = localStorage.getItem("mira_email");
 				const apiBase = (
 					process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
 				).replace(/\/+$/, "");
@@ -258,7 +384,23 @@ export default function Home() {
 							},
 						}
 					);
+				if (email) {
+					const onboardingRes = await fetch(
+						`${apiBase}/onboarding_status?email=${encodeURIComponent(email)}`,
+						{
+							headers: {
+								Authorization: `Bearer ${validToken}`,
+								"Content-Type": "application/json",
+							},
+						}
+					);
 
+					if (onboardingRes.ok) {
+						const onboardingData = await onboardingRes.json();
+						const onboarded = !!onboardingData?.onboarded;
+						if (!onboarded) {
+							router.push("/onboarding/step1");
+							return;
 					if (onboardingRes.ok) {
 						const onboardingData = await onboardingRes.json();
 						const onboarded = !!onboardingData?.onboarded;
@@ -331,7 +473,7 @@ export default function Home() {
 	}, []);
 
 	useEffect(() => {
-		const handler = (event: Event) => {
+		const handler = async (event: Event) => {
 			const customEvent = event as CustomEvent<VoiceSummaryEventDetail>;
 			const detail = customEvent.detail || {};
 			const rawSteps = detail.steps?.length
@@ -339,31 +481,14 @@ export default function Home() {
 				: DEFAULT_SUMMARY_STEPS;
 
 			// Normalize structure
-
-			const rawCal: any = (detail as any).calendarEvents;
+			const rawCal: unknown = detail.calendarEvents;
 			let normalizedCalendarEvents: VoiceSummaryCalendarEvent[] = [];
 
 			if (Array.isArray(rawCal)) {
 				normalizedCalendarEvents = rawCal;
-			} else if (rawCal?.data?.next_event) {
-				const ev = rawCal.data.next_event;
-				normalizedCalendarEvents = [
-					{
-						id: "next",
-						title: ev.summary || "Untitled Event",
-						timeRange: ev.start
-							? new Date(ev.start).toLocaleTimeString([], {
-									hour: "2-digit",
-									minute: "2-digit",
-							  })
-							: "N/A",
-						location: ev.location || "No location",
-						note: `Duration: ${ev.duration || 0} mins | Attendees: ${
-							ev.attendees_count || 0
-						}`,
-						provider: "google-meet",
-					},
-				];
+			} else {
+				// Calls your FastAPI Outlook endpoints and maps to overlay shape
+				normalizedCalendarEvents = await fetchOutlookEvents();
 			}
 
 			setSummarySteps(prepareVoiceSteps(rawSteps));
@@ -392,7 +517,7 @@ export default function Home() {
 				);
 			}
 		};
-	}, []);
+	}, [fetchOutlookEvents]);
 
 	useEffect(() => {
 		if (!summaryOverlayVisible || !summarySteps.length) return;
@@ -451,7 +576,7 @@ export default function Home() {
 				day: "numeric",
 				timeZone: tz,
 			}).format(now);
-		} catch (e) {
+		} catch {
 			// Fallback to local formatting if Intl fails for some reason
 			return new Date().toLocaleDateString(undefined, {
 				weekday: "short",
@@ -461,8 +586,7 @@ export default function Home() {
 		}
 	};
 
-	// Fetch current weather by calling the internal Next.js API route (/api/weather).
-	// Using a same-origin API route avoids CORS and mixed-content issues (http vs https).
+	// Fetch current weather using Open-Meteo API directly
 	const fetchWeatherForCoords = async (lat: number, lon: number) => {
 		try {
 			setIsWeatherLoading(true);
@@ -596,11 +720,105 @@ export default function Home() {
 		}
 	};
 
+	// Handle text input submission
+	const handleTextSubmit = async (text?: string) => {
+		const queryText = text || input.trim();
+		if (!queryText) return;
+
+		// Add user message to conversation
+		setTextMessages((prev) => [...prev, { role: "user", content: queryText }]);
+		setInput("");
+		setIsLoadingResponse(true);
+
+		try {
+			const apiBase = (
+				process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+			).replace(/\/+$/, "");
+			const { getValidToken } = await import("@/utils/auth");
+			const token = await getValidToken();
+
+			const response = await fetch(`${apiBase}/api/text-query`, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					...(token ? { Authorization: `Bearer ${token}` } : {}),
+				},
+				body: JSON.stringify({
+					query: queryText,
+					history: textMessages,
+					token, // ✅ include token in body for backend
+				}),
+			});
+
+			// ✅ log backend response status and any text before throwing
+			if (!response.ok) {
+				const errorText = await response.text();
+				console.error("❌ Backend returned error:", response.status, errorText);
+				throw new Error(`Backend returned ${response.status}: ${errorText}`);
+			}
+
+			let data;
+			try {
+				data = await response.json();
+			} catch (err) {
+				console.error("❌ Failed to parse JSON from backend:", err);
+				throw new Error("Invalid JSON in backend response");
+			}
+
+			// ✅ Handle navigation actions
+			if (data.action === "navigate" && data.actionTarget) {
+				setTimeout(() => router.push(data.actionTarget), 500);
+				setTextMessages((prev) => [
+					...prev,
+					{ role: "assistant", content: data.text || "Navigating..." },
+				]);
+				return;
+			}
+
+			// ✅ Handle calendar/email summary
+			if (data.action === "email_calendar_summary") {
+				if (data.text) setPendingSummaryMessage(data.text);
+				if (typeof window !== "undefined") {
+					window.dispatchEvent(
+						new CustomEvent("miraEmailCalendarSummary", {
+							detail: data.actionData ?? {},
+						})
+					);
+				}
+				return;
+			}
+
+			// ✅ Default case — add assistant text reply
+			if (data.text) {
+				setTextMessages((prev) => [
+					...prev,
+					{ role: "assistant", content: data.text },
+				]);
+			} else {
+				console.warn("⚠️ No text returned from backend:", data);
+			}
+		} catch (error) {
+			console.error("🚨 Error sending text query:", error);
+			setTextMessages((prev) => [
+				...prev,
+				{
+					role: "assistant",
+					content: "Sorry, I encountered an error processing your request.",
+				},
+			]);
+		} finally {
+			setIsLoadingResponse(false);
+		}
+	};
+
 	return (
 		<div className="flex flex-col min-h-screen bg-[#F8F8FB] text-gray-800 overflow-hidden">
 			<main className="flex-1 flex flex-col items-center justify-center px-4 sm:px-6 md:px-8 relative overflow-y-auto pb-20 md:pb-0">
 				{/* Top-left bar */}
 				<div className="absolute top-4 sm:top-6 left-4 sm:left-10 flex flex-wrap items-center gap-2 sm:gap-3 text-xs sm:text-sm">
+					<span className="font-medium text-gray-800">
+						{getFormattedDate(timezone)}
+					</span>
 					<span className="font-medium text-gray-800">
 						{getFormattedDate(timezone)}
 					</span>
@@ -709,8 +927,8 @@ export default function Home() {
 
 				{/* Input Bar — Always Visible */}
 				<div className="relative mt-10 sm:mt-14 w-full max-w-md sm:max-w-xl flex flex-col items-center">
-					<div className="absolute inset-0 rounded-xl bg-gradient-to-r from-[#f4aaff] via-[#d9b8ff] to-[#bfa3ff] opacity-95 blur-[1.5px]"></div>
-					<div className="relative flex items-center rounded-xl bg-white px-4 sm:px-5 py-2 sm:py-2.5 w-full">
+					<div className="w-full rounded-[24px] bg-gradient-to-r from-[#F4A4D3] to-[#B5A6F7] p-[1.5px] shadow-[0_12px_35px_rgba(181,166,247,0.45)]">
+						<div className="flex items-center rounded-[22px] bg-white px-4 sm:px-5 py-2 sm:py-2.5 w-full">
 						<input
 							type="text"
 							value={input}
@@ -739,6 +957,7 @@ export default function Home() {
 						>
 							<Icon name="Send" size={16} />
 						</button>
+						</div>
 					</div>
 				</div>
 
@@ -753,6 +972,7 @@ export default function Home() {
 								"How's my day looking?",
 								"Summarize today's tasks.",
 								"What meetings do I have today?",
+								"Show me my emails",
 								"Show me my emails and calendar",
 								"Show my calender events",
 								"Wrap up my day.",
@@ -853,8 +1073,19 @@ export default function Home() {
 									setIsMuted(false);
 									setMiraMute(false);
 								}
+								const newTextMode = !isTextMode;
+								setIsTextMode(newTextMode);
+								if (newTextMode) {
+									// Switching to text mode
+									setIsListening(false);
+									setIsConversationActive(false);
+									stopMiraVoice();
+									setIsMuted(false);
+									setMiraMute(false);
+								}
 							}}
 							className={`flex items-center justify-center w-[60px] h-[28px] rounded-full border border-gray-200 transition-all duration-300 ${
+								isTextMode || !isListening
 								isTextMode || !isListening
 									? "bg-black hover:bg-gray-800"
 									: "bg-white hover:bg-gray-50"

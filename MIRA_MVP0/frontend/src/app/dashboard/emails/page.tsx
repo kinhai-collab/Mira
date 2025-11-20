@@ -1,5 +1,4 @@
 /** @format */
-// @ts-nocheck
 
 "use client";
 
@@ -7,12 +6,13 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import { fetchEmailList, type Email } from "@/utils/dashboardApi";
+import { getWeather } from "@/utils/weather";
 
 // Helper: Generate days for a given month
-const generateCalendarDays = (year, month) => {
+const generateCalendarDays = (year: number, month: number) => {
 	const firstDay = new Date(year, month, 1).getDay();
 	const totalDays = new Date(year, month + 1, 0).getDate();
-	const days = [];
+	const days: (number | null)[] = [];
 	for (let i = 0; i < firstDay; i++) days.push(null);
 	for (let i = 1; i <= totalDays; i++) days.push(i);
 	return days;
@@ -52,56 +52,13 @@ export default function EmailsPage() {
 		loadEmails();
 	}, []);
 
-	// Helper: map Open-Meteo weathercode to simple description
-	const openMeteoCodeToDesc = (code: number) => {
-		switch (code) {
-			case 0:
-				return 'Clear';
-			case 1:
-			case 2:
-			case 3:
-				return 'Partly cloudy';
-			case 45:
-			case 48:
-				return 'Fog';
-			case 51:
-			case 53:
-			case 55:
-				return 'Drizzle';
-			case 61:
-			case 63:
-			case 65:
-				return 'Rain';
-			case 71:
-			case 73:
-			case 75:
-				return 'Snow';
-			case 80:
-			case 81:
-			case 82:
-				return 'Showers';
-			case 95:
-			case 96:
-			case 99:
-				return 'Thunderstorm';
-			default:
-				return 'Unknown';
-		}
-	};
-
-	// Fetch weather from the same-origin API route (/api/weather) using coords
+	// Fetch weather using Open-Meteo API directly
 	const fetchWeatherForCoords = async (lat: number, lon: number) => {
 		try {
 			setIsWeatherLoading(true);
-			const url = `/api/weather?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`;
-			const resp = await fetch(url);
-			if (!resp.ok) {
-				let details = '';
-				try { details = await resp.text(); } catch { details = '<unreadable response body>'; }
-				throw new Error(`Weather proxy failed: ${resp.status} ${details}`);
-			}
-			const data: any = await resp.json();
-			const temp = data?.temperatureC ?? data?.temperature ?? data?.tempC ?? null;
+			console.log('Emails page: fetching weather for coords:', lat, lon);
+			const data = await getWeather(lat, lon);
+			const temp = data?.temperatureC;
 			if (typeof temp === 'number') setTemperatureC(temp);
 		} catch (err) {
 			console.error('Emails page: Error fetching weather:', err);
@@ -164,7 +121,7 @@ export default function EmailsPage() {
 			}
 		};
 
-		const failure = async (err: any) => {
+		const failure = async (err: GeolocationPositionError) => {
 			console.warn('Emails page geolocation failed:', err);
 			await ipFallback();
 		};
@@ -184,6 +141,8 @@ export default function EmailsPage() {
 			: emails.filter((e) => e.priority === activeTab.toLowerCase());
 	
 	const totalImportantCount = filteredEmails.length;
+	
+	const totalImportantCount = filteredEmails.length;
 
 	const today = new Date();
 	const year = selectedDate.getFullYear();
@@ -198,7 +157,7 @@ export default function EmailsPage() {
 			? "Loading..."
 			: "--";
 
-	const handleDateClick = (day) => {
+	const handleDateClick = (day: number | null) => {
 		if (!day) return;
 		const newDate = new Date(year, month, day);
 		setSelectedDate(newDate);

@@ -196,7 +196,7 @@ export async function refreshAccessToken(): Promise<string | null> {
 }
 
 export async function getValidToken(): Promise<string | null> {
-	let token = getStoredToken();
+	const token = getStoredToken();
 	
 	if (!token) {
 		console.log("No token found, user needs to log in");

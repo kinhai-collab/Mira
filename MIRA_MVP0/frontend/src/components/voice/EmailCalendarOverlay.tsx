@@ -15,6 +15,7 @@ export interface VoiceSummaryStep {
 export interface VoiceSummaryEmail {
 	id: string;
 	from: string;
+	senderEmail?: string;
 	subject: string;
 	receivedAt: string;
 	summary?: string;
@@ -28,6 +29,7 @@ export interface VoiceSummaryCalendarEvent {
 	timeRange: string;
 	location?: string;
 	note?: string;
+	meetingLink?: string | null;
 	provider?: CalendarEventProvider | string | null;
 }
 
@@ -171,28 +173,58 @@ function SummaryCard({
 	emails,
 	calendarEvents,
 	focusNote,
+	provider,
 }: {
 	emails?: VoiceSummaryEmail[];
 	calendarEvents?: VoiceSummaryCalendarEvent[];
 	focusNote?: string | null;
+	provider?: string;
 }) {
 	const hasEmails = !!emails?.length;
 	const hasEvents = !!calendarEvents?.length;
 
-	// Count emails by provider (mock for now - you can enhance this based on email.from domain)
-	// Ensure emails is always an array
 	const safeEmails: VoiceSummaryEmail[] = Array.isArray(emails) ? emails : [];
 
-	// Count by provider safely
-	const gmailCount =
-		safeEmails.filter((e) => e?.from?.includes("@gmail.com")).length || 0;
+	// Use provided value or fallback
+	const currentProvider = provider || "gmail";
 
-	const outlookCount = safeEmails.length ? safeEmails.length - gmailCount : 0;
+	// Calculate 24-hour window
+	const now = new Date();
+	const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
-	const unreadCount = safeEmails.length
-		? Math.ceil(safeEmails.length * 0.6)
+	// Filter only recent emails
+	const recentEmails = safeEmails.filter((e) => {
+		if (!e.receivedAt) return false;
+
+		let receivedAt: Date | null = null;
+
+		// Handle numeric timestamps or ISO strings safely
+		if (!isNaN(Number(e.receivedAt))) {
+			// If numeric timestamp (milliseconds)
+			receivedAt = new Date(Number(e.receivedAt));
+		} else {
+			// If ISO string or Gmail RFC 2822 format
+			const parsed = Date.parse(e.receivedAt);
+			if (!isNaN(parsed)) receivedAt = new Date(parsed);
+		}
+
+		return receivedAt && receivedAt > twentyFourHoursAgo && receivedAt <= now;
+	});
+	// Use only recent emails for display and counts
+	const emailsToShow = recentEmails;
+
+	// Count Gmail and Outlook from recent emails
+	let gmailCount = 0;
+	let outlookCount = 0;
+
+	if (currentProvider === "gmail") {
+		gmailCount = emailsToShow.length;
+	} else if (currentProvider === "outlook") {
+		outlookCount = emailsToShow.length;
+	}
+	const unreadCount = emailsToShow.length
+		? Math.ceil(emailsToShow.length * 0.6)
 		: 0;
-
 	// const outlookCount = emails?.length ? emails.length - gmailCount : 0;
 	// const unreadCount = emails?.length ? Math.ceil(emails.length * 0.6) : 0;
 
@@ -227,7 +259,7 @@ function SummaryCard({
 						<div className="flex flex-col gap-2">
 							<div className="flex items-end gap-2">
 								<h3 className="font-['Outfit',sans-serif] text-[24px] font-medium leading-none text-[#272829]">
-									{emails?.length || 0}
+									{emailsToShow.length || 0}
 								</h3>
 								<span className="font-['Outfit',sans-serif] text-[20px] font-normal leading-none text-[#272829]">
 									Important Emails
@@ -271,7 +303,7 @@ function SummaryCard({
 							</div>
 						</div>
 						<div className="flex items-center gap-1">
-							<div className="h-2 w-2 rounded-full bg-[#eb5caf]" />
+							<div className="h-2 w-2 rounded-full bg-[#F16A6A]" />
 							<span className="font-['Outfit',sans-serif] text-[14px] font-light text-[#454547]">
 								{unreadCount} unread
 							</span>
@@ -303,7 +335,7 @@ function SummaryCard({
 											</div>
 											<div className="flex-1 overflow-hidden">
 												<div className="flex items-center gap-1">
-													<div className="h-2 w-2 shrink-0 rounded-full bg-[#eb5caf]" />
+													<div className="h-2 w-2 shrink-0 rounded-full bg-[#F16A6A]" />
 													<p className="font-['Outfit',sans-serif] truncate text-[14px] font-medium text-[#272829]">
 														{email.subject}
 													</p>
@@ -311,7 +343,9 @@ function SummaryCard({
 												<p className="font-['Outfit',sans-serif] ml-3 truncate text-[14px] font-light text-[#454547]">
 													From:{" "}
 													{email?.from
-														? email.from.split("@")[0]
+														? email.from.includes("<")
+															? email.from.split("<")[0].trim()
+															: email.from.split("@")[0]
 														: "Unknown Sender"}
 												</p>
 											</div>
@@ -343,7 +377,7 @@ function SummaryCard({
 											</div>
 											<div className="flex-1 overflow-hidden">
 												<div className="flex items-center gap-1">
-													<div className="h-2 w-2 shrink-0 rounded-full bg-[#eb5caf]" />
+													<div className="h-2 w-2 shrink-0 rounded-full bg-[#F16A6A]" />
 													<p className="font-['Outfit',sans-serif] truncate text-[14px] font-medium text-[#272829]">
 														{email.subject}
 													</p>
@@ -351,7 +385,9 @@ function SummaryCard({
 												<p className="font-['Outfit',sans-serif] ml-3 truncate text-[14px] font-light text-[#454547]">
 													From:{" "}
 													{email?.from
-														? email.from.split("@")[0]
+														? email.from.includes("<")
+															? email.from.split("<")[0].trim()
+															: email.from.split("@")[0]
 														: "Unknown Sender"}
 												</p>
 											</div>
@@ -511,11 +547,27 @@ function SummaryCard({
 									</div>
 
 									<div className="flex-1 space-y-2">
-										<div className="flex items-start gap-2">
-											<span className="mt-[6px] inline-flex size-2 shrink-0 rounded-full bg-[#6a80ff]" />
-											<p className="font-['Outfit',sans-serif] text-[14px] font-medium text-[#272829]">
-												{event.title}
-											</p>
+										<div className="flex items-start justify-between gap-2">
+											<div className="flex items-start gap-2 flex-1">
+												<span className="mt-[6px] inline-flex size-2 shrink-0 rounded-full bg-[#6a80ff]" />
+												<p className="font-['Outfit',sans-serif] text-[14px] font-medium text-[#272829]">
+													{event.title}
+												</p>
+											</div>
+											{event.meetingLink && (
+												<a
+													href={event.meetingLink}
+													target="_blank"
+													rel="noopener noreferrer"
+													className="shrink-0 inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-white bg-[#382099] rounded-md hover:bg-[#2d1a7a] transition-colors"
+												>
+													Join
+													<svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+														<path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z" />
+														<path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z" />
+													</svg>
+												</a>
+											)}
 										</div>
 										{hasSegments && (
 											<div className="flex flex-wrap items-center gap-2 text-[13px] font-light text-[#5a5c61]">
@@ -653,19 +705,72 @@ export function EmailCalendarOverlay({
 				<div className="mt-2">
 					{/* Normalize emails safely before passing */}
 					{(() => {
+						// Define backend email types for normalization
+						interface BackendEmail {
+							id: string;
+							sender_name?: string;
+							sender_email?: string;
+							from?: string;
+							subject?: string;
+							timestamp?: string;
+							receivedAt?: string;
+							snippet?: string;
+							body?: string;
+						}
+
+						interface EmailsResponse {
+							data?: {
+								emails?: BackendEmail[];
+								provider?: string;
+							};
+							provider?: string;
+						}
+
+						// Normalize backend email structure to match VoiceSummaryEmail interface
+						type EmailBackendRecord = {
+							id?: string;
+							sender_name?: string;
+							sender_email?: string;
+							from?: string;
+							subject?: string;
+							timestamp?: string;
+							receivedAt?: string;
+							snippet?: string;
+							body?: string;
+						};
+
 						const safeEmails: VoiceSummaryEmail[] = Array.isArray(emails)
-							? emails
-							: Array.isArray((emails as any)?.data?.emails)
-							? (emails as any).data.emails
+							? emails.map((e: VoiceSummaryEmail | EmailBackendRecord) => {
+									const backend = e as EmailBackendRecord;
+									const fromVal = backend.from ?? backend.sender_name ?? backend.sender_email ?? "Unknown";
+									const subjectVal = backend.subject ?? "No Subject";
+									const receivedAtVal = backend.timestamp ?? backend.receivedAt ?? "";
+									const idVal = backend.id ?? "";
+									const senderEmailVal = backend.sender_email ?? "";
+									const summaryVal = backend.snippet ?? backend.body ?? "";
+									return {
+										id: idVal,
+										from: String(fromVal),
+										senderEmail: String(senderEmailVal),
+										subject: String(subjectVal),
+										receivedAt: String(receivedAtVal),
+										summary: String(summaryVal),
+									} as VoiceSummaryEmail;
+								})
 							: [];
 
 						const safeCalendarEvents: VoiceSummaryCalendarEvent[] =
 							Array.isArray(calendarEvents) ? calendarEvents : [];
+						const provider =
+							(emails as EmailsResponse)?.provider ||
+							(emails as EmailsResponse)?.data?.provider ||
+							"gmail";
 
 						return (
 							<SummaryCard
 								emails={safeEmails}
 								calendarEvents={safeCalendarEvents}
+								provider={provider}
 								focusNote={focusNote}
 							/>
 						);

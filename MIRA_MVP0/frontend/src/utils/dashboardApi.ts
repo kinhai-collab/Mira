@@ -34,8 +34,21 @@ export interface NextEvent {
 	start: string;
 	duration: number;
 	location?: string;
-	conference_data?: any;
+	conference_data?: {
+		url?: string;
+		type?: string;
+	};
 	attendees_count: number;
+}
+
+export interface CalendarEvent {
+	id: string;
+	title: string;
+	timeRange: string;
+	location?: string;
+	note?: string | null;
+	meetingLink?: string | null;
+	provider?: string | null;
 }
 
 export interface EventStats {
@@ -46,6 +59,7 @@ export interface EventStats {
 	busy_level: "light" | "moderate" | "busy";
 	deep_work_blocks: number;
 	at_risk_tasks: number;
+	events?: CalendarEvent[];
 }
 
 export interface DashboardSummary {

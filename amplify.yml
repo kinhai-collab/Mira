@@ -12,6 +12,9 @@ frontend:
   environment:
     variables:
       NEXT_PUBLIC_API_URL: https://xmtg107ehj.execute-api.us-east-2.amazonaws.com
+      # IMPORTANT: Add these in Amplify Console > Environment variables
+      # NEXT_PUBLIC_SUPABASE_URL: https://oxozhsomntvuyrurfzre.supabase.co
+      # NEXT_PUBLIC_SUPABASE_ANON_KEY: your-anon-key-here
   artifacts:
     baseDirectory: MIRA_MVP0/frontend/out
     files:
