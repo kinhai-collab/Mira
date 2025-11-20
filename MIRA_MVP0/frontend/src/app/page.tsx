@@ -20,6 +20,7 @@ import {
 	stopMiraVoice,
 	setMiraMute,
 } from "@/utils/voice/voiceHandler";
+import { getWeather } from "@/utils/weather";
 
 const DEFAULT_SUMMARY_STEPS = [
 	{ id: "emails", label: "Checking your inbox for priority emails..." },
@@ -513,33 +514,12 @@ const fetchOutlookEvents = useCallback(async (): Promise<VoiceSummaryCalendarEve
 	const fetchWeatherForCoords = async (lat: number, lon: number) => {
 		try {
 			setIsWeatherLoading(true);
-			const url = `/api/weather?lat=${encodeURIComponent(
-				lat
-			)}&lon=${encodeURIComponent(lon)}`;
-			// Log the URL so if "Failed to fetch" occurs we can see exactly what was attempted.
-			console.log("Fetching weather from (internal proxy):", url);
-			const resp = await fetch(url);
-			if (!resp.ok) {
-				// Try to read response body for diagnostics
-				let details = "";
-			try {
-				const txt = await resp.text();
-				details = txt;
-			} catch {
-				details = "<unreadable response body>";
-			}
-				throw new Error(`Weather proxy failed: ${resp.status} ${details}`);
-			}
-			const data = await resp.json();
-			// Expecting backend to return { temperatureC: number } (or similar)
-			const temp = data?.temperatureC ?? data?.temperature ?? data?.tempC;
+			console.log("Fetching weather for coords:", lat, lon);
+			const data = await getWeather(lat, lon);
+			const temp = data?.temperatureC;
 			if (typeof temp === "number") setTemperatureC(temp);
 		} catch (err) {
-			// Show richer diagnostics in console for easier debugging
-			console.error(
-				"Error fetching weather from internal API (/api/weather):",
-				err
-			);
+			console.error("Error fetching weather:", err);
 		} finally {
 			setIsWeatherLoading(false);
 		}
