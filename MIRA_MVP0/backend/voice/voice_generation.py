@@ -590,6 +590,228 @@ async def text_query_pipeline(request: Request):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Text query pipeline failed: {e}")
     
+#Helper: call calendar endpoints    
+async def _call_calendar_action_endpoint(
+    auth_header: Optional[str],
+    endpoint: str,
+    payload: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Internal helper to call our own /api/assistant/calendar/* endpoints
+    using the same Authorization token that the voice request received.
+    """
+    base_url = os.getenv("API_BASE_URL", "http://127.0.0.1:8000")
+
+    if not auth_header:
+        raise HTTPException(status_code=401, detail="Missing Authorization header for calendar action")
+
+    headers = {
+        "Authorization": auth_header,
+        "Content-Type": "application/json",
+    }
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.post(f"{base_url}{endpoint}", headers=headers, json=payload)
+
+    if resp.status_code >= 400:
+        raise HTTPException(
+            status_code=resp.status_code,
+            detail=f"Calendar action failed: {resp.text}",
+        )
+
+    try:
+        return resp.json()
+    except Exception:
+        return {}
+
+# Helper: interpret and execute voice calendar commands
+async def _handle_calendar_voice_command(
+    user_input: str,
+    auth_header: Optional[str],
+) -> Optional[JSONResponse]:
+    """
+    Detect and execute calendar actions (schedule / cancel / reschedule / conflict check)
+    from natural language voice input.
+
+    Returns JSONResponse if a calendar action was executed,
+    or None if the input did not request a calendar operation.
+    """
+    text_lower = user_input.lower()
+
+    # Quick keyword filter so we don't call GPT for every sentence
+    keywords = [
+        "schedule", "reschedule", "move", "shift",
+        "cancel", "delete", "remove",
+        "meeting", "event", "calendar",
+    ]
+    if not any(k in text_lower for k in keywords):
+        return None
+
+    oa = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+    system_prompt = (
+        "You are Mira's calendar planner. "
+        "Given a user's spoken request, you must output a STRICT JSON object with this shape:\n"
+        "{"
+        "\"intent\": \"schedule|cancel|reschedule|check_conflicts|none\","
+        "\"natural_response\": \"what Mira should say back to the user\","
+        "\"params\": { ... }"
+        "}\n"
+        "The params object depends on the intent:\n"
+        "- schedule: {summary, start_iso, end_iso, attendees (array of emails, may be empty)}\n"
+        "- cancel: {event_start_iso, summary}\n"
+        "- reschedule: {old_start_iso, summary, new_start_iso, new_end_iso}\n"
+        "- check_conflicts: {start_iso, end_iso}\n"
+        "Use the current day in the user's timezone if no date is given.\n"
+        "All times MUST be full ISO-8601 with timezone, e.g. 2025-11-16T21:00:00-05:00.\n"
+        "If you are not sure what to do, set intent to 'none'.\n"
+        "Respond with JSON ONLY (no extra commentary)."
+    )
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_input},
+    ]
+
+    try:
+        comp = oa.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=messages,
+            temperature=0.2,
+            max_tokens=300,
+        )
+        raw = (comp.choices[0].message.content or "").strip()
+    except Exception as e:
+        logging.exception(f"Calendar intent LLM call failed: {e}")
+        return None
+
+    # Try to parse JSON directly; if that fails, try to extract from text
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        try:
+            start = raw.index("{")
+            end = raw.rindex("}") + 1
+            parsed = json.loads(raw[start:end])
+        except Exception:
+            logging.debug(f"Failed to parse calendar intent JSON from: {raw[:200]}")
+            return None
+
+    intent = (parsed.get("intent") or "none").lower()
+    natural_response = parsed.get("natural_response") or ""
+    params = parsed.get("params") or {}
+
+    if intent == "none":
+        return None
+
+    # Execute the corresponding calendar action
+    try:
+        if intent == "schedule":
+            payload = {
+                "summary": params.get("summary") or "Meeting",
+                "start": params.get("start_iso"),
+                "end": params.get("end_iso"),
+                "attendees": params.get("attendees") or [],
+                "description": params.get("description") or None,
+                "location": params.get("location") or None,
+            }
+            if not payload["start"] or not payload["end"]:
+                raise HTTPException(400, "Missing start/end for schedule action")
+
+            result = await _call_calendar_action_endpoint(
+                auth_header,
+                "/api/assistant/calendar/schedule",
+                payload,
+            )
+
+        elif intent == "cancel":
+            payload = {
+                "start": params.get("event_start_iso"),
+                "summary": params.get("summary") or None,
+                "event_id": params.get("event_id") or None,
+            }
+            if not payload["start"] and not payload["event_id"]:
+                raise HTTPException(400, "Missing start or event_id for cancel action")
+
+            result = await _call_calendar_action_endpoint(
+                auth_header,
+                "/api/assistant/calendar/cancel",
+                payload,
+            )
+
+        elif intent == "reschedule":
+            payload = {
+                "old_start": params.get("old_start_iso"),
+                "summary": params.get("summary") or None,
+                "event_id": params.get("event_id") or None,
+                "new_start": params.get("new_start_iso"),
+                "new_end": params.get("new_end_iso"),
+            }
+            if (not payload["old_start"] and not payload["event_id"]) or not payload["new_start"] or not payload["new_end"]:
+                raise HTTPException(400, "Missing required fields for reschedule action")
+
+            result = await _call_calendar_action_endpoint(
+                auth_header,
+                "/api/assistant/calendar/reschedule",
+                payload,
+            )
+
+        elif intent == "check_conflicts":
+            payload = {
+                "start": params.get("start_iso"),
+                "end": params.get("end_iso"),
+            }
+            if not payload["start"] or not payload["end"]:
+                raise HTTPException(400, "Missing start/end for check_conflicts action")
+
+            result = await _call_calendar_action_endpoint(
+                auth_header,
+                "/api/assistant/calendar/check-conflicts",
+                payload,
+            )
+        else:
+            # Unknown intent – let normal chat pipeline handle it
+            return None
+
+    except HTTPException as he:
+        natural_response = f"I tried to update your calendar but got an error: {he.detail}"
+        result = None
+    except Exception as e:
+        logging.exception(f"Calendar action execution failed: {e}")
+        natural_response = "I ran into an error while trying to update your calendar."
+        result = None
+
+    # Optional: TTS for the natural response
+    audio_base64: Optional[str] = None
+    try:
+        el = get_elevenlabs_client()
+        voice_id = os.getenv("ELEVENLABS_VOICE_ID")
+        if not voice_id:
+            raise Exception("Missing ELEVENLABS_VOICE_ID")
+
+        stream = el.text_to_speech.convert(
+            voice_id=voice_id,
+            model_id="eleven_turbo_v2",
+            text=natural_response,
+            output_format="mp3_44100_128",
+        )
+        mp3_bytes = _stream_to_bytes(stream)
+        if mp3_bytes:
+            audio_base64 = base64.b64encode(mp3_bytes).decode("ascii")
+
+    except Exception as e:
+        logging.exception(f"Failed to generate TTS for calendar action: {e}")
+        audio_base64 = None
+
+    # Return the same shape as the rest of the voice_pipeline
+    return JSONResponse({
+        "text": natural_response,
+        "audio": audio_base64,
+        "userText": user_input,
+        "action": f"calendar_{intent}",
+        "actionResult": result,
+    })
+    
 @router.post("/voice")
 async def voice_pipeline(
     request: Request,
@@ -656,6 +878,11 @@ async def voice_pipeline(
                 "audio": None,
                 "userText": user_input,
             })
+        
+        # 2.4) Calendar actions (schedule / cancel / reschedule / conflicts)
+        cal_action_response = await _handle_calendar_voice_command(user_input, auth_header)
+        if cal_action_response is not None:
+            return cal_action_response
 
         # 2.5) Intent: Morning brief navigate
 
@@ -874,3 +1101,4 @@ def generate_voice(text: str) -> tuple[str, str]:
         import traceback
         traceback.print_exc()
         return "", ""
+    
