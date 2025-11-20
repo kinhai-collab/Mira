@@ -136,30 +136,7 @@ export default function Dashboard() {
 	const [isLoadingReminders, setIsLoadingReminders] = useState<boolean>(true);
 
 	// Check authentication on mount and refresh token if needed
-	// Dashboard data state
-	const [emailStats, setEmailStats] = useState<EmailStats | null>(null);
-	const [eventStats, setEventStats] = useState<EventStats | null>(null);
-	const [taskStats, setTaskStats] = useState<TaskStats | null>(null);
-	const [reminderStats, setReminderStats] = useState<ReminderStats | null>(null);
-	const [isLoadingEmails, setIsLoadingEmails] = useState<boolean>(true);
-	const [isLoadingEvents, setIsLoadingEvents] = useState<boolean>(true);
-	const [isLoadingTasks, setIsLoadingTasks] = useState<boolean>(true);
-	const [isLoadingReminders, setIsLoadingReminders] = useState<boolean>(true);
-
-	// Check authentication on mount and refresh token if needed
 	useEffect(() => {
-		const checkAuth = async () => {
-			// Try to refresh token if expired (for returning users)
-			const { getValidToken } = await import("@/utils/auth");
-			const validToken = await getValidToken();
-			
-			if (!validToken) {
-				// No valid token, redirect to login
-				router.push("/login");
-				return;
-			}
-		};
-		checkAuth();
 		const checkAuth = async () => {
 			// Try to refresh token if expired (for returning users)
 			const { getValidToken } = await import("@/utils/auth");
@@ -182,16 +159,6 @@ export default function Dashboard() {
 
 		return () => clearInterval(timer);
 	}, []);
-
-	const displayLocation = isLocationLoading ? "Locating..." : location || "New York";
-	const displayTemperature =
-		temperatureC != null
-			? `${Math.round(temperatureC)}°C`
-			: isWeatherLoading
-			? "Loading..."
-			: "--";
-	const displayWeatherDescription =
-		weatherDescription ?? (isWeatherLoading ? "Loading..." : "Weather unavailable");
 
 	const displayLocation = isLocationLoading ? "Locating..." : location || "New York";
 	const displayTemperature =

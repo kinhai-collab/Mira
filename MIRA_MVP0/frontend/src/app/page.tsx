@@ -12,12 +12,6 @@ import {
 	type VoiceSummaryStep,
 } from "@/components/voice/EmailCalendarOverlay";
 import {
-	EmailCalendarOverlay,
-	type VoiceSummaryCalendarEvent,
-	type VoiceSummaryEmail,
-	type VoiceSummaryStep,
-} from "@/components/voice/EmailCalendarOverlay";
-import {
 	extractTokenFromUrl,
 	storeAuthToken,
 } from "@/utils/auth";
@@ -66,14 +60,8 @@ export default function Home() {
 	const [isListening, setIsListening] = useState(true);
 	const [greeting, setGreeting] = useState<string>("");
 	// Removed unused isMicOn state
-	// Removed unused isMicOn state
 	const [isConversationActive, setIsConversationActive] = useState(false);
 	const [isMuted, setIsMuted] = useState(false);
-	const [isTextMode, setIsTextMode] = useState(false);
-	const [textMessages, setTextMessages] = useState<
-		Array<{ role: "user" | "assistant"; content: string }>
-	>([]);
-	const [isLoadingResponse, setIsLoadingResponse] = useState(false);
 	const [isTextMode, setIsTextMode] = useState(false);
 	const [textMessages, setTextMessages] = useState<
 		Array<{ role: "user" | "assistant"; content: string }>
@@ -87,7 +75,6 @@ export default function Home() {
 	// Timezone for formatting the date/time for the detected location.
 	// Default to the browser/system timezone — good offline/frontend-only fallback.
 	const [timezone, setTimezone] = useState<string>(
-		() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
 		() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
 	);
 
@@ -199,22 +186,6 @@ const fetchOutlookEvents = useCallback(async (): Promise<VoiceSummaryCalendarEve
 	const [pendingSummaryMessage, setPendingSummaryMessage] = useState<
 		string | null
 	>(null);
-	const [summaryOverlayVisible, setSummaryOverlayVisible] = useState(false);
-	const [summarySteps, setSummarySteps] = useState<VoiceSummaryStep[]>(() =>
-		prepareVoiceSteps(DEFAULT_SUMMARY_STEPS)
-	);
-	const [summaryStage, setSummaryStage] = useState<"thinking" | "summary">(
-		"thinking"
-	);
-	const [summaryEmails, setSummaryEmails] = useState<VoiceSummaryEmail[]>([]);
-	const [summaryEvents, setSummaryEvents] = useState<
-		VoiceSummaryCalendarEvent[]
-	>([]);
-	const [summaryFocus, setSummaryFocus] = useState<string | null>(null);
-	const [summaryRunId, setSummaryRunId] = useState(0);
-	const [pendingSummaryMessage, setPendingSummaryMessage] = useState<
-		string | null
-	>(null);
 
 	// Added: get system/geolocation and reverse-geocode to a readable place name
 	useEffect(() => {
@@ -224,10 +195,6 @@ const fetchOutlookEvents = useCallback(async (): Promise<VoiceSummaryCalendarEve
 				const res = await fetch("https://ipapi.co/json/");
 				if (!res.ok) return;
 				const data = await res.json();
-				const city =
-					data.city || data.region || data.region_code || data.country_name;
-				// ipapi returns a `timezone` field like 'America/New_York'
-				if (data.timezone) setTimezone(data.timezone);
 				const city =
 					data.city || data.region || data.region_code || data.country_name;
 				// ipapi returns a `timezone` field like 'America/New_York'
@@ -276,22 +243,11 @@ const fetchOutlookEvents = useCallback(async (): Promise<VoiceSummaryCalendarEve
 				// match the geolocation. If you need absolute timezone-from-coords,
 				// you'd need a timezone lookup service or library (server or heavy client bundle).
 				setTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
-				// If possible, keep the browser's timezone (Intl); this will usually
-				// match the geolocation. If you need absolute timezone-from-coords,
-				// you'd need a timezone lookup service or library (server or heavy client bundle).
-				setTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
 
 				// Save coordinates for weather lookup
 				setLatitude(latitude);
 				setLongitude(longitude);
-				// Save coordinates for weather lookup
-				setLatitude(latitude);
-				setLongitude(longitude);
 
-				// Fetch weather for these coords (via backend proxy)
-				fetchWeatherForCoords(latitude, longitude).catch((e) =>
-					console.error("Weather fetch failed:", e)
-				);
 				// Fetch weather for these coords (via backend proxy)
 				fetchWeatherForCoords(latitude, longitude).catch((e) =>
 					console.error("Weather fetch failed:", e)
@@ -322,12 +278,6 @@ const fetchOutlookEvents = useCallback(async (): Promise<VoiceSummaryCalendarEve
 	};
 	// Removed unused handleMicToggle
 
-	const handleMuteToggle = () => {
-		const muteState = !isMuted;
-		setIsMuted(muteState);
-		setMiraMute(muteState);
-	};
-
 	useEffect(() => {
 		console.log("Initializing Mira...");
 		startMiraVoice();
@@ -354,12 +304,6 @@ const fetchOutlookEvents = useCallback(async (): Promise<VoiceSummaryCalendarEve
 
 			if (!validToken) {
 				// No valid token, redirect to login
-			// Try to refresh token if expired (for returning users)
-			const { getValidToken } = await import("@/utils/auth");
-			const validToken = await getValidToken();
-
-			if (!validToken) {
-				// No valid token, redirect to login
 				router.push("/login");
 				return;
 			}
@@ -369,10 +313,6 @@ const fetchOutlookEvents = useCallback(async (): Promise<VoiceSummaryCalendarEve
 					process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
 				).replace(/\/+$/, "");
 				const email = localStorage.getItem("mira_email");
-				const apiBase = (
-					process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
-				).replace(/\/+$/, "");
-				const email = localStorage.getItem("mira_email");
 
 				if (email) {
 					const onboardingRes = await fetch(
@@ -384,23 +324,7 @@ const fetchOutlookEvents = useCallback(async (): Promise<VoiceSummaryCalendarEve
 							},
 						}
 					);
-				if (email) {
-					const onboardingRes = await fetch(
-						`${apiBase}/onboarding_status?email=${encodeURIComponent(email)}`,
-						{
-							headers: {
-								Authorization: `Bearer ${validToken}`,
-								"Content-Type": "application/json",
-							},
-						}
-					);
 
-					if (onboardingRes.ok) {
-						const onboardingData = await onboardingRes.json();
-						const onboarded = !!onboardingData?.onboarded;
-						if (!onboarded) {
-							router.push("/onboarding/step1");
-							return;
 					if (onboardingRes.ok) {
 						const onboardingData = await onboardingRes.json();
 						const onboarded = !!onboardingData?.onboarded;
@@ -720,105 +644,11 @@ const fetchOutlookEvents = useCallback(async (): Promise<VoiceSummaryCalendarEve
 		}
 	};
 
-	// Handle text input submission
-	const handleTextSubmit = async (text?: string) => {
-		const queryText = text || input.trim();
-		if (!queryText) return;
-
-		// Add user message to conversation
-		setTextMessages((prev) => [...prev, { role: "user", content: queryText }]);
-		setInput("");
-		setIsLoadingResponse(true);
-
-		try {
-			const apiBase = (
-				process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
-			).replace(/\/+$/, "");
-			const { getValidToken } = await import("@/utils/auth");
-			const token = await getValidToken();
-
-			const response = await fetch(`${apiBase}/api/text-query`, {
-				method: "POST",
-				headers: {
-					"Content-Type": "application/json",
-					...(token ? { Authorization: `Bearer ${token}` } : {}),
-				},
-				body: JSON.stringify({
-					query: queryText,
-					history: textMessages,
-					token, // ✅ include token in body for backend
-				}),
-			});
-
-			// ✅ log backend response status and any text before throwing
-			if (!response.ok) {
-				const errorText = await response.text();
-				console.error("❌ Backend returned error:", response.status, errorText);
-				throw new Error(`Backend returned ${response.status}: ${errorText}`);
-			}
-
-			let data;
-			try {
-				data = await response.json();
-			} catch (err) {
-				console.error("❌ Failed to parse JSON from backend:", err);
-				throw new Error("Invalid JSON in backend response");
-			}
-
-			// ✅ Handle navigation actions
-			if (data.action === "navigate" && data.actionTarget) {
-				setTimeout(() => router.push(data.actionTarget), 500);
-				setTextMessages((prev) => [
-					...prev,
-					{ role: "assistant", content: data.text || "Navigating..." },
-				]);
-				return;
-			}
-
-			// ✅ Handle calendar/email summary
-			if (data.action === "email_calendar_summary") {
-				if (data.text) setPendingSummaryMessage(data.text);
-				if (typeof window !== "undefined") {
-					window.dispatchEvent(
-						new CustomEvent("miraEmailCalendarSummary", {
-							detail: data.actionData ?? {},
-						})
-					);
-				}
-				return;
-			}
-
-			// ✅ Default case — add assistant text reply
-			if (data.text) {
-				setTextMessages((prev) => [
-					...prev,
-					{ role: "assistant", content: data.text },
-				]);
-			} else {
-				console.warn("⚠️ No text returned from backend:", data);
-			}
-		} catch (error) {
-			console.error("🚨 Error sending text query:", error);
-			setTextMessages((prev) => [
-				...prev,
-				{
-					role: "assistant",
-					content: "Sorry, I encountered an error processing your request.",
-				},
-			]);
-		} finally {
-			setIsLoadingResponse(false);
-		}
-	};
-
 	return (
 		<div className="flex flex-col min-h-screen bg-[#F8F8FB] text-gray-800 overflow-hidden">
 			<main className="flex-1 flex flex-col items-center justify-center px-4 sm:px-6 md:px-8 relative overflow-y-auto pb-20 md:pb-0">
 				{/* Top-left bar */}
 				<div className="absolute top-4 sm:top-6 left-4 sm:left-10 flex flex-wrap items-center gap-2 sm:gap-3 text-xs sm:text-sm">
-					<span className="font-medium text-gray-800">
-						{getFormattedDate(timezone)}
-					</span>
 					<span className="font-medium text-gray-800">
 						{getFormattedDate(timezone)}
 					</span>
@@ -1073,19 +903,8 @@ const fetchOutlookEvents = useCallback(async (): Promise<VoiceSummaryCalendarEve
 									setIsMuted(false);
 									setMiraMute(false);
 								}
-								const newTextMode = !isTextMode;
-								setIsTextMode(newTextMode);
-								if (newTextMode) {
-									// Switching to text mode
-									setIsListening(false);
-									setIsConversationActive(false);
-									stopMiraVoice();
-									setIsMuted(false);
-									setMiraMute(false);
-								}
 							}}
 							className={`flex items-center justify-center w-[60px] h-[28px] rounded-full border border-gray-200 transition-all duration-300 ${
-								isTextMode || !isListening
 								isTextMode || !isListening
 									? "bg-black hover:bg-gray-800"
 									: "bg-white hover:bg-gray-50"
