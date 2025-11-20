@@ -20,7 +20,6 @@ import {
 	stopMiraVoice,
 	setMiraMute,
 } from "@/utils/voice/voiceHandler";
-import { getWeather } from "@/utils/weather";
 
 const DEFAULT_SUMMARY_STEPS = [
 	{ id: "emails", label: "Checking your inbox for priority emails..." },
@@ -161,7 +160,7 @@ const fetchOutlookEvents = useCallback(async (): Promise<VoiceSummaryCalendarEve
 		provider: "outlook",
 	}));
 	*/
- }, [timezone]);
+}, []);
 
 	// Weather state: store coords and current temperature. We'll call Open-Meteo (no API key)
 	const [latitude, setLatitude] = useState<number | null>(null);
@@ -523,12 +522,12 @@ const fetchOutlookEvents = useCallback(async (): Promise<VoiceSummaryCalendarEve
 			if (!resp.ok) {
 				// Try to read response body for diagnostics
 				let details = "";
-				try {
-					const txt = await resp.text();
-					details = txt;
-				} catch (e) {
-					details = "<unreadable response body>";
-				}
+			try {
+				const txt = await resp.text();
+				details = txt;
+			} catch {
+				details = "<unreadable response body>";
+			}
 				throw new Error(`Weather proxy failed: ${resp.status} ${details}`);
 			}
 			const data = await resp.json();

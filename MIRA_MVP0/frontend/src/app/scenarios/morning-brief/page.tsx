@@ -37,44 +37,6 @@ export default function MorningBrief() {
 	const [error, setError] = useState<string | null>(null);
 	const audioRef = useRef<HTMLAudioElement | null>(null);
 	
-	const playAudio = () => {
-		if (!audioRef.current) return;
-		
-		// Prefer base64 audio (works in Lambda)
-		if (briefData?.audio_base64) {
-			try {
-				const audioBinary = atob(briefData.audio_base64);
-				const arrayBuffer = new ArrayBuffer(audioBinary.length);
-				const view = new Uint8Array(arrayBuffer);
-				for (let i = 0; i < audioBinary.length; i++) {
-					view[i] = audioBinary.charCodeAt(i);
-				}
-				const blob = new Blob([view], { type: "audio/mpeg" });
-				const url = URL.createObjectURL(blob);
-				audioRef.current.src = url;
-				audioRef.current.play().catch((err) => {
-					console.error("Error playing audio:", err);
-				});
-				// Clean up URL when done
-				audioRef.current.addEventListener("ended", () => {
-					URL.revokeObjectURL(url);
-				}, { once: true });
-			} catch (err) {
-				console.error("Error decoding base64 audio:", err);
-			}
-		} else if (briefData?.audio_url) {
-			// Fallback to URL if base64 not available
-			const apiBase = (
-				process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
-			).replace(/\/+$/, "");
-			const fullAudioUrl = `${apiBase}${briefData.audio_url}`;
-			audioRef.current.src = fullAudioUrl;
-			audioRef.current.play().catch((err) => {
-				console.error("Error playing audio:", err);
-			});
-		}
-	};
-
 	// Handle calendar modification from voice commands
 	const handleCalendarModify = async (eventName: string, action: string, newTime?: string) => {
 		try {
@@ -294,7 +256,7 @@ export default function MorningBrief() {
 		};
 
 		fetchMorningBrief();
-	}, []);
+	}, [router]);
 
 	// Auto-advance from thinking stage after loading completes
 	useEffect(() => {
