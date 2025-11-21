@@ -899,7 +899,7 @@ async def text_query_pipeline(request: Request):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Text query pipeline failed: {e}")
 
-# Helper: call calendar endpoints
+# Helper: call calendar endpoints    
 async def _call_calendar_action_endpoint(
     auth_header: Optional[str],
     endpoint: str,
