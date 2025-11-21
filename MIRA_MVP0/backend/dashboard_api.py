@@ -7,6 +7,7 @@ import os
 import re
 from dotenv import load_dotenv
 from googleapiclient.discovery import build
+from openai import OpenAI
 
 # Import the Google Calendar service functions (same ones used by morning brief)
 from Google_Calendar_API.service import get_creds, _creds
@@ -17,7 +18,7 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 router = APIRouter()
-
+client = OpenAI()
 
 def get_user_from_token(authorization: Optional[str]) -> dict:
     """Extract and validate user from Supabase token."""
@@ -670,6 +671,25 @@ async def get_reminder_stats(authorization: Optional[str] = Header(default=None)
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error fetching reminder stats: {str(e)}")
 
+# Summarize the emails using GPT-4o-mini
+async def summarize_email(text: str) -> str:
+    # Ignore tiny useless bodies
+    if not text or len(text.strip()) < 20:
+        return ""
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "Summarize this email in a short clear paragraph."},
+                {"role": "user", "content": text}
+            ],
+            max_tokens=120
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        print("Summary error:", e)
+        return ""
 
 @router.get("/dashboard/emails/list")
 async def get_email_list(
@@ -718,7 +738,7 @@ async def get_email_list(
         # Fetch detailed info for each email
         emails_list = []
         
-        for msg in messages:
+        for i, msg in enumerate(messages):
             try:
                 msg_id = msg["id"]
                 detail_data = gmail_service.users().messages().get(
@@ -801,7 +821,13 @@ async def get_email_list(
                 
                 # Check if unread
                 is_unread = "UNREAD" in labels
-                
+
+                # Only summarize the first 10 emails
+                if i < 10:
+                    summary = await summarize_email(body)
+                else:
+                    summary = ""
+
                 email_info = {
                     "id": msg_id,
                     "sender_name": sender_name,
@@ -809,6 +835,7 @@ async def get_email_list(
                     "subject": subject,
                     "snippet": snippet,
                     "body": body,
+                    "summary": summary,
                     "priority": priority,
                     "time_ago": time_ago,
                     "timestamp": email_datetime.isoformat(),
