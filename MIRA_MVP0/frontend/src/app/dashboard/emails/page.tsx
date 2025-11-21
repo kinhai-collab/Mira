@@ -522,11 +522,11 @@ export default function EmailsPage() {
 
 						{/* Content */}
 						<div className="flex-1 overflow-y-auto p-5">
-							{selectedEmail.body ? (
+							{selectedEmail.summary ? (
 								<div
 									className="text-gray-700 text-[14px] leading-relaxed whitespace-pre-wrap"
 									dangerouslySetInnerHTML={{
-										__html: selectedEmail.body.replace(/\n/g, "<br />"),
+										__html: selectedEmail.summary.replace(/\n/g, "<br />"),
 									}}
 								/>
 							) : (

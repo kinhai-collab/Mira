@@ -230,6 +230,12 @@ import memory_router
 from memory_test import router as memory_test_router
 
 
+# Optional memory router import - handle gracefully if module doesn't exist
+try:
+    from memory_router import router as memory_router
+except ImportError:
+    memory_router = None
+from calendar_actions import router as calendar_actions_router
 app = FastAPI()
 
 # CORS configuration
@@ -257,12 +263,15 @@ if os.getenv("MEMORY_DEBUG_ENABLED", "").lower() in ("1", "true", "yes"):
   app.include_router(memory_router.debug_router)
 
 app.include_router(memory_test_router)
+if memory_router is not None:
+    app.include_router(memory_router, prefix="/api/memory")
 app.include_router(stripe_router, prefix="/api")
 app.include_router(weather_router)
 register_google_calendar(app)
 app.include_router(gmail_reader)
 app.include_router(morning_brief_router)
 app.include_router(dashboard_router)
+app.include_router(calendar_actions_router, prefix="/api")
 
 
 @app.get("/envcheck")

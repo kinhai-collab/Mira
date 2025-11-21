@@ -225,8 +225,6 @@ function SummaryCard({
 	const unreadCount = emailsToShow.length
 		? Math.ceil(emailsToShow.length * 0.6)
 		: 0;
-	// const outlookCount = emails?.length ? emails.length - gmailCount : 0;
-	// const unreadCount = emails?.length ? Math.ceil(emails.length * 0.6) : 0;
 
 	// Ensure calendarEvents is always an array
 	const safeCalendarEvents: VoiceSummaryCalendarEvent[] = Array.isArray(
@@ -726,38 +724,38 @@ export function EmailCalendarOverlay({
 							provider?: string;
 						}
 
-    // Normalize backend email structure to match VoiceSummaryEmail interface
-    type EmailBackendRecord = {
-        id?: string;
-        sender_name?: string;
-        sender_email?: string;
-        from?: string;
-        subject?: string;
-        timestamp?: string;
-        receivedAt?: string;
-        snippet?: string;
-        body?: string;
-    };
+						// Normalize backend email structure to match VoiceSummaryEmail interface
+						type EmailBackendRecord = {
+							id?: string;
+							sender_name?: string;
+							sender_email?: string;
+							from?: string;
+							subject?: string;
+							timestamp?: string;
+							receivedAt?: string;
+							snippet?: string;
+							body?: string;
+						};
 
-    const safeEmails: VoiceSummaryEmail[] = Array.isArray(emails)
-        ? emails.map((e: VoiceSummaryEmail | EmailBackendRecord) => {
-            const backend = e as EmailBackendRecord;
-            const fromVal = backend.from ?? backend.sender_name ?? backend.sender_email ?? "Unknown";
-            const subjectVal = backend.subject ?? "No Subject";
-            const receivedAtVal = backend.timestamp ?? backend.receivedAt ?? "";
-            const idVal = backend.id ?? "";
-            const senderEmailVal = backend.sender_email ?? "";
-            const summaryVal = backend.snippet ?? backend.body ?? "";
-            return {
-                id: idVal,
-                from: String(fromVal),
-                senderEmail: String(senderEmailVal),
-                subject: String(subjectVal),
-                receivedAt: String(receivedAtVal),
-                summary: String(summaryVal),
-            } as VoiceSummaryEmail;
-        })
-        : [];
+						const safeEmails: VoiceSummaryEmail[] = Array.isArray(emails)
+							? emails.map((e: VoiceSummaryEmail | EmailBackendRecord) => {
+									const backend = e as EmailBackendRecord;
+									const fromVal = backend.from ?? backend.sender_name ?? backend.sender_email ?? "Unknown";
+									const subjectVal = backend.subject ?? "No Subject";
+									const receivedAtVal = backend.timestamp ?? backend.receivedAt ?? "";
+									const idVal = backend.id ?? "";
+									const senderEmailVal = backend.sender_email ?? "";
+									const summaryVal = backend.snippet ?? backend.body ?? "";
+									return {
+										id: idVal,
+										from: String(fromVal),
+										senderEmail: String(senderEmailVal),
+										subject: String(subjectVal),
+										receivedAt: String(receivedAtVal),
+										summary: String(summaryVal),
+									} as VoiceSummaryEmail;
+								})
+							: [];
 
 						const safeCalendarEvents: VoiceSummaryCalendarEvent[] =
 							Array.isArray(calendarEvents) ? calendarEvents : [];
