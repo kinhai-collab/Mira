@@ -13,11 +13,12 @@ from . import settings
 from supabase import create_client
 import os
 
-# Initialize Supabase client once
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+# Note: We're using the sb() helper from supa.py for consistency
+# But we keep this client for backward compatibility in upsert_creds
+from .settings import SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+# Normalize URL to remove trailing slash to prevent double-slash issues
+supabase = create_client(SUPABASE_URL.rstrip('/'), SUPABASE_SERVICE_ROLE_KEY)
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
@@ -116,6 +117,10 @@ def upsert_creds(payload):
 
 def get_creds(uid: str) -> Optional[Dict[str, Any]]:
     res = sb().table("google_calendar_credentials").select("*").eq("uid", uid).maybe_single().execute()
+    # Check if res is None first (e.g., if request failed with 406)
+    if res is None:
+        print(f"⚠️ get_creds: Supabase query returned None for uid={uid}")
+        return None
     return res.data if res.data else None
 
 def delete_creds(uid: str):

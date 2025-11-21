@@ -490,7 +490,8 @@ async def get_task_stats(authorization: Optional[str] = Header(default=None)):
         try:
             from supabase import create_client
             SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-            supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+            # Normalize URL to remove trailing slash to prevent double-slash issues
+            supabase = create_client(SUPABASE_URL.rstrip('/') if SUPABASE_URL else "", SUPABASE_SERVICE_ROLE_KEY)
             
             tasks_res = supabase.table("user_tasks").select("*").eq("uid", user["id"]).in_("status", ["pending", "in_progress"]).order("due_date", desc=False).execute()
             
@@ -592,7 +593,8 @@ async def get_reminder_stats(authorization: Optional[str] = Header(default=None)
         # Query Supabase for user reminders
         from supabase import create_client
         SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-        supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+        # Normalize URL to remove trailing slash to prevent double-slash issues
+        supabase = create_client(SUPABASE_URL.rstrip('/') if SUPABASE_URL else "", SUPABASE_SERVICE_ROLE_KEY)
         
         # Get all active reminders
         reminders_res = supabase.table("user_reminders").select("*").eq("uid", user["id"]).eq("status", "active").order("reminder_time", desc=False).execute()
