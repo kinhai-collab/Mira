@@ -224,14 +224,10 @@ export default function MorningBrief() {
 							// This should work since user clicked to navigate to this page
 							const playPromise = audioRef.current.play();
 							if (playPromise !== undefined) {
-								playPromise
-									.then(() => {
-										console.log("✅ Morning brief audio playing automatically");
-									})
-									.catch((err) => {
-										// Autoplay blocked - play button will be shown (it's already in the UI)
-										console.log("⚠️ Autoplay blocked - user can click 'Play Morning Brief' button:", err);
-									});
+								playPromise.catch((err) => {
+									// Autoplay blocked - user may need to interact with page first
+									console.error("Autoplay blocked:", err);
+								});
 							}
 							
 							// Stop voice handler while brief audio is playing (one-time listener)
@@ -453,11 +449,6 @@ export default function MorningBrief() {
 						)}
 						{!loading && !error && briefData && (
 							<>
-								{/* Play Audio Button */}
-								{(briefData.audio_base64 || briefData.audio_url) && (
-									<div className="mb-4 flex justify-center">
-									</div>
-								)}
 								{stage === "recommendation" && (
 									<RecommendationPanel
 										briefText={briefData.text}
