@@ -3,7 +3,7 @@ import requests
 from datetime import datetime
 import os
 
-OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
+WEATHERAPI_KEY = os.getenv("WEATHERAPI_KEY")
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
 
 
@@ -16,45 +16,44 @@ def get_weather_and_commute(user_id: str, events: list):
     commute_summary = _get_commute_summary(events)
     return weather_summary, commute_summary
 
-
 # --------------------------------------------------------------------------- #
 # Weather
 # --------------------------------------------------------------------------- #
 
 def _get_weather_summary():
-    """Fetches current and daily forecast using OpenWeatherMap API."""
-    # Placeholder coordinates; replace with device location later.
     lat, lon = 40.4406, -79.9959  # Pittsburgh
 
-    if not OPENWEATHER_API_KEY:
-        return "Weather data unavailable right now."
-
     try:
-        res = requests.get(
-            f"https://api.openweathermap.org/data/2.5/forecast",
-            params={"lat": lat, "lon": lon, "appid": OPENWEATHER_API_KEY, "units": "imperial"},
-            timeout=5,
+        url = (
+            f"https://api.open-meteo.com/v1/forecast?"
+            f"latitude={lat}&longitude={lon}&current_weather=true&temperature_unit=celsius"
         )
+
+        res = requests.get(url, timeout=5)
         data = res.json()
 
-        current = data["list"][0]
-        temp = round(current["main"]["temp"])
-        weather = current["weather"][0]["description"].capitalize()
-        high = round(max(item["main"]["temp_max"] for item in data["list"][:8]))
-        low = round(min(item["main"]["temp_min"] for item in data["list"][:8]))
+        temp_raw = data["current_weather"]["temperature"]
+        temp = round(temp_raw)  # removes decimals → 6 instead of 6.1
 
-        # Generate conversational output
-        summary = f"It’s {temp}° and {weather.lower()}. The high today is {high} and the low is {low}."
-        if "rain" in weather.lower():
-            summary += " Don’t forget your umbrella!"
-        elif "snow" in weather.lower():
-            summary += " Dress warm — snow expected."
-        return summary
+        code = data["current_weather"]["weathercode"]
+
+        # Simple condition mapping
+        if code == 0:
+            condition = "clear skies"
+        elif code in [1, 2, 3]:
+            condition = "partly cloudy"
+        elif 51 <= code <= 67:
+            condition = "rainy"
+        elif 71 <= code <= 77:
+            condition = "snowy"
+        else:
+            condition = "mild"
+
+        return f"It’s {temp}°C with {condition} right now."
 
     except Exception as e:
         print("Weather API error:", e)
         return "Couldn’t fetch the weather right now."
-
 
 # --------------------------------------------------------------------------- #
 # Commute

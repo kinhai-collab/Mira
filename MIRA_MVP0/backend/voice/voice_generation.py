@@ -1,6 +1,7 @@
-import os
+﻿import os
 import re
 import base64
+import asyncio
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Request
 from fastapi.responses import StreamingResponse, JSONResponse
 from datetime import datetime
@@ -9,6 +10,23 @@ import tempfile
 import json
 import httpx
 from openai import OpenAI
+from settings import get_uid_from_token
+
+# Optional memory imports - handle gracefully if modules don't exist
+try:
+    from memory_service import get_memory_service
+except ImportError:
+    get_memory_service = None
+
+try:
+    from memory_manager import get_memory_manager
+except ImportError:
+    get_memory_manager = None
+
+try:
+    from intelligent_learner import get_intelligent_learner
+except ImportError:
+    get_intelligent_learner = None
 
 import subprocess
 import shutil
@@ -18,6 +36,24 @@ import logging
 import base64
 
 logging.basicConfig(level=logging.INFO)
+
+def preprocess_text_for_tts(text: str) -> str:
+    """
+    Preprocess text to handle any remaining parenthetical expressions.
+    The AI should now generate official ElevenLabs v3 audio tags directly.
+    """
+    # Convert any remaining parentheticals to official tags (safety net)
+    text = re.sub(r'\(laughs?\)', r'[laughs]', text, flags=re.IGNORECASE)
+    text = re.sub(r'\(sighs?\)', r'[sighs]', text, flags=re.IGNORECASE)
+    text = re.sub(r'\(whispers?\)', r'[whispers]', text, flags=re.IGNORECASE)
+    
+    # Remove any other parentheticals that might slip through
+    text = re.sub(r'\([^)]*\)', '', text)  
+    
+    # Clean up extra whitespace
+    text = re.sub(r'\s+', ' ', text).strip()
+    
+    return text
 
 def _stream_to_bytes(stream) -> bytes:
     """
@@ -67,9 +103,14 @@ def _stream_to_bytes(stream) -> bytes:
             except Exception:
                 logging.debug(f"_stream_to_bytes: skipping chunk of type {type(c)}")
     return bytes(out)
+import httpx
+from openai import OpenAI
+
 
 router = APIRouter()
 
+# It it working with hardcode - version 2
+# It it working with hardcode - version 2
 # It it working with hardcode - version 2
 client = None
 
@@ -342,8 +383,13 @@ async def generate_voice(text: str = "Hello from Mira!"):
     """
     logging.info(f"Generating voice for text: {text[:50]}...")
     try:
+        # Preprocess text to handle parenthetical expressions
+        processed_text = preprocess_text_for_tts(text)
+        logging.info(f"Processed text: {processed_text[:50]}...")
+        
         # Get the ElevenLabs client (with lazy import)
         elevenlabs_client = get_elevenlabs_client()
+
 
         voice_id = os.getenv("ELEVENLABS_VOICE_ID")
         if not voice_id:
@@ -353,7 +399,7 @@ async def generate_voice(text: str = "Hello from Mira!"):
         audio_stream = elevenlabs_client.text_to_speech.convert(
             voice_id=voice_id,
             model_id="eleven_turbo_v2",
-            text=text,
+            text=f'<speak><break time="300ms"/>{processed_text}</speak>',
             output_format="mp3_44100_128",
         )
 
@@ -368,6 +414,14 @@ async def generate_voice(text: str = "Hello from Mira!"):
         except Exception as e:
             logging.exception(f"Failed to collect audio stream: {e}")
             audio_bytes = b""
+        
+        # Combine all chunks into one binary MP3 blob
+        audio_bytes = b"".join(list(audio_stream))
+
+        # Debug: Check the first few bytes to ensure it's valid MP3
+        print(f"Audio bytes length: {len(audio_bytes)}")
+        print(f"First 16 bytes (hex): {audio_bytes[:16].hex()}")
+        print(f"First 16 bytes (ascii): {audio_bytes[:16]}")
 
         # Check if it starts with MP3 sync word (0xFF 0xFB or 0xFF 0xFA) or ID3 tag (0x49 0x44 0x33)
         if len(audio_bytes) >= 3:
@@ -377,6 +431,9 @@ async def generate_voice(text: str = "Hello from Mira!"):
             else:
                 logging.info("Audio data does not appear to be valid MP3")
                 logging.info("This might be base64 encoded or in a different format")
+                
+                print("Audio data does not appear to be valid MP3")
+                print("This might be base64 encoded or in a different format")
 
                 # Try to decode as base64 if it looks like base64
                 try:
@@ -387,6 +444,9 @@ async def generate_voice(text: str = "Hello from Mira!"):
                         decoded_bytes = base64.b64decode(audio_bytes)
                         logging.info(f"Decoded bytes length: {len(decoded_bytes)}")
                         logging.info(f"Decoded first 16 bytes (hex): {decoded_bytes[:16].hex()}")
+                        
+                        print(f"Decoded bytes length: {len(decoded_bytes)}")
+                        print(f"Decoded first 16 bytes (hex): {decoded_bytes[:16].hex()}")
 
                         # Check if decoded data is valid MP3
                         if len(decoded_bytes) >= 3:
@@ -398,6 +458,8 @@ async def generate_voice(text: str = "Hello from Mira!"):
                                 logging.info("Decoded data still doesn't look like MP3")
                 except Exception as e:
                     logging.info(f"Base64 decode failed: {e}")
+        
+                    print(f"Base64 decode failed: {e}")
 
         # Validate that we got audio data
         if not audio_bytes:
@@ -441,9 +503,8 @@ async def fetch_dashboard_data(user_token: str, has_email: bool, has_calendar: b
                     data = res.json()
                     # Extract emails from nested structure: {status: "success", data: {emails: [...]}}
                     emails = data.get("data", {}).get("emails", [])
-                    print(f"✅ Fetched {len(emails)} emails from dashboard API")
             except Exception as e:
-                print("⚠️ Email fetch failed:", e)
+                print("âš ï¸ Email fetch failed:", e)
 
         if has_calendar:
             try:
@@ -452,7 +513,6 @@ async def fetch_dashboard_data(user_token: str, has_email: bool, has_calendar: b
                     data = res.json()
                     # Extract events from nested structure: {status: "success", data: {events: [...]}}
                     calendar_events = data.get("data", {}).get("events", [])
-                    print(f"✅ Fetched {len(calendar_events)} calendar events from dashboard API")
             except Exception as e:
                 print("⚠️ Calendar fetch failed:", e)
 
@@ -589,6 +649,255 @@ async def text_query_pipeline(request: Request):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Text query pipeline failed: {e}")
+
+async def fetch_dashboard_data(user_token: str, has_email: bool, has_calendar: bool):
+    """
+    Fetches live Gmail and Calendar data for the logged-in user.
+    Calls internal dashboard endpoints with authentication.
+    """
+    base_url = os.getenv("API_BASE_URL", "http://127.0.0.1:8000")
+    headers = {
+        "Authorization": f"Bearer {user_token}",
+        "Content-Type": "application/json",
+    }
+
+    emails = []
+    calendar_events = []
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        if has_email:
+            try:
+                res = await client.get(f"{base_url}/dashboard/emails/list", headers=headers)
+                if res.status_code == 200:
+                    data = res.json()
+                    # Extract emails from nested structure: {status: "success", data: {emails: [...]}}
+                    emails = data.get("data", {}).get("emails", [])
+            except Exception as e:
+                print("⚠️ Email fetch failed:", e)
+
+        if has_calendar:
+            try:
+                res = await client.get(f"{base_url}/dashboard/events", headers=headers)
+                if res.status_code == 200:
+                    data = res.json()
+                    # Extract events from nested structure: {status: "success", data: {events: [...]}}
+                    calendar_events = data.get("data", {}).get("events", [])
+            except Exception as e:
+                print("âš ï¸ Calendar fetch failed:", e)
+
+    return emails, calendar_events
+
+
+
+@router.post("/text-query")
+async def text_query_pipeline(request: Request):
+    request_data = await request.json()
+    print("ðŸ“© Incoming text-query data:", request_data)
+
+    try:
+        user_input = request_data.get("query", "").strip()
+        history = request_data.get("history", [])
+        
+        # Extract user ID from authorization header
+        user_id = None
+        auth_header = request.headers.get("authorization")
+        if auth_header:
+            try:
+                user_id = get_uid_from_token(auth_header)
+            except Exception as e:
+                print(f"Could not extract user ID from token: {e}")
+                user_id = "anonymous"  # Fallback for development
+        
+        # Get memory service (handle gracefully if modules don't exist)
+        memory_service = get_memory_service() if get_memory_service else None
+        memory_manager = get_memory_manager() if get_memory_manager else None
+        intelligent_learner = get_intelligent_learner() if get_intelligent_learner else None
+        
+        if not user_input or len(user_input) < 1:
+            return JSONResponse({
+                "text": "",
+                "userText": user_input,
+            })
+        
+        # Check for morning brief intent
+        import re, base64
+        morning_brief_keywords = re.compile(r"(morning|daily|today).*(brief|summary|update)", re.I)
+        show_brief_keywords = re.compile(r"(show|give|tell|read).*(brief|summary|morning|daily)", re.I)
+        if morning_brief_keywords.search(user_input) or show_brief_keywords.search(user_input):
+            return JSONResponse({
+                "text": "Opening your morning brief now.",
+                "userText": user_input,
+                "action": "navigate",
+                "actionTarget": "/scenarios/morning-brief",
+            })
+        
+        # Check for email/calendar summary intent
+        email_keywords = re.compile(r"(email|inbox|mail|messages)", re.I)
+        calendar_keywords = re.compile(r"(calendar|schedule|event)", re.I)
+        has_email_intent = email_keywords.search(user_input)
+        has_calendar_intent = calendar_keywords.search(user_input)
+        
+        if has_email_intent or has_calendar_intent:
+            # Try to extract token from environment or a test fallback
+            # ✅ Extract token sent from frontend (if any)
+            user_token = request_data.get("token") or os.getenv("TEST_USER_TOKEN")
+
+            if not user_token:
+                print("⚠️ No token found in request or env; using mock local token.")
+                user_token = "local-dev-token"
+            else:
+                print("✅ Using user_token from frontend (truncated):", user_token[:12], "...")
+
+            steps = []
+            if has_email_intent:
+                steps.append({"id": "emails", "label": "Checking your inbox for priority emails..."})
+            if has_calendar_intent:
+                steps.append({"id": "calendar", "label": "Reviewing today's calendar events..."})
+                steps.append({"id": "highlights", "label": "Highlighting the most important meetings..."})
+            if has_email_intent and has_calendar_intent:
+                steps.append({"id": "conflicts", "label": "Noting any schedule conflicts..."})
+
+            # âœ… Fetch live data from dashboard routes
+            emails, calendar_events = await fetch_dashboard_data(user_token, has_email_intent, has_calendar_intent)
+
+            action_data = {
+                "steps": steps,
+                "emails": emails if has_email_intent else [],
+                "calendarEvents": calendar_events if has_calendar_intent else [],
+                "focus": (
+                    "You have upcoming events and important unread emails â€” review your schedule and respond accordingly."
+                    if has_email_intent and has_calendar_intent
+                    else None
+                ),
+            }
+
+            response_text = (
+                "Here's what I'm seeing in your inbox and calendar."
+                if has_email_intent and has_calendar_intent
+                else "Here's what I'm seeing in your inbox."
+                if has_email_intent
+                else "Here's what I'm seeing on your calendar."
+            )
+
+            return JSONResponse({
+                "text": response_text,
+                "userText": user_input,
+                "action": "email_calendar_summary",
+                "actionData": action_data,
+            })
+
+        
+
+
+
+
+        
+
+        # Retrieve relevant memories for context
+        relevant_memories = []
+        memory_context = ""
+        if user_id and user_id != "anonymous" and memory_service:
+            try:
+                relevant_memories = memory_service.retrieve_relevant_memories(
+                    user_id=user_id,
+                    query=user_input,
+                    limit=3,
+                    memory_type="conversation"
+                )
+                
+                # Also get recent conversations for additional context
+                recent_memories = memory_service.get_recent_conversations(user_id=user_id, limit=5)
+                
+                # Combine and deduplicate
+                all_memories = relevant_memories + recent_memories
+                seen_contents = set()
+                unique_memories = []
+                for mem in all_memories:
+                    content = mem.get("content", "")
+                    if content not in seen_contents:
+                        seen_contents.add(content)
+                        unique_memories.append(mem)
+                
+                # Format memories for context
+                if unique_memories:
+                    memory_strings = []
+                    for mem in unique_memories[:5]:  # Limit to 5 total
+                        metadata = mem.get("metadata", {})
+                        user_msg = metadata.get("user_message", "")
+                        assistant_msg = metadata.get("assistant_response", "")
+                        if user_msg and assistant_msg:
+                            memory_strings.append(f"Previous conversation: User: {user_msg} | Assistant: {assistant_msg}")
+                    
+                    if memory_strings:
+                        memory_context = "\n".join(memory_strings[:3])  # Limit context length
+                        
+            except Exception as e:
+                print(f"Error retrieving memories: {e}")
+                memory_context = ""
+
+        # Build chat message array
+        system_prompt = (
+            "You are Mira, a warm, helpful assistant. Keep answers concise and friendly."
+        )
+        
+        if memory_context:
+            system_prompt += f"\n\nRelevant context from previous conversations:\n{memory_context}"
+        
+        messages: List[Dict[str, Any]] = [
+            {
+                "role": "system",
+                "content": system_prompt,
+            },
+        ]        # Add history
+        if isinstance(history, list):
+            for msg in history[-10:]:  # Keep last 10 messages for context
+                if isinstance(msg, dict) and "role" in msg and "content" in msg:
+                    messages.append({"role": msg["role"], "content": msg["content"]})
+        
+        # Add current user query
+        messages.append({"role": "user", "content": user_input})
+        
+        # Generate reply using GPT
+        response_text = "I'm here to help!"
+        try:
+           
+            oa = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+            comp = oa.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=messages,
+                temperature=0.8,
+                max_tokens=300,
+            )
+            response_text = (comp.choices[0].message.content or "I'm here to help!").strip()
+        except Exception as e:
+            print(f"Error generating response: {e}")
+            response_text = "Sorry, I encountered an issue generating a response."
+        
+        # Store conversation in memory (async, don't wait)
+        if user_id and user_id != "anonymous" and response_text != "Sorry, I encountered an issue generating a response.":
+            if memory_manager:
+                # Fire and forget - don't wait for completion
+                asyncio.create_task(memory_manager.store_conversation(
+                    user_id=user_id,
+                    user_message=user_input,
+                    assistant_response=response_text
+                ))
+
+            # Analyze conversation for learning (async)
+            if intelligent_learner:
+                asyncio.create_task(intelligent_learner.analyze_conversation(
+                    user_id=user_id,
+                    user_message=user_input,
+                    assistant_response=response_text
+                ))
+        
+        return JSONResponse({
+            "text": response_text,
+            "userText": user_input,
+        })
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Text query pipeline failed: {e}")
     
 @router.post("/voice")
 async def voice_pipeline(
@@ -600,7 +909,7 @@ async def voice_pipeline(
     Accepts recorded audio, transcribes with Whisper, generates a chat reply, and optional TTS audio.
     Returns a JSON body compatible with the frontend voice handler.
     """
-    # 🔑 Extract Authorization token from headers
+    # ðŸ”‘ Extract Authorization token from headers
     headers = request.headers
     auth_header = headers.get("authorization")
     user_token = auth_header.replace("Bearer ", "") if auth_header else None
@@ -608,6 +917,7 @@ async def voice_pipeline(
     if not user_token:
         # fallback for local development
         user_token = os.getenv("TEST_USER_TOKEN", "local-dev-token")
+    
     try:
         # 1) Persist upload to temp file (OpenAI SDK expects a real file object)
         with tempfile.NamedTemporaryFile(delete=False, suffix=".webm", dir="/tmp") as tmp:
@@ -657,6 +967,20 @@ async def voice_pipeline(
                 "userText": user_input,
             })
 
+        # Extract user ID from authorization header
+        user_id = None
+        if auth_header:
+            try:
+                user_id = get_uid_from_token(auth_header)
+            except Exception as e:
+                print(f"Could not extract user ID from token: {e}")
+                user_id = "anonymous"  # Fallback for development
+        
+        # Get memory service (handle gracefully if modules don't exist)
+        memory_service = get_memory_service() if get_memory_service else None
+        memory_manager = get_memory_manager() if get_memory_manager else None
+        intelligent_learner = get_intelligent_learner() if get_intelligent_learner else None
+
         # 2.5) Intent: Morning brief navigate
 
         morning_brief_keywords = re.compile(r"(morning|daily|today).*(brief|summary|update)", re.I)
@@ -671,7 +995,7 @@ async def voice_pipeline(
                     stream = el.text_to_speech.convert(
                         voice_id=voice_id,
                         model_id="eleven_turbo_v2",
-                        text="Opening your morning brief now.",
+                        text=f'<speak><break time="300ms"/>Opening your morning brief now.</speak>',
                         output_format="mp3_44100_128",
                     )
                     try:
@@ -699,13 +1023,16 @@ async def voice_pipeline(
         
         
         if has_email_intent or has_calendar_intent:
-            # ✅ Use token extracted from Authorization header at top of function (line 298)
-            # user_token already set, just verify it's available
+            # Try to extract token from environment or a test fallback
+            # âœ… Extract token sent from frontend (if any)
+
+
             if not user_token:
-                print("⚠️ No token found; using mock local token.")
+                print("âš ï¸ No token found in request or env; using mock local token.")
                 user_token = "local-dev-token"
             else:
-                print(f"✅ Using user_token from Authorization header (truncated): {user_token[:12]}...")
+                print("âœ… Using user_token from frontend (truncated):", user_token[:12], "...")
+
 
             steps = []
             if has_email_intent:
@@ -716,7 +1043,7 @@ async def voice_pipeline(
             if has_email_intent and has_calendar_intent:
                 steps.append({"id": "conflicts", "label": "Noting any schedule conflicts..."})
 
-            # ✅ Fetch live data from dashboard routes
+            # âœ… Fetch live data from dashboard routes
             emails, calendar_events = await fetch_dashboard_data(user_token, has_email_intent, has_calendar_intent)
 
             action_data = {
@@ -724,7 +1051,7 @@ async def voice_pipeline(
                 "emails": emails if has_email_intent else [],
                 "calendarEvents": calendar_events if has_calendar_intent else [],
                 "focus": (
-                    "You have upcoming events and important unread emails — review your schedule and respond accordingly."
+                    "You have upcoming events and important unread emails â€” review your schedule and respond accordingly."
                     if has_email_intent and has_calendar_intent
                     else None
                 ),
@@ -745,16 +1072,62 @@ async def voice_pipeline(
                 "actionData": action_data,
             })
 
+        # Retrieve relevant memories for context
+        memory_context = ""
+        personalization_context = ""
+        if user_id and user_id != "anonymous" and memory_manager and intelligent_learner:
+            try:
+                # Use the efficient memory manager for context retrieval
+                memory_context = memory_manager.get_relevant_context(
+                    user_id=user_id,
+                    query=user_input,
+                    max_memories=3
+                )
 
-
+                # Get personalization context from intelligent learner
+                personalization_context = intelligent_learner.get_personalization_context(
+                    user_id=user_id,
+                    current_query=user_input
+                )
+            except Exception as e:
+                print(f"Error retrieving memories: {e}")
+                memory_context = ""
+                personalization_context = ""
 
         # 3) Build chat message array
+        system_prompt = """You are Mira, a warm and expressive voice-first AI assistant. Speak naturally, like a real human, with emotions coming through your words, tone, and rhythm â€” warm, caring, curious, or confident depending on the situation.
+
+Guidelines:
+
+Keep replies concise (1â€“3 sentences).
+
+Write like you're talking, not typing â€” use contractions ("I'm", "you're"), natural pauses ("wellâ€¦", "you know?"), and varied rhythm.
+
+Show emotion through how you phrase sentences, your choice of words, and pacing. Make happiness, excitement, curiosity, sarcasm, empathy, or mischief come through naturally.
+
+Keep warmth, clarity, and a friendly human flow in every response.
+
+Example styles:
+
+Friendly: "Hey! It's so great to hear from you, Iâ€™ve been looking forward to this."
+
+Calm: "Take your time, thereâ€™s no rush, Iâ€™m here with you."
+
+Excited: "Oh wow! Thatâ€™s incredible, I canâ€™t believe it!"
+
+Empathetic: "I know this is toughâ€¦ I really understand how you feel."
+
+Curious: "Really? Tell me more, Iâ€™m intrigued."
+
+Mischievous: "Oh, I see what you did thereâ€¦ clever move!"""
+
+        if memory_context:
+            system_prompt += f"\n\nRelevant context from previous conversations:\n{memory_context}"
+
         messages: List[Dict[str, Any]] = [
             {
                 "role": "system",
-                "content": (
-                    "You are Mira, a warm and natural voice-first AI assistant. Your goal is to make spoken interactions feel friendly, clear, and efficient. Always respond conversationally in 1–3 concise sentences with a kind, human-like tone."
-                ),
+                "content": system_prompt,
             },
             {"role": "user", "content": user_input},
         ]
@@ -788,10 +1161,12 @@ async def voice_pipeline(
             voice_id = os.getenv("ELEVENLABS_VOICE_ID")
             if not voice_id:
                 raise Exception("Missing ELEVENLABS_VOICE_ID")
+            # Preprocess response text for TTS
+            processed_response_text = preprocess_text_for_tts(response_text)
             stream = el.text_to_speech.convert(
                 voice_id=voice_id,
                 model_id="eleven_turbo_v2",
-                text=response_text,
+                text=f'<speak><break time="300ms"/>{processed_response_text}</speak>',
                 output_format="mp3_44100_128",
             )
             try:
@@ -803,6 +1178,15 @@ async def voice_pipeline(
                 logging.exception(f"Failed to collect/encode TTS stream: {e}")
         except Exception:
             audio_base64 = None
+
+        # Store conversation in memory (async, don't wait)
+        if user_id and user_id != "anonymous" and response_text not in ["I'm here.", "Sorry, something went wrong while generating my response."] and memory_service:
+            # Fire and forget - don't wait for completion
+            asyncio.create_task(memory_service.store_conversation_memory_async(
+                user_id=user_id,
+                user_message=user_input,
+                assistant_response=response_text
+            ))
 
         # 6) Response compatible with frontend
         return JSONResponse({
@@ -821,6 +1205,9 @@ def generate_voice(text: str) -> tuple[str, str]:
     In Lambda, we return base64 instead of saving to disk (filesystem is read-only).
     """
     try:
+        # Preprocess text for TTS
+        processed_text = preprocess_text_for_tts(text)
+        
         # Get the ElevenLabs client (with lazy import)
         elevenlabs_client = get_elevenlabs_client()
 
@@ -833,7 +1220,7 @@ def generate_voice(text: str) -> tuple[str, str]:
         audio_stream = elevenlabs_client.text_to_speech.convert(
             voice_id=voice_id,
             model_id="eleven_turbo_v2",
-            text=text,
+            text=f'<speak><break time="300ms"/>{processed_text}</speak>',
             output_format="mp3_44100_128",
         )
 

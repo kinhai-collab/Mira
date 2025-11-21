@@ -207,36 +207,21 @@ async def get_event_stats(authorization: Optional[str] = Header(default=None)):
         creds_row = get_creds(user["id"])
         if not creds_row:
             print(f"⚠️ Dashboard: No Google Calendar credentials found for user {user['id']}")
-            # ✅ Return both next_event and full events list for frontend visualization
+            # Return empty/default values when credentials are not found
             return {
-                "status": "success",
+                "status": "not_connected",
+                "message": "Google Calendar not connected",
                 "data": {
-                    "total_events": total_events,
-                    "total_hours": total_hours,
-                    "rsvp_pending": rsvp_pending,
-                    "busy_level": busy_level,
-                    "deep_work_blocks": deep_work_blocks,
-                    "at_risk_tasks": at_risk_tasks,
-                    "next_event": next_event,
-                    "events": [
-                        {
-                            "summary": e.get("summary", "Untitled Event"),
-                            "start": e.get("start", {}).get("dateTime") or e.get("start", {}).get("date"),
-                            "end": e.get("end", {}).get("dateTime") or e.get("end", {}).get("date"),
-                            "duration": (
-                                (datetime.fromisoformat((e.get("end", {}).get("dateTime") or e.get("end", {}).get("date")).replace("Z", "+00:00")) -
-                                datetime.fromisoformat((e.get("start", {}).get("dateTime") or e.get("start", {}).get("date")).replace("Z", "+00:00"))
-                                ).total_seconds() / 60
-                                if e.get("start") and e.get("end") else 0
-                            ),
-                            "location": e.get("location"),
-                            "attendees_count": len(e.get("attendees", [])),
-                        }
-                        for e in events
-                    ],
-                },
+                    "total_events": 0,
+                    "total_hours": 0,
+                    "rsvp_pending": 0,
+                    "busy_level": "light",
+                    "deep_work_blocks": 0,
+                    "at_risk_tasks": 0,
+                    "next_event": None,
+                    "events": []
+                }
             }
-
         
         # Build credentials and refresh if needed
         credentials = _creds(creds_row)
@@ -506,7 +491,8 @@ async def get_task_stats(authorization: Optional[str] = Header(default=None)):
         try:
             from supabase import create_client
             SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-            supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+            # Normalize URL to remove trailing slash to prevent double-slash issues
+            supabase = create_client(SUPABASE_URL.rstrip('/') if SUPABASE_URL else "", SUPABASE_SERVICE_ROLE_KEY)
             
             tasks_res = supabase.table("user_tasks").select("*").eq("uid", user["id"]).in_("status", ["pending", "in_progress"]).order("due_date", desc=False).execute()
             
@@ -608,7 +594,8 @@ async def get_reminder_stats(authorization: Optional[str] = Header(default=None)
         # Query Supabase for user reminders
         from supabase import create_client
         SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-        supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+        # Normalize URL to remove trailing slash to prevent double-slash issues
+        supabase = create_client(SUPABASE_URL.rstrip('/') if SUPABASE_URL else "", SUPABASE_SERVICE_ROLE_KEY)
         
         # Get all active reminders
         reminders_res = supabase.table("user_reminders").select("*").eq("uid", user["id"]).eq("status", "active").order("reminder_time", desc=False).execute()
@@ -832,6 +819,8 @@ async def get_email_list(
                     "id": msg_id,
                     "sender_name": sender_name,
                     "sender_email": sender_email,
+                    "from": sender,  # ✅ Added for EmailCalendarOverlay compatibility
+                    "senderEmail": sender_email,  # ✅ Added for EmailCalendarOverlay compatibility
                     "subject": subject,
                     "snippet": snippet,
                     "body": body,
@@ -839,6 +828,7 @@ async def get_email_list(
                     "priority": priority,
                     "time_ago": time_ago,
                     "timestamp": email_datetime.isoformat(),
+                    "receivedAt": email_datetime.isoformat(),  # ✅ Added for EmailCalendarOverlay compatibility
                     "is_unread": is_unread,
                     "labels": labels
                 }

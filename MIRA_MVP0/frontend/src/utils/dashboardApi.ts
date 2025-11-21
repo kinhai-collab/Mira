@@ -41,6 +41,16 @@ export interface NextEvent {
 	attendees_count: number;
 }
 
+export interface CalendarEvent {
+	id: string;
+	title: string;
+	timeRange: string;
+	location?: string;
+	note?: string | null;
+	meetingLink?: string | null;
+	provider?: string | null;
+}
+
 export interface EventStats {
 	total_events: number;
 	total_hours: number;
@@ -49,6 +59,7 @@ export interface EventStats {
 	busy_level: "light" | "moderate" | "busy";
 	deep_work_blocks: number;
 	at_risk_tasks: number;
+	events?: CalendarEvent[];
 }
 
 export interface DashboardSummary {

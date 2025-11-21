@@ -11,10 +11,7 @@ import {
 	type VoiceSummaryEmail,
 	type VoiceSummaryStep,
 } from "@/components/voice/EmailCalendarOverlay";
-import {
-	extractTokenFromUrl,
-	storeAuthToken,
-} from "@/utils/auth";
+import { extractTokenFromUrl, storeAuthToken } from "@/utils/auth";
 import {
 	startMiraVoice,
 	stopMiraVoice,
@@ -78,15 +75,19 @@ export default function Home() {
 		() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
 	);
 
-// --- Outlook helpers  ---
-// DISABLED: Outlook integration temporarily disabled due to authentication issues
-// Using Google Calendar and Gmail only
-const fetchOutlookEvents = useCallback(async (): Promise<VoiceSummaryCalendarEvent[]> => {
-	// Return empty array - Outlook integration disabled
-	console.log("⚠️ Outlook integration is disabled. Using Google Calendar/Gmail only.");
-	return [];
-	
-	/* COMMENTED OUT - Outlook API calls causing 401 errors
+	// --- Outlook helpers  ---
+	// DISABLED: Outlook integration temporarily disabled due to authentication issues
+	// Using Google Calendar and Gmail only
+	const fetchOutlookEvents = useCallback(async (): Promise<
+		VoiceSummaryCalendarEvent[]
+	> => {
+		// Return empty array - Outlook integration disabled
+		console.log(
+			"⚠️ Outlook integration is disabled. Using Google Calendar/Gmail only."
+		);
+		return [];
+
+		/* COMMENTED OUT - Outlook API calls causing 401 errors
 	const apiBaseUrl = (
 		process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
 	).replace(/\/+$/, "");
@@ -161,7 +162,7 @@ const fetchOutlookEvents = useCallback(async (): Promise<VoiceSummaryCalendarEve
 		provider: "outlook",
 	}));
 	*/
- }, [timezone]);
+	}, []);
 
 	// Weather state: store coords and current temperature. We'll call Open-Meteo (no API key)
 	const [latitude, setLatitude] = useState<number | null>(null);
@@ -276,6 +277,7 @@ const fetchOutlookEvents = useCallback(async (): Promise<VoiceSummaryCalendarEve
 		setIsMuted(muteState);
 		setMiraMute(muteState);
 	};
+	// Removed unused handleMicToggle
 
 	useEffect(() => {
 		console.log("Initializing Mira...");
@@ -421,8 +423,6 @@ const fetchOutlookEvents = useCallback(async (): Promise<VoiceSummaryCalendarEve
 			setSummaryStage("thinking");
 			setSummaryOverlayVisible(true);
 			setSummaryRunId((id) => id + 1);
-
-			console.log("📅 Normalized calendar events:", normalizedCalendarEvents);
 		};
 
 		if (typeof window !== "undefined") {
@@ -688,14 +688,9 @@ const fetchOutlookEvents = useCallback(async (): Promise<VoiceSummaryCalendarEve
 				{/* Orb + Greeting */}
 				<div className="relative flex flex-col items-center mt-16 sm:mt-20">
 					<div className="w-32 h-32 sm:w-44 sm:h-44 rounded-full bg-gradient-to-br from-[#C4A0FF] via-[#E1B5FF] to-[#F5C5E5] shadow-[0_0_80px_15px_rgba(210,180,255,0.45)] animate-pulse"></div>
-					<div className="absolute top-[35%] right-[-250px] group">
-						<div className="relative bg-white px-5 py-2.5 border border-[#E4D9FF] shadow-[0_4px_20px_rgba(180,150,255,0.25)]">
-							<p className="text-[#2F2F2F] text-sm sm:text-base tracking-tight">
-								{greeting}
-							</p>
-							<div className="absolute left-[-7px] top-1/2 -translate-y-1/2 w-3 h-3 bg-white border-l border-[#E4D9FF] rotate-45"></div>
-						</div>
-					</div>
+					<p className="w-full max-w-[368px] h-[50px] opacity-100 text-[rgba(70,70,71,1)] font-['Outfit'] font-medium text-lg sm:text-2xl md:text-3xl lg:text-[40px] leading-[100%] tracking-[0.5%] mt-6 sm:mt-8 text-center whitespace-nowrap flex items-center justify-center">
+						{greeting}
+					</p>
 				</div>
 
 				{/* Conversation Feed for Text Mode */}
@@ -735,47 +730,49 @@ const fetchOutlookEvents = useCallback(async (): Promise<VoiceSummaryCalendarEve
 
 				{/* Input Bar — Always Visible */}
 				<div className="relative mt-10 sm:mt-14 w-full max-w-md sm:max-w-xl flex flex-col items-center">
-					<div className="absolute inset-0 rounded-xl bg-gradient-to-r from-[#f4aaff] via-[#d9b8ff] to-[#bfa3ff] opacity-95 blur-[1.5px]"></div>
-					<div className="relative flex items-center rounded-xl bg-white px-4 sm:px-5 py-2 sm:py-2.5 w-full">
-						<input
-							type="text"
-							value={input}
-							onChange={(e) => setInput(e.target.value)}
-							onKeyDown={(e) => {
-								if (e.key === "Enter" && !e.shiftKey) {
-									e.preventDefault();
+					<div className="w-full rounded-[24px] bg-gradient-to-r from-[#F4A4D3] to-[#B5A6F7] p-[1.5px] shadow-[0_12px_35px_rgba(181,166,247,0.45)]">
+						<div className="flex items-center rounded-[22px] bg-white px-4 sm:px-5 py-2 sm:py-2.5 w-full">
+							<input
+								type="text"
+								value={input}
+								onChange={(e) => setInput(e.target.value)}
+								onKeyDown={(e) => {
+									if (e.key === "Enter" && !e.shiftKey) {
+										e.preventDefault();
+										setIsConversationActive(true); // ✅ conversation started
+										handleTextSubmit();
+									}
+								}}
+								placeholder={
+									isListening ? "I'm listening..." : "Type your request..."
+								}
+								className="flex-1 px-3 sm:px-4 py-1.5 sm:py-2 bg-transparent text-gray-700 placeholder-gray-400 rounded-l-xl focus:outline-none font-medium text-sm sm:text-base"
+								disabled={isLoadingResponse}
+							/>
+							<button
+								type="button"
+								onClick={() => {
 									setIsConversationActive(true); // ✅ conversation started
 									handleTextSubmit();
-								}
-							}}
-							placeholder={
-								isListening ? "I'm listening..." : "Type your request..."
-							}
-							className="flex-1 px-3 sm:px-4 py-1.5 sm:py-2 bg-transparent text-gray-700 placeholder-gray-400 rounded-l-xl focus:outline-none font-medium text-sm sm:text-base"
-							disabled={isLoadingResponse}
-						/>
-						<button
-							type="button"
-							onClick={() => {
-								setIsConversationActive(true); // ✅ conversation started
-								handleTextSubmit();
-							}}
-							disabled={isLoadingResponse || !input.trim()}
-							className="flex items-center justify-center w-9 sm:w-10 h-9 sm:h-10 rounded-full bg-white border border-gray-200 shadow-sm hover:shadow-md transition disabled:opacity-50 disabled:cursor-not-allowed"
-						>
-							<Icon name="Send" size={16} />
-						</button>
+								}}
+								disabled={isLoadingResponse || !input.trim()}
+								className="flex items-center justify-center w-9 sm:w-10 h-9 sm:h-10 rounded-full bg-white border border-gray-200 shadow-sm hover:shadow-md transition disabled:opacity-50 disabled:cursor-not-allowed"
+							>
+								<Icon name="Send" size={16} />
+							</button>
+						</div>
 					</div>
 				</div>
 
 				{/* Example Prompts — Only Visible Before Conversation */}
 				{!isConversationActive && textMessages.length === 0 && (
-					<div className="mt-8 sm:mt-10 w-full max-w-md sm:max-w-xl text-left">
-						<p className="text-gray-600 font-normal mb-3 text-[12px] sm:text-[13.5px]">
+					<div className="w-full max-w-[724px] min-h-[198px] text-left opacity-100 mt-6 sm:mt-8 px-4">
+						<p className="w-full max-w-[724px] h-auto min-h-[23px] opacity-100 text-[rgba(40,40,41,1)] font-['Outfit'] font-normal text-base sm:text-[18px] leading-[100%] tracking-[0.5%] mb-3">
 							Or start with an example below
 						</p>
 						<div className="flex flex-wrap gap-2 sm:gap-2.5">
 							{[
+								"give me my morning brief",
 								"How's my day looking?",
 								"Summarize today's tasks.",
 								"What meetings do I have today?",

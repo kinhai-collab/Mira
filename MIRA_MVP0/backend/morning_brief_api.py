@@ -62,6 +62,8 @@ async def get_morning_brief(
                 result = run_morning_brief(user_id, first_name, timezone)
                 audio_base64 = result.get("audio_base64", "")
                 audio_filename = result.get("audio_filename", "")
+                events = result.get("events", [])
+                email_counts = result.get("email_counts", {})
                 
                 # Return audio as base64 for direct playback (Lambda can't reliably serve files)
                 audio_url = None
@@ -70,12 +72,79 @@ async def get_morning_brief(
                     # Also provide a URL endpoint that serves the base64 as audio
                     audio_url = f"/audio/morning-brief/{audio_filename}"
                 
+                # Format events for frontend
+                formatted_events = []
+                for ev in events[:5]:  # Limit to 5 events for display
+                    start_dt = ev.get('start_dt')
+                    end_dt = ev.get('end_dt')
+                    
+                    # Format time range
+                    time_range = "N/A"
+                    if start_dt and end_dt:
+                        try:
+                            start_str = start_dt.strftime('%I:%M %p').lstrip('0')
+                            end_str = end_dt.strftime('%I:%M %p').lstrip('0')
+                            time_range = f"{start_str} - {end_str}"
+                        except:
+                            time_range = "N/A"
+                    
+                    formatted_events.append({
+                        "id": f"{ev.get('summary', 'event')}_{start_dt.isoformat() if start_dt else ''}",
+                        "title": ev.get("summary", "No title"),
+                        "timeRange": time_range,
+                        "provider": "google"
+                    })
+                
+                # Find next event (first event that hasn't started yet)
+                next_event = None
+                if events:
+                    from datetime import datetime
+                    from zoneinfo import ZoneInfo
+                    now = datetime.now(ZoneInfo(timezone))
+                    for ev in events:
+                        start_dt = ev.get('start_dt')
+                        if start_dt and isinstance(start_dt, datetime):
+                            # Make start_dt timezone-aware if it isn't
+                            if start_dt.tzinfo is None:
+                                start_dt = start_dt.replace(tzinfo=ZoneInfo(timezone))
+                            if start_dt > now:
+                                end_dt = ev.get('end_dt', start_dt)
+                                # Make end_dt timezone-aware if it isn't
+                                if isinstance(end_dt, datetime) and end_dt.tzinfo is None:
+                                    end_dt = end_dt.replace(tzinfo=ZoneInfo(timezone))
+                                
+                                # Calculate duration safely
+                                try:
+                                    duration_minutes = int((end_dt - start_dt).total_seconds() / 60)
+                                except (TypeError, AttributeError):
+                                    duration_minutes = 60  # Default to 1 hour if calculation fails
+                                
+                                next_event = {
+                                    "summary": ev.get("summary", "No title"),
+                                    "start": start_dt.strftime("%I:%M %p").lstrip('0'),
+                                    "duration": duration_minutes
+                                }
+                                break
+                
+                # Count Teams events (simplified - checking for "teams" in description/location)
+                teams_count = sum(1 for ev in events if "teams" in (ev.get("description", "") + ev.get("location", "")).lower())
+                
                 return {
                     "status": "success",
                     "text": result.get("text", ""),
                     "audio_base64": audio_base64,  # Direct base64 for playback
                     "audio_url": audio_url,  # URL endpoint (optional, for compatibility)
-                    "user_name": first_name
+                    "user_name": first_name,
+                    # Event data
+                    "events": formatted_events,
+                    "total_events": result.get("total_events", 0),
+                    "total_teams": teams_count,
+                    "next_event": next_event,
+                    # Email data
+                    "email_important": email_counts.get("important_count", 0),
+                    "gmail_count": email_counts.get("gmail_count", 0),
+                    "outlook_count": email_counts.get("outlook_count", 0),
+                    "total_unread": email_counts.get("total_unread", 0)
                 }
             except Exception as e:
                 print(f"Error generating morning brief: {e}")
