@@ -688,14 +688,9 @@ export default function Home() {
 				{/* Orb + Greeting */}
 				<div className="relative flex flex-col items-center mt-16 sm:mt-20">
 					<div className="w-32 h-32 sm:w-44 sm:h-44 rounded-full bg-gradient-to-br from-[#C4A0FF] via-[#E1B5FF] to-[#F5C5E5] shadow-[0_0_80px_15px_rgba(210,180,255,0.45)] animate-pulse"></div>
-					<div className="absolute top-[35%] right-[-250px] group">
-						<div className="relative bg-white px-5 py-2.5 border border-[#E4D9FF] shadow-[0_4px_20px_rgba(180,150,255,0.25)]">
-							<p className="text-[#2F2F2F] text-sm sm:text-base tracking-tight">
-								{greeting}
-							</p>
-							<div className="absolute left-[-7px] top-1/2 -translate-y-1/2 w-3 h-3 bg-white border-l border-[#E4D9FF] rotate-45"></div>
-						</div>
-					</div>
+					<p className="w-full max-w-[368px] h-[50px] opacity-100 text-[rgba(70,70,71,1)] font-['Outfit'] font-medium text-lg sm:text-2xl md:text-3xl lg:text-[40px] leading-[100%] tracking-[0.5%] mt-6 sm:mt-8 text-center whitespace-nowrap flex items-center justify-center">
+						{greeting}
+					</p>
 				</div>
 
 				{/* Conversation Feed for Text Mode */}
@@ -771,8 +766,8 @@ export default function Home() {
 
 				{/* Example Prompts — Only Visible Before Conversation */}
 				{!isConversationActive && textMessages.length === 0 && (
-					<div className="mt-8 sm:mt-10 w-full max-w-md sm:max-w-xl text-left">
-						<p className="text-gray-600 font-normal mb-3 text-[12px] sm:text-[13.5px]">
+					<div className="w-full max-w-[724px] min-h-[198px] text-left opacity-100 mt-6 sm:mt-8 px-4">
+						<p className="w-full max-w-[724px] h-auto min-h-[23px] opacity-100 text-[rgba(40,40,41,1)] font-['Outfit'] font-normal text-base sm:text-[18px] leading-[100%] tracking-[0.5%] mb-3">
 							Or start with an example below
 						</p>
 						<div className="flex flex-wrap gap-2 sm:gap-2.5">
