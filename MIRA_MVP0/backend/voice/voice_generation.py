@@ -14,6 +14,7 @@ from memory_service import get_memory_service
 from memory_manager import get_memory_manager
 from intelligent_learner import get_intelligent_learner
 from settings import get_uid_from_token
+from conversation_manager import respond_with_memory
 
 import subprocess
 import shutil
@@ -525,8 +526,13 @@ async def text_query_pipeline(request: Request):
             except Exception as e:
                 print(f"Could not extract user ID from token: {e}")
                 user_id = "anonymous"  # Fallback for development
+        else:
+            # No auth header present; default to anonymous for now
+            user_id = None
+
+        # No dev-mode passthrough here; rely on real auth/user ids.
         
-        # Get memory service
+        # Get memory service and helpers
         memory_service = get_memory_service()
         memory_manager = get_memory_manager()
         intelligent_learner = get_intelligent_learner()
@@ -618,33 +624,22 @@ async def text_query_pipeline(request: Request):
                 relevant_memories = memory_service.retrieve_relevant_memories(
                     user_id=user_id,
                     query=user_input,
-                    limit=3,
-                    memory_type="conversation"
+                    limit=5,
+                    memory_type="fact"
                 )
-                
-                # Also get recent conversations for additional context
-                recent_memories = memory_service.get_recent_conversations(user_id=user_id, limit=5)
-                
-                # Combine and deduplicate
-                all_memories = relevant_memories + recent_memories
-                seen_contents = set()
-                unique_memories = []
-                for mem in all_memories:
-                    content = mem.get("content", "")
-                    if content not in seen_contents:
-                        seen_contents.add(content)
-                        unique_memories.append(mem)
-                
-                # Format memories for context
-                if unique_memories:
+
+                # Format fact memories for context (facts-only policy)
+                if relevant_memories:
                     memory_strings = []
-                    for mem in unique_memories[:5]:  # Limit to 5 total
-                        metadata = mem.get("metadata", {})
-                        user_msg = metadata.get("user_message", "")
-                        assistant_msg = metadata.get("assistant_response", "")
-                        if user_msg and assistant_msg:
-                            memory_strings.append(f"Previous conversation: User: {user_msg} | Assistant: {assistant_msg}")
-                    
+                    for mem in relevant_memories[:5]:
+                        content = mem.get("content", "")
+                        meta = mem.get("metadata", {}) or {}
+                        category = meta.get("category")
+                        if category:
+                            memory_strings.append(f"Fact ({category}): {content}")
+                        else:
+                            memory_strings.append(content)
+
                     if memory_strings:
                         memory_context = "\n".join(memory_strings[:3])  # Limit context length
                         
@@ -652,60 +647,33 @@ async def text_query_pipeline(request: Request):
                 print(f"Error retrieving memories: {e}")
                 memory_context = ""
 
-        # Build chat message array
-        system_prompt = (
-            "You are Mira, a warm, helpful assistant. Keep answers concise and friendly."
-        )
-        
-        if memory_context:
-            system_prompt += f"\n\nRelevant context from previous conversations:\n{memory_context}"
-        
-        messages: List[Dict[str, Any]] = [
-            {
-                "role": "system",
-                "content": system_prompt,
-            },
-        ]        # Add history
-        if isinstance(history, list):
-            for msg in history[-10:]:  # Keep last 10 messages for context
-                if isinstance(msg, dict) and "role" in msg and "content" in msg:
-                    messages.append({"role": msg["role"], "content": msg["content"]})
-        
-        # Add current user query
-        messages.append({"role": "user", "content": user_input})
-        
-        # Generate reply using GPT
-        response_text = "I'm here to help!"
+        # Use the conversation manager to assemble context, call the LLM, and persist memories
         try:
-           
-            oa = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-            comp = oa.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=messages,
-                temperature=0.8,
-                max_tokens=300,
-            )
-            response_text = (comp.choices[0].message.content or "I'm here to help!").strip()
-        except Exception as e:
-            print(f"Error generating response: {e}")
-            response_text = "Sorry, I encountered an issue generating a response."
-        
-        # Store conversation in memory (async, don't wait)
-        if user_id and user_id != "anonymous" and response_text != "Sorry, I encountered an issue generating a response.":
-            # Fire and forget - don't wait for completion
-            asyncio.create_task(memory_manager.store_conversation(
-                user_id=user_id,
-                user_message=user_input,
-                assistant_response=response_text
-            ))
+            # history may be a JSON string or a list in the request; normalize to list of messages
+            parsed_history = None
+            try:
+                if history:
+                    parsed = json.loads(history)
+                    if isinstance(parsed, list):
+                        parsed_history = parsed
+            except Exception:
+                parsed_history = None
 
-            # Analyze conversation for learning (async)
-            asyncio.create_task(intelligent_learner.analyze_conversation(
+            logging.info("Calling respond_with_memory for text-query")
+            result = respond_with_memory(
                 user_id=user_id,
-                user_message=user_input,
-                assistant_response=response_text
-            ))
-        
+                user_input=user_input,
+                history=parsed_history,
+                memory_manager=memory_manager,
+                intelligent_learner=intelligent_learner,
+                model="gpt-4o-mini",
+                max_memories=3,
+            )
+            response_text = result.get("response_text", "Sorry, something went wrong while generating my response.")
+        except Exception as e:
+            logging.exception(f"Error in conversation manager: {e}")
+            response_text = "Sorry, something went wrong while generating my response."
+
         return JSONResponse({
             "text": response_text,
             "userText": user_input,
@@ -718,7 +686,7 @@ async def text_query_pipeline(request: Request):
 async def voice_pipeline(
     request: Request,
     audio: UploadFile = File(...),
-    history: Optional[str] = Form(None)
+    history: Optional[str] = Form(None),
 ):
     """
     Accepts recorded audio, transcribes with Whisper, generates a chat reply, and optional TTS audio.
@@ -789,9 +757,15 @@ async def voice_pipeline(
             except Exception as e:
                 print(f"Could not extract user ID from token: {e}")
                 user_id = "anonymous"  # Fallback for development
+        else:
+            user_id = None
+
+        # No dev-mode passthrough for voice; require real auth tokens for user resolution.
         
-        # Get memory service
+        # Get memory service and helpers
         memory_service = get_memory_service()
+        memory_manager = get_memory_manager()
+        intelligent_learner = get_intelligent_learner()
 
         # 2.5) Intent: Morning brief navigate
 
@@ -934,7 +908,7 @@ Curious: "Really? Tell me more, Iâ€™m intrigued."
 Mischievous: "Oh, I see what you did thereâ€¦ clever move!"""
 
         if memory_context:
-            system_prompt += f"\n\nRelevant context from previous conversations:\n{memory_context}"
+            system_prompt += f"\n\nRelevant facts:\n{memory_context}"
 
         messages: List[Dict[str, Any]] = [
             {
@@ -951,19 +925,33 @@ Mischievous: "Oh, I see what you did thereâ€¦ clever move!"""
             except Exception:
                 pass
 
-        # 4) Generate reply
+        # 4) Generate reply via central conversation manager (respond_with_memory)
         response_text = "I'm here."
         try:
-            
-            oa = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-            comp = oa.chat.completions.create(
+            # Normalize history into a list of messages if provided (frontend may send JSON-stringified history)
+            parsed_history = None
+            if history:
+                try:
+                    tmp = json.loads(history)
+                    if isinstance(tmp, list):
+                        parsed_history = tmp
+                except Exception:
+                    parsed_history = None
+
+            logging.info("Calling respond_with_memory for voice pipeline")
+            logging.info(f"voice_pipeline: user_id={user_id} user_input={user_input[:80]}")
+            result = respond_with_memory(
+                user_id=user_id,
+                user_input=user_input,
+                history=parsed_history,
+                memory_manager=memory_manager,
+                intelligent_learner=intelligent_learner,
                 model="gpt-4o-mini",
-                messages=messages,
-                temperature=0.8,
-                max_tokens=200,
+                max_memories=3,
             )
-            response_text = (comp.choices[0].message.content or "I'm here.").strip()
-        except Exception:
+            response_text = result.get("response_text", "Sorry, something went wrong while generating my response.")
+        except Exception as e:
+            logging.exception(f"Voice pipeline LLM call failed: {e}")
             response_text = "Sorry, something went wrong while generating my response."
 
         # 5) TTS via ElevenLabs (best-effort)
@@ -991,14 +979,8 @@ Mischievous: "Oh, I see what you did thereâ€¦ clever move!"""
         except Exception:
             audio_base64 = None
 
-        # Store conversation in memory (async, don't wait)
-        if user_id and user_id != "anonymous" and response_text not in ["I'm here.", "Sorry, something went wrong while generating my response."]:
-            # Fire and forget - don't wait for completion
-            asyncio.create_task(memory_service.store_conversation_memory_async(
-                user_id=user_id,
-                user_message=user_input,
-                assistant_response=response_text
-            ))
+        # Do not store full conversations — only facts are stored elsewhere.
+        # (Previously we stored conversation turns here; removed per new policy.)
 
         # 6) Response compatible with frontend
         return JSONResponse({
