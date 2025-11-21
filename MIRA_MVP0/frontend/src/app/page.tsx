@@ -11,10 +11,7 @@ import {
 	type VoiceSummaryEmail,
 	type VoiceSummaryStep,
 } from "@/components/voice/EmailCalendarOverlay";
-import {
-	extractTokenFromUrl,
-	storeAuthToken,
-} from "@/utils/auth";
+import { extractTokenFromUrl, storeAuthToken } from "@/utils/auth";
 import {
 	startMiraVoice,
 	stopMiraVoice,
@@ -78,15 +75,19 @@ export default function Home() {
 		() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
 	);
 
-// --- Outlook helpers  ---
-// DISABLED: Outlook integration temporarily disabled due to authentication issues
-// Using Google Calendar and Gmail only
-const fetchOutlookEvents = useCallback(async (): Promise<VoiceSummaryCalendarEvent[]> => {
-	// Return empty array - Outlook integration disabled
-	console.log("⚠️ Outlook integration is disabled. Using Google Calendar/Gmail only.");
-	return [];
-	
-	/* COMMENTED OUT - Outlook API calls causing 401 errors
+	// --- Outlook helpers  ---
+	// DISABLED: Outlook integration temporarily disabled due to authentication issues
+	// Using Google Calendar and Gmail only
+	const fetchOutlookEvents = useCallback(async (): Promise<
+		VoiceSummaryCalendarEvent[]
+	> => {
+		// Return empty array - Outlook integration disabled
+		console.log(
+			"⚠️ Outlook integration is disabled. Using Google Calendar/Gmail only."
+		);
+		return [];
+
+		/* COMMENTED OUT - Outlook API calls causing 401 errors
 	const apiBaseUrl = (
 		process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
 	).replace(/\/+$/, "");
@@ -161,7 +162,7 @@ const fetchOutlookEvents = useCallback(async (): Promise<VoiceSummaryCalendarEve
 		provider: "outlook",
 	}));
 	*/
- }, [timezone]);
+	}, []);
 
 	// Weather state: store coords and current temperature. We'll call Open-Meteo (no API key)
 	const [latitude, setLatitude] = useState<number | null>(null);
@@ -422,8 +423,6 @@ const fetchOutlookEvents = useCallback(async (): Promise<VoiceSummaryCalendarEve
 			setSummaryStage("thinking");
 			setSummaryOverlayVisible(true);
 			setSummaryRunId((id) => id + 1);
-
-			console.log("📅 Normalized calendar events:", normalizedCalendarEvents);
 		};
 
 		if (typeof window !== "undefined") {
@@ -514,33 +513,12 @@ const fetchOutlookEvents = useCallback(async (): Promise<VoiceSummaryCalendarEve
 	const fetchWeatherForCoords = async (lat: number, lon: number) => {
 		try {
 			setIsWeatherLoading(true);
-			const url = `/api/weather?lat=${encodeURIComponent(
-				lat
-			)}&lon=${encodeURIComponent(lon)}`;
-			// Log the URL so if "Failed to fetch" occurs we can see exactly what was attempted.
-			console.log("Fetching weather from (internal proxy):", url);
-			const resp = await fetch(url);
-			if (!resp.ok) {
-				// Try to read response body for diagnostics
-				let details = "";
-				try {
-					const txt = await resp.text();
-					details = txt;
-				} catch (e) {
-					details = "<unreadable response body>";
-				}
-				throw new Error(`Weather proxy failed: ${resp.status} ${details}`);
-			}
-			const data = await resp.json();
-			// Expecting backend to return { temperatureC: number } (or similar)
-			const temp = data?.temperatureC ?? data?.temperature ?? data?.tempC;
+			console.log("Fetching weather for coords:", lat, lon);
+			const data = await getWeather(lat, lon);
+			const temp = data?.temperatureC;
 			if (typeof temp === "number") setTemperatureC(temp);
 		} catch (err) {
-			// Show richer diagnostics in console for easier debugging
-			console.error(
-				"Error fetching weather from internal API (/api/weather):",
-				err
-			);
+			console.error("Error fetching weather:", err);
 		} finally {
 			setIsWeatherLoading(false);
 		}
@@ -751,35 +729,37 @@ const fetchOutlookEvents = useCallback(async (): Promise<VoiceSummaryCalendarEve
 				)}
 
 				{/* Input Bar — Always Visible */}
-				<div className="relative mt-10 sm:mt-14 flex flex-col items-center w-full px-4">
-					<div className="w-full max-w-[724px] h-[50px] sm:h-[60px] md:h-[67px] rounded-[8px] bg-gradient-to-b from-[#B5A6F7] to-[#F4A4D3] p-[2px] shadow-[0_12px_35px_rgba(181,166,247,0.45)]">
-						<div className="flex items-center gap-2 sm:gap-[10px] rounded-[6px] bg-white px-3 sm:px-4 h-full w-full">
-						<input
-							type="text"
-							value={input}
-							onChange={(e) => setInput(e.target.value)}
-							onKeyDown={(e) => {
-								if (e.key === "Enter" && !e.shiftKey) {
-									e.preventDefault();
+				<div className="relative mt-10 sm:mt-14 w-full max-w-md sm:max-w-xl flex flex-col items-center">
+					<div className="w-full rounded-[24px] bg-gradient-to-r from-[#F4A4D3] to-[#B5A6F7] p-[1.5px] shadow-[0_12px_35px_rgba(181,166,247,0.45)]">
+						<div className="flex items-center rounded-[22px] bg-white px-4 sm:px-5 py-2 sm:py-2.5 w-full">
+							<input
+								type="text"
+								value={input}
+								onChange={(e) => setInput(e.target.value)}
+								onKeyDown={(e) => {
+									if (e.key === "Enter" && !e.shiftKey) {
+										e.preventDefault();
+										setIsConversationActive(true); // ✅ conversation started
+										handleTextSubmit();
+									}
+								}}
+								placeholder={
+									isListening ? "I'm listening..." : "Type your request..."
+								}
+								className="flex-1 px-3 sm:px-4 py-1.5 sm:py-2 bg-transparent text-gray-700 placeholder-gray-400 rounded-l-xl focus:outline-none font-medium text-sm sm:text-base"
+								disabled={isLoadingResponse}
+							/>
+							<button
+								type="button"
+								onClick={() => {
 									setIsConversationActive(true); // ✅ conversation started
 									handleTextSubmit();
-								}
-							}}
-							placeholder="I'm listening..."
-							className="flex-1 h-full bg-transparent text-gray-700 placeholder-gray-400 rounded-l-[6px] focus:outline-none font-medium text-sm sm:text-base"
-							disabled={isLoadingResponse}
-						/>
-						<button
-							type="button"
-							onClick={() => {
-								setIsConversationActive(true); // ✅ conversation started
-								handleTextSubmit();
-							}}
-							disabled={isLoadingResponse || !input.trim()}
-							className="flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-white border border-gray-200 shadow-sm hover:shadow-md transition disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
-						>
-							<Icon name="ArrowUp" size={18} />
-						</button>
+								}}
+								disabled={isLoadingResponse || !input.trim()}
+								className="flex items-center justify-center w-9 sm:w-10 h-9 sm:h-10 rounded-full bg-white border border-gray-200 shadow-sm hover:shadow-md transition disabled:opacity-50 disabled:cursor-not-allowed"
+							>
+								<Icon name="Send" size={16} />
+							</button>
 						</div>
 					</div>
 				</div>
@@ -790,46 +770,29 @@ const fetchOutlookEvents = useCallback(async (): Promise<VoiceSummaryCalendarEve
 						<p className="w-full max-w-[724px] h-auto min-h-[23px] opacity-100 text-[rgba(40,40,41,1)] font-['Outfit'] font-normal text-base sm:text-[18px] leading-[100%] tracking-[0.5%] mb-3">
 							Or start with an example below
 						</p>
-						<div className="flex flex-col gap-4 sm:gap-5 md:gap-[20px]">
-							{/* First row */}
-							<div className="flex flex-wrap gap-3 sm:gap-4 md:gap-[20px]">
-								{[
-									"How's my day looking?",
-									"Summarize today's tasks.",
-									"What meetings do I have today?",
-								].map((example, i) => (
-									<button
-										key={i}
-										onClick={() => {
-											setIsConversationActive(true); // ✅ hide examples once clicked
-											handleTextSubmit(example);
-										}}
-										disabled={isLoadingResponse}
-										className="px-3 sm:px-3.5 py-1 sm:py-1.5 bg-white border border-gray-200 rounded-full shadow-sm hover:shadow-md transition text-gray-700 text-xs sm:text-[12.5px] md:text-[13.5px] font-normal disabled:opacity-50 disabled:cursor-not-allowed"
-									>
-										{example}
-									</button>
-								))}
-							</div>
-							{/* Second row */}
-							<div className="flex flex-wrap gap-3 sm:gap-4 md:gap-[20px]">
-								{[
-									"What reminders do I have today?",
-									"Wrap up my day.",
-								].map((example, i) => (
-									<button
-										key={i + 3}
-										onClick={() => {
-											setIsConversationActive(true); // ✅ hide examples once clicked
-											handleTextSubmit(example);
-										}}
-										disabled={isLoadingResponse}
-										className="px-3 sm:px-3.5 py-1 sm:py-1.5 bg-white border border-gray-200 rounded-full shadow-sm hover:shadow-md transition text-gray-700 text-xs sm:text-[12.5px] md:text-[13.5px] font-normal disabled:opacity-50 disabled:cursor-not-allowed"
-									>
-										{example}
-									</button>
-								))}
-							</div>
+						<div className="flex flex-wrap gap-2 sm:gap-2.5">
+							{[
+								"give me my morning brief",
+								"How's my day looking?",
+								"Summarize today's tasks.",
+								"What meetings do I have today?",
+								"Show me my emails",
+								"Show me my emails and calendar",
+								"Show my calender events",
+								"Wrap up my day.",
+							].map((example, i) => (
+								<button
+									key={i}
+									onClick={() => {
+										setIsConversationActive(true); // ✅ hide examples once clicked
+										handleTextSubmit(example);
+									}}
+									disabled={isLoadingResponse}
+									className="px-3 sm:px-3.5 py-1 sm:py-1.5 bg-white border border-gray-200 rounded-full shadow-sm hover:shadow-md transition text-gray-700 text-[12.5px] sm:text-[13.5px] font-normal disabled:opacity-50 disabled:cursor-not-allowed"
+								>
+									{example}
+								</button>
+							))}
 						</div>
 					</div>
 				)}

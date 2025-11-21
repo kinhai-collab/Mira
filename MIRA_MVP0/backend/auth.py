@@ -15,7 +15,8 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+# Normalize URL to remove trailing slash to prevent double-slash issues
+supabase: Client = create_client(SUPABASE_URL.rstrip('/') if SUPABASE_URL else "", SUPABASE_SERVICE_ROLE_KEY)
 
 # Dynamic redirect URI based on environment
 def get_redirect_uri():

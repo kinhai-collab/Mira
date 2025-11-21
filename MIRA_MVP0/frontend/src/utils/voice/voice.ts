@@ -2,7 +2,6 @@
 
 let currentAudio: HTMLAudioElement | null = null;
 let currentUrl: string | null = null;
-
 export async function playVoice(text: string) {
 	try {
 		stopVoice();
@@ -10,12 +9,11 @@ export async function playVoice(text: string) {
 		const apiBase = (
 			process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
 		).replace(/\/+$/, "");
-		const voiceUrl = `${apiBase}/tts/tts?text=${encodeURIComponent(
-			text
-		)}&mood=calm`;
+
+		const voiceUrl = `${apiBase}/tts/?text=${encodeURIComponent(text)}`;
 
 		const res = await fetch(voiceUrl);
-		if (!res.ok) throw new Error(`TTS request failed: ${res.status}`);
+		if (!res.ok) throw new Error(`TTS failed: ${res.status}`);
 
 		const arrayBuffer = await res.arrayBuffer();
 		const blob = new Blob([arrayBuffer], { type: "audio/mpeg" });
@@ -25,18 +23,19 @@ export async function playVoice(text: string) {
 		currentAudio = audio;
 		currentUrl = url;
 
-		audio.addEventListener("canplaythrough", async () => {
-			await audio.play().catch(() => {
+		// 🔥 PLAY IMMEDIATELY
+		const playPromise = audio.play();
+
+		if (playPromise !== undefined) {
+			playPromise.catch(() => {
+				// fallback: wait for first click (autoplay block)
 				document.addEventListener("click", () => audio.play(), { once: true });
 			});
-            
-			console.log("Voice playback started");
-		});
+		}
 
+		// cleanup
 		audio.addEventListener("ended", () => {
-            
 			URL.revokeObjectURL(url);
-			console.log("Voice playback finished");
 		});
 	} catch (err) {
 		console.error("Voice playback failed:", err);
@@ -50,6 +49,5 @@ export function stopVoice() {
 		currentAudio = null;
 		if (currentUrl) URL.revokeObjectURL(currentUrl);
 		currentUrl = null;
-        
 	}
 }

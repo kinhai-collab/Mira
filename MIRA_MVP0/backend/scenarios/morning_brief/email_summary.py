@@ -115,3 +115,61 @@ def get_email_summary(user_id: str) -> str:
         traceback.print_exc()
         return ""
 
+
+def get_email_counts(user_id: str) -> Dict[str, int]:
+    """
+    Fetches email counts from Gmail for the morning brief UI.
+    Returns structured count data for display.
+    """
+    print(f"📊 Fetching email counts for user: {user_id}")
+    
+    default_counts = {
+        "gmail_count": 0,
+        "outlook_count": 0,
+        "important_count": 0,
+        "total_unread": 0
+    }
+    
+    if not EMAIL_AVAILABLE:
+        return default_counts
+    
+    try:
+        # Get Google credentials
+        creds_row = get_creds(user_id)
+        if not creds_row:
+            print("⚠️ Google credentials not found - returning zero counts")
+            return default_counts
+        
+        # Build credentials and Gmail service
+        credentials = _creds(creds_row)
+        gmail_service = build("gmail", "v1", credentials=credentials)
+        
+        # Get total unread count
+        unread_response = gmail_service.users().messages().list(
+            userId="me",
+            q="is:unread",
+            maxResults=1
+        ).execute()
+        total_unread = unread_response.get("resultSizeEstimate", 0)
+        
+        # Get important/unread emails count
+        important_response = gmail_service.users().messages().list(
+            userId="me",
+            q="is:unread is:important",
+            maxResults=1
+        ).execute()
+        important_count = important_response.get("resultSizeEstimate", 0)
+        
+        return {
+            "gmail_count": total_unread,  # All Gmail unread
+            "outlook_count": 0,  # Outlook integration disabled
+            "important_count": important_count,
+            "total_unread": total_unread
+        }
+        
+    except Exception as e:
+        print(f"⚠️ Error fetching email counts: {e}")
+        import traceback
+        traceback.print_exc()
+        return default_counts
+

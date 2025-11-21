@@ -1,47 +1,281 @@
 /** @format */
+"use client";
+
+import Image from "next/image";
 
 export default function RecommendationPanel({
 	onAccept,
 	briefText,
+	temperatureC,
+	isWeatherLoading,
+	events = [],
+	nextEvent,
+	totalEvents,
+	totalTeams,
+	emailImportant,
+	gmailCount,
+	outlookCount,
+	totalUnread,
+	userName,
 }: {
 	onAccept: () => void;
 	briefText?: string;
-}) {
-	// Parse the brief text into sections
-	const parseBriefText = (text: string) => {
-		const lines = text.split("\n").filter((line) => line.trim());
-		return lines;
+	temperatureC?: number | null;
+	isWeatherLoading?: boolean;
+
+	// Event data
+	events?: {
+		id: string;
+		title: string;
+		timeRange: string;
+		provider?: string | null;
+	}[];
+
+	nextEvent?: {
+		summary: string;
+		start: string;
+		duration: number;
 	};
+
+	totalEvents?: number;
+	totalTeams?: number;
+
+	// Email data
+	emailImportant?: number;
+	gmailCount?: number;
+	outlookCount?: number;
+	totalUnread?: number;
+	userName?: string;
+}) {
+	const parseBriefText = (text: string) =>
+		text.split("\n").filter((line) => line.trim());
 
 	const briefLines = briefText ? parseBriefText(briefText) : [];
 
 	return (
-		<div className="bg-white shadow-lg rounded-2xl p-6">
-			<h2 className="font-semibold text-lg mb-3">
-				Prepared your morning brief
-			</h2>
+		<div
+			className="
+        bg-white
+        rounded-[24px]
+        border border-[#E5E5E5]
+        shadow-[0_4px_12px_rgba(0,0,0,0.04)]
+        p-8
+        w-full
+        max-w-[900px]
+        mx-auto
+        space-y-6
+      "
+		>
+			{/* HEADER */}
+			<div>
+				<p className="text-[20px] font-normal text-[#1F1F1F] mb-4">
+					Prepared your morning brief
+				</p>
 
-			{/* Brief Content */}
-			{briefText && (
-				<div className="mb-4 sm:mb-6">
-					<div className="bg-gray-50 rounded-xl p-4 sm:p-5 border border-gray-200">
-						<div className="space-y-3 text-gray-700 text-sm sm:text-base leading-relaxed">
-							{briefLines.map((line, index) => (
-								<p key={index} className="mb-2">
-									{line}
-								</p>
-							))}
+				<div className="flex gap-3">
+					<div className="border-l-[1px] border-[#382099] pl-[24px] space-y-[4px]">
+						<div className="flex items-center gap-3">
+							<Image
+								src="/Icons/Property 1=Done in circle.svg"
+								alt="done"
+								width={20}
+								height={20}
+							/>
+							<p className="text-[16px] text-[#1F1F1F]">
+								Suggested optimal meeting time.
+							</p>
+						</div>
+
+						<div className="flex items-center gap-3">
+							<Image
+								src="/Icons/Property 1=Done in circle.svg"
+								alt="done"
+								width={20}
+								height={20}
+							/>
+							<p className="text-[16px] text-[#1F1F1F]">
+								Processed daily brief.
+							</p>
 						</div>
 					</div>
 				</div>
-			)}
 
-			<div className="flex flex-wrap gap-3">
+				<div className="mt-[10px] flex items-center gap-1 cursor-pointer group w-fit ml-[24px]">
+					<p className="text-[14px] font-medium text-[#735FF8] group-hover:underline underline-offset-2">
+						See More
+					</p>
+
+					<svg
+						width="14"
+						height="14"
+						viewBox="0 0 24 24"
+						fill="none"
+						xmlns="http://www.w3.org/2000/svg"
+						className="transition group-hover:translate-y-[1px]"
+					>
+						<path
+							d="M6 9L12 15L18 9"
+							stroke="#735FF8"
+							strokeWidth="2"
+							strokeLinecap="round"
+							strokeLinejoin="round"
+						/>
+					</svg>
+				</div>
+			</div>
+
+			<div className="border-t border-[#E1E2E5]" />
+
+			{/* SUMMARY */}
+			<div className="mt-2">
+				<p className="text-[18px] font-normal text-[#1F1F1F] mb-2">Summary</p>
+
+				<div className="pl-[20px] border-l-[2px] border-[#382099] space-y-[2px]">
+					{briefLines.map((line, index) => (
+						<p
+							key={index}
+							className="text-[16px] leading-[1.45] text-[#1F1F1F]"
+						>
+							{line}
+						</p>
+					))}
+				</div>
+			</div>
+
+			<div className="border-t border-[#E1E2E5]" />
+
+			{/* WEATHER */}
+			<div className="space-y-2">
+				<p className="text-[18px] font-normal text-[#1F1F1F]">Weather</p>
+
+				<div className="flex items-center gap-2">
+					<Image
+						src="/Icons/Property 1=Sun.svg"
+						alt="weather"
+						width={22}
+						height={22}
+						className="min-w-[22px]"
+					/>
+					<p className="text-[15px] text-[#1F1F1F]">
+						{isWeatherLoading
+							? "…"
+							: temperatureC != null
+							? `Sunny ${temperatureC}°`
+							: "—"}
+					</p>
+				</div>
+			</div>
+
+			<div className="border-t border-[#E1E2E5]" />
+
+			{/* EVENTS */}
+			<div className="space-y-3">
+				<p className="text-[18px] font-semibold text-[#1F1F1F]">
+					{totalEvents ?? 0} Events
+				</p>
+
+				<p className="flex items-center gap-2 text-[14px] text-[#6A6A6A]">
+					<Image
+						src="/Icons/logos_microsoft-teams.svg"
+						alt="teams"
+						width={18}
+						height={18}
+					/>
+					{totalTeams ?? 0} Teams
+				</p>
+
+				{/* Next Event */}
+				{nextEvent && (
+					<p className="text-[14px] text-[#1F1F1F]">
+						<span className="text-[#735FF8]">•</span> Next Event:{" "}
+						<span className="font-semibold">{nextEvent.summary}</span>
+					</p>
+				)}
+
+				{/* Event Cards */}
+				<div className="space-y-3">
+					{events?.map((ev) => (
+						<div
+							key={ev.id}
+							className="w-full rounded-xl border border-[#E1E2E5] p-4 flex items-center gap-3"
+						>
+							<Image
+								src="/Icons/logos_microsoft-teams.svg"
+								alt="teams"
+								width={28}
+								height={28}
+								className="min-w-[28px]"
+							/>
+
+							<div className="flex flex-col">
+								<p className="text-[16px] font-medium text-[#1F1F1F]">
+									{ev.title}
+								</p>
+								<p className="text-[14px] text-[#6A6A6A]">{ev.timeRange}</p>
+							</div>
+						</div>
+					))}
+				</div>
+			</div>
+
+			<div className="border-t border-[#E1E2E5]" />
+
+			{/* EMAIL SUMMARY */}
+			<div className="space-y-3">
+				<p className="text-[18px] font-semibold text-[#1F1F1F]">
+					{emailImportant ?? 0} Important Emails
+				</p>
+
+				<div className="flex items-center gap-4 text-[15px] text-[#1F1F1F]">
+					<div className="flex items-center gap-1">
+						<Image src="/Icons/Gmail.png" alt="gmail" width={20} height={20} />
+						{gmailCount ?? 0} Gmail
+					</div>
+
+					<div className="flex items-center gap-1">
+						<Image
+							src="/Icons/outlook.png"
+							alt="outlook"
+							width={20}
+							height={20}
+						/>
+						{outlookCount ?? 0} Outlook
+					</div>
+				</div>
+
+				<p className="text-[14px] text-[#6A6A6A]">
+					{totalUnread ?? 0} total unread in your inbox
+				</p>
+			</div>
+
+			<div className="border-t border-[#E1E2E5]" />
+			{/* FOOTER BUTTONS */}
+			<div className="flex justify-end gap-4 pt-4">
 				<button
-					onClick={onAccept}
-					className="px-4 sm:px-5 py-2 rounded-full bg-black text-white font-medium text-xs sm:text-sm md:text-base hover:bg-gray-800 transition"
+					onClick={() => {
+						if (briefText) {
+							window.dispatchEvent(
+								new CustomEvent("miraSpeak", { detail: { text: briefText } })
+							);
+						}
+					}}
+					className="px-6 py-2 rounded-full border border-[#CFCFCF] text-[#1F1F1F] font-medium"
 				>
-					Continue
+					Repeat
+				</button>
+
+				<button
+					onClick={() => {
+						window.dispatchEvent(
+							new CustomEvent("miraSpeak", {
+								detail: { text: "Okay, finishing your brief." },
+							})
+						);
+						onAccept();
+					}}
+					className="px-6 py-2 rounded-full bg-[#1F1F1F] text-white font-medium"
+				>
+					Finish
 				</button>
 			</div>
 		</div>

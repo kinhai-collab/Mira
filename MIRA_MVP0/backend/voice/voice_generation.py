@@ -503,8 +503,6 @@ async def fetch_dashboard_data(user_token: str, has_email: bool, has_calendar: b
                     data = res.json()
                     # Extract emails from nested structure: {status: "success", data: {emails: [...]}}
                     emails = data.get("data", {}).get("emails", [])
-                    print(f"âœ… Fetched {len(emails)} emails from dashboard API")
-                    print(f"✅ Fetched {len(emails)} emails from dashboard API")
             except Exception as e:
                 print("âš ï¸ Email fetch failed:", e)
 
@@ -515,7 +513,6 @@ async def fetch_dashboard_data(user_token: str, has_email: bool, has_calendar: b
                     data = res.json()
                     # Extract events from nested structure: {status: "success", data: {events: [...]}}
                     calendar_events = data.get("data", {}).get("events", [])
-                    print(f"✅ Fetched {len(calendar_events)} calendar events from dashboard API")
             except Exception as e:
                 print("⚠️ Calendar fetch failed:", e)
 
@@ -673,7 +670,8 @@ async def fetch_dashboard_data(user_token: str, has_email: bool, has_calendar: b
                 res = await client.get(f"{base_url}/dashboard/emails/list", headers=headers)
                 if res.status_code == 200:
                     data = res.json()
-                    emails = data.get("emails", data)
+                    # Extract emails from nested structure: {status: "success", data: {emails: [...]}}
+                    emails = data.get("data", {}).get("emails", [])
             except Exception as e:
                 print("⚠️ Email fetch failed:", e)
 
@@ -682,7 +680,8 @@ async def fetch_dashboard_data(user_token: str, has_email: bool, has_calendar: b
                 res = await client.get(f"{base_url}/dashboard/events", headers=headers)
                 if res.status_code == 200:
                     data = res.json()
-                    calendar_events = data.get("events", data)
+                    # Extract events from nested structure: {status: "success", data: {events: [...]}}
+                    calendar_events = data.get("data", {}).get("events", [])
             except Exception as e:
                 print("âš ï¸ Calendar fetch failed:", e)
 
@@ -1231,7 +1230,6 @@ def generate_voice(text: str) -> tuple[str, str]:
         except Exception as e:
             logging.exception(f"Failed to normalize audio stream: {e}")
             audio_bytes = b""
-        audio_bytes = b"".join(list(audio_stream))
 
         if not audio_bytes:
             logging.warning("No audio data received from ElevenLabs")
