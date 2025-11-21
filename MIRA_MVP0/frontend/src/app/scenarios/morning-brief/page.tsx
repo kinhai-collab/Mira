@@ -22,6 +22,25 @@ interface MorningBriefData {
 	audio_url?: string;
 	audio_base64?: string;
 	user_name: string;
+	// Event data
+	events?: {
+		id: string;
+		title: string;
+		timeRange: string;
+		provider?: string;
+	}[];
+	total_events?: number;
+	total_teams?: number;
+	next_event?: {
+		summary: string;
+		start: string;
+		duration: number;
+	};
+	// Email data
+	email_important?: number;
+	gmail_count?: number;
+	outlook_count?: number;
+	total_unread?: number;
 }
 
 export default function MorningBrief() {
@@ -607,6 +626,15 @@ export default function MorningBrief() {
 											temperatureC={temperatureC}
 											isWeatherLoading={isWeatherLoading}
 											onAccept={() => setStage("confirmation")}
+											events={briefData.events}
+											totalEvents={briefData.total_events}
+											totalTeams={briefData.total_teams}
+											nextEvent={briefData.next_event}
+											emailImportant={briefData.email_important}
+											gmailCount={briefData.gmail_count}
+											outlookCount={briefData.outlook_count}
+											totalUnread={briefData.total_unread}
+											userName={briefData.user_name}
 										/>
 									</div>
 								)}
