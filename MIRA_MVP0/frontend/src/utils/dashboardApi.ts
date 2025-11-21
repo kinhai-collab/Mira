@@ -543,6 +543,7 @@ export interface Email {
 	subject: string;
 	snippet: string;
 	body: string;
+	summary?: string;
 	priority: "high" | "medium" | "low";
 	time_ago: string;
 	timestamp: string;
