@@ -89,8 +89,9 @@ export default function MorningBrief() {
 	};
 
 	useEffect(() => {
-		const handler = (e: any) => {
-			console.log("🔥 miraSpeak event RECEIVED in page:", e.detail);
+		const handler = (e: Event) => {
+			const customEvent = e as CustomEvent<{ text: string }>;
+			console.log("🔥 miraSpeak event RECEIVED in page:", customEvent.detail);
 		};
 		window.addEventListener("miraSpeak", handler);
 		return () => window.removeEventListener("miraSpeak", handler);
@@ -153,7 +154,7 @@ export default function MorningBrief() {
 			},
 			{ timeout: 10000 }
 		);
-	}, []);
+	}, [timezone]);
 
 	useEffect(() => {
 		if (latitude != null && longitude != null) {
@@ -309,9 +310,6 @@ export default function MorningBrief() {
 				const data = await response.json();
 				setBriefData(data);
 				setError(null);
-				if (!isMuted && isListening && data.text) {
-					speakMorningBrief(data.text);
-				}
 
 				// Play audio if available (check for base64 or URL)
 				if (data.audio_base64 || data.audio_url) {
@@ -395,6 +393,13 @@ export default function MorningBrief() {
 
 		fetchMorningBrief();
 	}, [router]);
+
+	// Speak morning brief when data is loaded and conditions are met
+	useEffect(() => {
+		if (!isMuted && isListening && briefData?.text) {
+			speakMorningBrief(briefData.text);
+		}
+	}, [briefData, isListening, isMuted]);
 
 	// Auto-advance from thinking stage after loading completes
 	useEffect(() => {
@@ -634,7 +639,6 @@ export default function MorningBrief() {
 											gmailCount={briefData.gmail_count}
 											outlookCount={briefData.outlook_count}
 											totalUnread={briefData.total_unread}
-											userName={briefData.user_name}
 										/>
 									</div>
 								)}

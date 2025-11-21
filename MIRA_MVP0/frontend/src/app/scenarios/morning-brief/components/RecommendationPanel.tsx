@@ -16,7 +16,6 @@ export default function RecommendationPanel({
 	gmailCount,
 	outlookCount,
 	totalUnread,
-	userName,
 }: {
 	onAccept: () => void;
 	briefText?: string;
@@ -45,7 +44,6 @@ export default function RecommendationPanel({
 	gmailCount?: number;
 	outlookCount?: number;
 	totalUnread?: number;
-	userName?: string;
 }) {
 	const parseBriefText = (text: string) =>
 		text.split("\n").filter((line) => line.trim());
