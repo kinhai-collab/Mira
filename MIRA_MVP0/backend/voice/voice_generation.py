@@ -1230,7 +1230,6 @@ def generate_voice(text: str) -> tuple[str, str]:
         except Exception as e:
             logging.exception(f"Failed to normalize audio stream: {e}")
             audio_bytes = b""
-        audio_bytes = b"".join(list(audio_stream))
 
         if not audio_bytes:
             logging.warning("No audio data received from ElevenLabs")
