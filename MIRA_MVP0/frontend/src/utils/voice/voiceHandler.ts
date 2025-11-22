@@ -1,5 +1,6 @@
 /** @format */
 import { stopVoice } from "./voice";
+import { getValidToken } from "@/utils/auth";
 
 /* ---------------------- Global Mute Control ---------------------- */
 export let isMiraMuted = false;
@@ -352,8 +353,19 @@ async function recordOnce(): Promise<void> {
 					const apiBase = (
 						process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
 					).replace(/\/+$/, "");
+
+					// Retrieve a valid token (refresh if needed) and include as Authorization header
+					let headers: Record<string, string> = {};
+					try {
+						const token = await getValidToken();
+						if (token) headers.Authorization = `Bearer ${token}`;
+					} catch (e) {
+						console.warn('Could not retrieve token for voice upload', e);
+					}
+
 					const res = await fetch(`${apiBase}/api/voice`, {
 						method: "POST",
+						headers,
 						body: formData,
 					});
 
