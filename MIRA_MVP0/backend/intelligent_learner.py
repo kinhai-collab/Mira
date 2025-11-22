@@ -41,6 +41,41 @@ class IntelligentLearner:
         self.response_patterns = defaultdict(int)
         self.topic_interests = Counter()
 
+    def _safe_parse_json_array(self, text: str) -> List[Dict[str, Any]]:
+        """
+        Try to parse a JSON array from model output robustly.
+        - If text is valid JSON, return it.
+        - Else, attempt to locate the first JSON array ([...] ) substring and parse that.
+        - If still failing, return an empty list.
+        """
+        if not text:
+            return []
+
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, list):
+                return parsed
+            # If model returned an object, wrap in list
+            if isinstance(parsed, dict):
+                return [parsed]
+        except Exception:
+            pass
+
+        # Try to extract a JSON array substring
+        try:
+            import re
+            m = re.search(r"\[.*\]", text, flags=re.DOTALL)
+            if m:
+                candidate = m.group(0)
+                parsed = json.loads(candidate)
+                if isinstance(parsed, list):
+                    return parsed
+        except Exception:
+            pass
+
+        # Give up safely
+        return []
+
     async def analyze_conversation(self, user_id: str, user_message: str, assistant_response: str):
         """
         Analyze a conversation turn and extract learnings automatically.
@@ -114,13 +149,14 @@ class IntelligentLearner:
         - Interests or hobbies
         - Schedule/time preferences
 
-        Return ONLY a JSON array of insights. Each insight should have:
-        - "type": category (preferences, habits, knowledge, relationships, schedule, communication)
-        - "content": the insight text
-        - "confidence": 1-5 (how certain we are)
-        - "importance": 1-5 (how valuable this insight is)
+    Return ONLY a JSON array of insights. Each insight should have:
+    - "type": category (preferences, habits, knowledge, relationships, schedule, communication)
+    - "content": the insight text (a concise factual statement)
+    - "evidence": the exact substring from the USER message that supports this insight, or empty string if none
+    - "confidence": 1-5 (how certain we are)
+    - "importance": 1-5 (how valuable this insight is)
 
-        If no valuable insights, return empty array [].
+    IMPORTANT: Do NOT infer or speculate. Return ONLY insights that are explicitly stated by the USER in the conversation. If the user did not state the fact explicitly, return an empty array [].
         """
 
         try:
@@ -132,12 +168,20 @@ class IntelligentLearner:
             )
 
             insights_text = response.choices[0].message.content.strip()
-            insights = json.loads(insights_text)
 
-            # Filter high-confidence, high-importance insights
+            # Robust JSON parsing: try direct json.loads, then try to extract a JSON array substring
+            insights = self._safe_parse_json_array(insights_text)
+
+            # Filter: only keep dict insights with evidence and sufficient confidence/importance
             valuable_insights = [
                 insight for insight in insights
-                if insight.get("confidence", 0) >= 3 and insight.get("importance", 0) >= 3
+                if (
+                    isinstance(insight, dict)
+                    and insight.get("confidence", 0) >= 3
+                    and insight.get("importance", 0) >= 3
+                    and isinstance(insight.get("evidence"), str)
+                    and len(insight.get("evidence").strip()) > 0
+                )
             ]
 
             return valuable_insights
@@ -174,8 +218,17 @@ class IntelligentLearner:
                 max_tokens=400
             )
 
-            insights = json.loads(response.choices[0].message.content.strip())
-            return [i for i in insights if i.get("confidence", 0) >= 3]
+            insights_text = response.choices[0].message.content.strip()
+            insights = self._safe_parse_json_array(insights_text)
+            return [
+                i for i in insights
+                if (
+                    isinstance(i, dict)
+                    and i.get("confidence", 0) >= 3
+                    and isinstance(i.get("evidence"), str)
+                    and len(i.get("evidence").strip()) > 0
+                )
+            ]
 
         except Exception as e:
             print(f"Error extracting email insights: {e}")
@@ -209,8 +262,17 @@ class IntelligentLearner:
                 max_tokens=300
             )
 
-            insights = json.loads(response.choices[0].message.content.strip())
-            return [i for i in insights if i.get("confidence", 0) >= 3]
+            insights_text = response.choices[0].message.content.strip()
+            insights = self._safe_parse_json_array(insights_text)
+            return [
+                i for i in insights
+                if (
+                    isinstance(i, dict)
+                    and i.get("confidence", 0) >= 3
+                    and isinstance(i.get("evidence"), str)
+                    and len(i.get("evidence").strip()) > 0
+                )
+            ]
 
         except Exception as e:
             print(f"Error extracting schedule insights: {e}")
@@ -222,9 +284,12 @@ class IntelligentLearner:
         """
         insight_type = insight.get("type", "knowledge")
         content = insight.get("content", "")
+        evidence = (insight.get("evidence") or "").strip()
         importance = insight.get("importance", 3)
 
-        if not content:
+        # Only store insights that have supporting evidence (explicit user text)
+        if not content or not evidence:
+            print(f"Skipping insight (no content or evidence): {insight}")
             return
 
         # Store as fact with appropriate category

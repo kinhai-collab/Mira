@@ -62,12 +62,20 @@ def respond_with_memory(
     personalization_context = ""
     try:
         if user_id and user_id != "anonymous":
-            memory_context = memory_manager.get_relevant_context(user_id=user_id, query=user_input, max_memories=max_memories)
+            try:
+                print(f"DEBUG: fetching relevant context for user_id={user_id} query={user_input[:60]}")
+                memory_context = memory_manager.get_relevant_context(user_id=user_id, query=user_input, max_memories=max_memories)
+                print(f"DEBUG: memory_context length={len(memory_context)}")
+            except Exception as e:
+                print(f"DEBUG: error getting relevant context: {e}")
+                memory_context = ""
             try:
                 personalization_context = intelligent_learner.get_personalization_context(user_id=user_id, current_query=user_input)
-            except Exception:
+            except Exception as e:
+                print(f"DEBUG: personalization context error: {e}")
                 personalization_context = ""
-    except Exception:
+    except Exception as e:
+        print(f"DEBUG: unexpected error preparing contexts: {e}")
         memory_context = ""
         personalization_context = ""
 
@@ -114,8 +122,16 @@ def respond_with_memory(
                 try:
                     extractor = get_memory_extractor()
                     decision = extractor.analyze(text)
-                    # decision['save'] may be True/False or None; treat None conservatively as False
-                    return bool(decision.get("save", False))
+                    # decision['save'] may be True/False or None. If the extractor
+                    # explicitly returns True/False, obey it. If it returns None
+                    # (undecided) we fall through to the local heuristics below
+                    # rather than conservatively treating None as False.
+                    save_flag = decision.get("save", None)
+                    if save_flag is True:
+                        return True
+                    if save_flag is False:
+                        return False
+                    # If save_flag is None, fall back to heuristics below.
                 except Exception:
                     # Fallback heuristics in case the MemoryExtractor fails or is
                     # not available. Rules (conservative):
@@ -204,21 +220,46 @@ def respond_with_memory(
             else:
                 # Store only salient user messages as short summaries (facts), not raw turns
                 try:
-                    if is_salient(user_input):
+                    salient = False
+                    try:
+                        salient = is_salient(user_input)
+                    except Exception as e:
+                        print(f"DEBUG: is_salient check raised: {e}")
+                        salient = False
+                    print(f"DEBUG: is_salient={salient} for user_input={user_input[:80]}")
+                    if salient:
                         summary = summarize_text(user_input)
                         # upsert as a fact (dedupe inside the memory service)
                         try:
-                            upserted_id = memory_manager.memory_service.upsert_fact_memory(user_id=user_id, fact=summary, category="salient", importance=3)
+                            # Developer-visible pre-upsert log
                             try:
-                                print(f"Upserted fact for user_id={user_id} id={upserted_id} fact={summary}")
+                                preview = (summary[:180] + '...') if len(summary) > 180 else summary
+                            except Exception:
+                                preview = "<unprintable>"
+                            print(f"MemoryUpsert: attempting upsert user_id={user_id} preview={preview}")
+
+                            upserted_id = memory_manager.memory_service.upsert_fact_memory(user_id=user_id, fact=summary, category="salient", importance=3)
+
+                            try:
+                                print(f"MemoryUpsert: upsert succeeded user_id={user_id} id={upserted_id} preview={preview}")
                             except Exception:
                                 pass
-                        except Exception:
+                        except Exception as e:
                             # fallback: store raw user message as fact
                             try:
+                                print(f"MemoryUpsert: upsert raised exception, falling back to store_fact_memory user_id={user_id} error={e}")
                                 memory_manager.memory_service.store_fact_memory(user_id=user_id, fact=summary, category="salient", importance=2)
-                            except Exception:
+                                print(f"MemoryUpsert: fallback store_fact_memory invoked for user_id={user_id}")
+                            except Exception as ex:
+                                print(f"MemoryUpsert: fallback store_fact_memory failed for user_id={user_id} error={ex}")
                                 pass
+                    else:
+                        # Not salient - developer-visible log for debugging
+                        try:
+                            preview = (user_input[:180] + '...') if len(user_input) > 180 else user_input
+                        except Exception:
+                            preview = "<unprintable>"
+                        print(f"MemoryUpsert: message not salient; skipping save for user_id={user_id} preview={preview}")
                 except Exception:
                     pass
 

@@ -11,7 +11,6 @@ import json
 import httpx
 from openai import OpenAI
 from settings import get_uid_from_token
-from conversation_manager import respond_with_memory
 
 # Optional memory imports - handle gracefully if modules don't exist
 try:
@@ -377,10 +376,10 @@ def has_speech(input_path: str, vad_threshold: float = 0.15, vad_aggressiveness:
             return False
 
 @router.get("/voice")
-async def generate_voice(text: str = "Hello from Mira!"):
+async def stream_voice(text: str = "Hello from Mira!"):
     """
-    Generates spoken audio from the given text using ElevenLabs.
-    Returns an MP3 stream that the frontend can directly play.
+    Generates spoken audio from the given text using ElevenLabs and returns an MP3 stream.
+    Renamed handler to avoid conflict with the synchronous `generate_voice` helper below.
     """
     logging.info(f"Generating voice for text: {text[:50]}...")
     try:
@@ -390,7 +389,6 @@ async def generate_voice(text: str = "Hello from Mira!"):
         
         # Get the ElevenLabs client (with lazy import)
         elevenlabs_client = get_elevenlabs_client()
-
 
         voice_id = os.getenv("ELEVENLABS_VOICE_ID")
         if not voice_id:
@@ -404,63 +402,13 @@ async def generate_voice(text: str = "Hello from Mira!"):
             output_format="mp3_44100_128",
         )
 
-        # Combine all chunks into one binary MP3 blob (normalize types)
+        # Normalize stream into bytes
         try:
             audio_bytes = _stream_to_bytes(audio_stream)
             logging.info(f"Audio bytes length: {len(audio_bytes)}")
-            try:
-                logging.info(f"First 16 bytes (hex): {audio_bytes[:16].hex()}")
-            except Exception:
-                logging.info(f"First 16 bytes (raw): {audio_bytes[:16]}")
         except Exception as e:
             logging.exception(f"Failed to collect audio stream: {e}")
             audio_bytes = b""
-        
-        # Combine all chunks into one binary MP3 blob
-        audio_bytes = b"".join(list(audio_stream))
-
-        # Debug: Check the first few bytes to ensure it's valid MP3
-        print(f"Audio bytes length: {len(audio_bytes)}")
-        print(f"First 16 bytes (hex): {audio_bytes[:16].hex()}")
-        print(f"First 16 bytes (ascii): {audio_bytes[:16]}")
-
-        # Check if it starts with MP3 sync word (0xFF 0xFB or 0xFF 0xFA) or ID3 tag (0x49 0x44 0x33)
-        if len(audio_bytes) >= 3:
-            if (audio_bytes[0] == 0xFF and (audio_bytes[1] & 0xE0) == 0xE0) or \
-               (audio_bytes[0] == 0x49 and audio_bytes[1] == 0x44 and audio_bytes[2] == 0x33):
-                logging.info("Audio data appears to be valid MP3")
-            else:
-                logging.info("Audio data does not appear to be valid MP3")
-                logging.info("This might be base64 encoded or in a different format")
-                
-                print("Audio data does not appear to be valid MP3")
-                print("This might be base64 encoded or in a different format")
-
-                # Try to decode as base64 if it looks like base64
-                try:
-                    import base64
-                    # Check if the data looks like base64 (contains only base64 characters)
-                    if all(c in b'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=' for c in audio_bytes):
-                        logging.info("Attempting to decode as base64...")
-                        decoded_bytes = base64.b64decode(audio_bytes)
-                        logging.info(f"Decoded bytes length: {len(decoded_bytes)}")
-                        logging.info(f"Decoded first 16 bytes (hex): {decoded_bytes[:16].hex()}")
-                        
-                        print(f"Decoded bytes length: {len(decoded_bytes)}")
-                        print(f"Decoded first 16 bytes (hex): {decoded_bytes[:16].hex()}")
-
-                        # Check if decoded data is valid MP3
-                        if len(decoded_bytes) >= 3:
-                            if (decoded_bytes[0] == 0xFF and (decoded_bytes[1] & 0xE0) == 0xE0) or \
-                               (decoded_bytes[0] == 0x49 and decoded_bytes[1] == 0x44 and decoded_bytes[2] == 0x33):
-                                logging.info(" Decoded audio data appears to be valid MP3")
-                                audio_bytes = decoded_bytes
-                            else:
-                                logging.info("Decoded data still doesn't look like MP3")
-                except Exception as e:
-                    logging.info(f"Base64 decode failed: {e}")
-        
-                    print(f"Base64 decode failed: {e}")
 
         # Validate that we got audio data
         if not audio_bytes:
@@ -482,6 +430,7 @@ async def generate_voice(text: str = "Hello from Mira!"):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Voice generation failed: {e}")
 
+
 async def fetch_dashboard_data(user_token: str, has_email: bool, has_calendar: bool):
     """
     Fetches live Gmail and Calendar data for the logged-in user.
@@ -502,23 +451,20 @@ async def fetch_dashboard_data(user_token: str, has_email: bool, has_calendar: b
                 res = await client.get(f"{base_url}/dashboard/emails/list", headers=headers)
                 if res.status_code == 200:
                     data = res.json()
-                    # Extract emails from nested structure: {status: "success", data: {emails: [...]}}
                     emails = data.get("data", {}).get("emails", [])
             except Exception as e:
-                print("âš ï¸ Email fetch failed:", e)
+                logging.debug(f"Email fetch failed: {e}")
 
         if has_calendar:
             try:
                 res = await client.get(f"{base_url}/dashboard/events", headers=headers)
                 if res.status_code == 200:
                     data = res.json()
-                    # Extract events from nested structure: {status: "success", data: {events: [...]}}
                     calendar_events = data.get("data", {}).get("events", [])
             except Exception as e:
-                print("⚠️ Calendar fetch failed:", e)
+                logging.debug(f"Calendar fetch failed: {e}")
 
     return emails, calendar_events
-
 
 
 @router.post("/text-query")
@@ -526,29 +472,16 @@ async def text_query_pipeline(request: Request):
     request_data = await request.json()
     print("📩 Incoming text-query data:", request_data)
 
+    # Support token provided either in Authorization header or in request body as `token`
+    auth_header = request.headers.get("authorization") or None
+    if not auth_header:
+        body_token = request_data.get("token") if isinstance(request_data, dict) else None
+        if body_token:
+            auth_header = f"Bearer {body_token}"
+
     try:
         user_input = request_data.get("query", "").strip()
         history = request_data.get("history", [])
-        
-        # Extract user ID from authorization header
-        user_id = None
-        auth_header = request.headers.get("authorization")
-        if auth_header:
-            try:
-                user_id = get_uid_from_token(auth_header)
-            except Exception as e:
-                print(f"Could not extract user ID from token: {e}")
-                user_id = "anonymous"  # Fallback for development
-        else:
-            # No auth header present; default to anonymous for now
-            user_id = None
-
-        # No dev-mode passthrough here; rely on real auth/user ids.
-        
-        # Get memory service and helpers
-        memory_service = get_memory_service()
-        memory_manager = get_memory_manager()
-        intelligent_learner = get_intelligent_learner()
         
         if not user_input or len(user_input) < 1:
             return JSONResponse({
@@ -645,167 +578,8 @@ async def text_query_pipeline(request: Request):
                     messages.append({"role": msg["role"], "content": msg["content"]})
         
         # Add current user query
+        # Add current user query
         messages.append({"role": "user", "content": user_input})
-        
-        # Generate reply using GPT
-        response_text = "I'm here to help!"
-        try:
-           
-            oa = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-            comp = oa.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=messages,
-                temperature=0.8,
-                max_tokens=300,
-            )
-            response_text = (comp.choices[0].message.content or "I'm here to help!").strip()
-        except Exception as e:
-            print(f"Error generating response: {e}")
-            response_text = "Sorry, I encountered an issue generating a response."
-        
-        return JSONResponse({
-            "text": response_text,
-            "userText": user_input,
-        })
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Text query pipeline failed: {e}")
-
-async def fetch_dashboard_data(user_token: str, has_email: bool, has_calendar: bool):
-    """
-    Fetches live Gmail and Calendar data for the logged-in user.
-    Calls internal dashboard endpoints with authentication.
-    """
-    base_url = os.getenv("API_BASE_URL", "http://127.0.0.1:8000")
-    headers = {
-        "Authorization": f"Bearer {user_token}",
-        "Content-Type": "application/json",
-    }
-
-    emails = []
-    calendar_events = []
-
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        if has_email:
-            try:
-                res = await client.get(f"{base_url}/dashboard/emails/list", headers=headers)
-                if res.status_code == 200:
-                    data = res.json()
-                    # Extract emails from nested structure: {status: "success", data: {emails: [...]}}
-                    emails = data.get("data", {}).get("emails", [])
-            except Exception as e:
-                print("⚠️ Email fetch failed:", e)
-
-        if has_calendar:
-            try:
-                res = await client.get(f"{base_url}/dashboard/events", headers=headers)
-                if res.status_code == 200:
-                    data = res.json()
-                    # Extract events from nested structure: {status: "success", data: {events: [...]}}
-                    calendar_events = data.get("data", {}).get("events", [])
-            except Exception as e:
-                print("âš ï¸ Calendar fetch failed:", e)
-
-    return emails, calendar_events
-
-
-
-@router.post("/text-query")
-async def text_query_pipeline(request: Request):
-    request_data = await request.json()
-    print("ðŸ“© Incoming text-query data:", request_data)
-
-    try:
-        user_input = request_data.get("query", "").strip()
-        history = request_data.get("history", [])
-        
-        # Extract user ID from authorization header
-        user_id = None
-        auth_header = request.headers.get("authorization")
-        if auth_header:
-            try:
-                user_id = get_uid_from_token(auth_header)
-            except Exception as e:
-                print(f"Could not extract user ID from token: {e}")
-                user_id = "anonymous"  # Fallback for development
-        
-        # Get memory service (handle gracefully if modules don't exist)
-        memory_service = get_memory_service() if get_memory_service else None
-        memory_manager = get_memory_manager() if get_memory_manager else None
-        intelligent_learner = get_intelligent_learner() if get_intelligent_learner else None
-        
-        if not user_input or len(user_input) < 1:
-            return JSONResponse({
-                "text": "",
-                "userText": user_input,
-            })
-        
-        # Check for morning brief intent
-        import re, base64
-        morning_brief_keywords = re.compile(r"(morning|daily|today).*(brief|summary|update)", re.I)
-        show_brief_keywords = re.compile(r"(show|give|tell|read).*(brief|summary|morning|daily)", re.I)
-        if morning_brief_keywords.search(user_input) or show_brief_keywords.search(user_input):
-            return JSONResponse({
-                "text": "Opening your morning brief now.",
-                "userText": user_input,
-                "action": "navigate",
-                "actionTarget": "/scenarios/morning-brief",
-            })
-        
-        # Check for email/calendar summary intent
-        email_keywords = re.compile(r"(email|inbox|mail|messages)", re.I)
-        calendar_keywords = re.compile(r"(calendar|schedule|event)", re.I)
-        has_email_intent = email_keywords.search(user_input)
-        has_calendar_intent = calendar_keywords.search(user_input)
-        
-        if has_email_intent or has_calendar_intent:
-            # Try to extract token from environment or a test fallback
-            # ✅ Extract token sent from frontend (if any)
-            user_token = request_data.get("token") or os.getenv("TEST_USER_TOKEN")
-
-            if not user_token:
-                print("⚠️ No token found in request or env; using mock local token.")
-                user_token = "local-dev-token"
-            else:
-                print("✅ Using user_token from frontend (truncated):", user_token[:12], "...")
-
-            steps = []
-            if has_email_intent:
-                steps.append({"id": "emails", "label": "Checking your inbox for priority emails..."})
-            if has_calendar_intent:
-                steps.append({"id": "calendar", "label": "Reviewing today's calendar events..."})
-                steps.append({"id": "highlights", "label": "Highlighting the most important meetings..."})
-            if has_email_intent and has_calendar_intent:
-                steps.append({"id": "conflicts", "label": "Noting any schedule conflicts..."})
-
-            # âœ… Fetch live data from dashboard routes
-            emails, calendar_events = await fetch_dashboard_data(user_token, has_email_intent, has_calendar_intent)
-
-            action_data = {
-                "steps": steps,
-                "emails": emails if has_email_intent else [],
-                "calendarEvents": calendar_events if has_calendar_intent else [],
-                "focus": (
-                    "You have upcoming events and important unread emails â€” review your schedule and respond accordingly."
-                    if has_email_intent and has_calendar_intent
-                    else None
-                ),
-            }
-
-            response_text = (
-                "Here's what I'm seeing in your inbox and calendar."
-                if has_email_intent and has_calendar_intent
-                else "Here's what I'm seeing in your inbox."
-                if has_email_intent
-                else "Here's what I'm seeing on your calendar."
-            )
-
-            return JSONResponse({
-                "text": response_text,
-                "userText": user_input,
-                "action": "email_calendar_summary",
-                "actionData": action_data,
-            })
 
         
 
@@ -815,6 +589,20 @@ async def text_query_pipeline(request: Request):
         
 
         # Retrieve relevant memories for context
+        # Extract user ID from authorization header (we may have pulled token from body earlier)
+        user_id = None
+        if auth_header:
+            try:
+                user_id = get_uid_from_token(auth_header)
+            except Exception as e:
+                print(f"Could not extract user ID from token: {e}")
+                user_id = "anonymous"
+
+        # Get memory service/manager/learner if available
+        memory_service = get_memory_service() if get_memory_service else None
+        memory_manager = get_memory_manager() if get_memory_manager else None
+        intelligent_learner = get_intelligent_learner() if get_intelligent_learner else None
+
         relevant_memories = []
         memory_context = ""
         if user_id and user_id != "anonymous" and memory_service:
@@ -822,21 +610,43 @@ async def text_query_pipeline(request: Request):
                 relevant_memories = memory_service.retrieve_relevant_memories(
                     user_id=user_id,
                     query=user_input,
-                    limit=5,
-                    memory_type="fact"
+                    limit=3,
+                    memory_type="conversation"
                 )
-
-                # Format fact memories for context (facts-only policy)
-                if relevant_memories:
+                
+                # Also get recent conversations for additional context
+                recent_memories = memory_service.get_recent_conversations(user_id=user_id, limit=5)
+                
+                # Combine and deduplicate
+                all_memories = relevant_memories + recent_memories
+                seen_contents = set()
+                unique_memories = []
+                for mem in all_memories:
+                    content = mem.get("content", "")
+                    if content not in seen_contents:
+                        seen_contents.add(content)
+                        unique_memories.append(mem)
+                
+                # Format memories for context (support both fact memories and conversation metadata)
+                if unique_memories:
                     memory_strings = []
-                    for mem in relevant_memories[:5]:
-                        content = mem.get("content", "")
-                        meta = mem.get("metadata", {}) or {}
-                        category = meta.get("category")
-                        if category:
-                            memory_strings.append(f"Fact ({category}): {content}")
-                        else:
-                            memory_strings.append(content)
+                    for mem in unique_memories[:5]:  # Limit to 5 total
+                        content = mem.get("content") or ""
+                        metadata = mem.get("metadata", {}) or {}
+                        # If this is a stored fact, include category and content
+                        category = metadata.get("category") or metadata.get("type") or None
+                        if content:
+                            if category:
+                                memory_strings.append(f"Fact ({category}): {content}")
+                            else:
+                                memory_strings.append(f"Fact: {content}")
+                            continue
+
+                        # Fallback: if conversation-style metadata exists, include user/assistant snippets
+                        user_msg = metadata.get("user_message", "")
+                        assistant_msg = metadata.get("assistant_response", "")
+                        if user_msg and assistant_msg:
+                            memory_strings.append(f"Previous conversation: User: {user_msg} | Assistant: {assistant_msg}")
 
                     if memory_strings:
                         memory_context = "\n".join(memory_strings[:3])  # Limit context length
@@ -845,35 +655,40 @@ async def text_query_pipeline(request: Request):
                 print(f"Error retrieving memories: {e}")
                 memory_context = ""
 
-        # Use the conversation manager to assemble context, call the LLM, and persist memories
+        # Build chat message array
+        system_prompt = (
+            "You are Mira, a warm, helpful assistant. Keep answers concise and friendly."
+        )
+        
+        if memory_context:
+            system_prompt += f"\n\nRelevant context from previous conversations:\n{memory_context}"
+        
+        messages: List[Dict[str, Any]] = [
+            {
+                "role": "system",
+                "content": system_prompt,
+            },
+        ]        # Add history
+        if isinstance(history, list):
+            for msg in history[-10:]:  # Keep last 10 messages for context
+                if isinstance(msg, dict) and "role" in msg and "content" in msg:
+                    messages.append({"role": msg["role"], "content": msg["content"]})
+        
+        # Add current user query
+        messages.append({"role": "user", "content": user_input})
+        
+        # Generate reply using GPT
+        response_text = "I'm here to help!"
         try:
-            # history may be a JSON string or a list in the request; normalize to list of messages
-            parsed_history = None
-            try:
-                if history:
-                    parsed = json.loads(history)
-                    if isinstance(parsed, list):
-                        parsed_history = parsed
-            except Exception:
-                parsed_history = None
-
-            logging.info("Calling respond_with_memory for text-query")
-            result = respond_with_memory(
-                user_id=user_id,
-                user_input=user_input,
-                history=parsed_history,
-                memory_manager=memory_manager,
-                intelligent_learner=intelligent_learner,
-                model="gpt-4o-mini",
-                max_memories=3,
-            )
-            response_text = result.get("response_text", "Sorry, something went wrong while generating my response.")
-        except Exception as e:
-            logging.exception(f"Error in conversation manager: {e}")
-            response_text = "Sorry, something went wrong while generating my response."
-
            
             oa = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+            # Debug: log the memory context being passed to the model so we can
+            # confirm the LLM receives stored facts. Truncate to avoid huge logs.
+            try:
+                logging.info(f"text_query_pipeline: memory_context_len={len(memory_context)} preview={memory_context[:1000]}")
+            except Exception:
+                pass
+
             comp = oa.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=messages,
@@ -881,6 +696,11 @@ async def text_query_pipeline(request: Request):
                 max_tokens=300,
             )
             response_text = (comp.choices[0].message.content or "I'm here to help!").strip()
+            # Debug: log a short preview of the LLM response so we can inspect unexpected empty replies
+            try:
+                logging.info(f"LLM reply preview: {response_text[:240]}")
+            except Exception:
+                pass
         except Exception as e:
             print(f"Error generating response: {e}")
             response_text = "Sorry, I encountered an issue generating a response."
@@ -903,10 +723,18 @@ async def text_query_pipeline(request: Request):
                     assistant_response=response_text
                 ))
         
-        return JSONResponse({
-            "text": response_text,
-            "userText": user_input,
-        })
+        # Optionally include raw model payload when debugging
+        debug_mode = os.getenv("DEBUG_TEXT_QUERY", "") == "1"
+        out = {"text": response_text, "userText": user_input}
+        if debug_mode:
+            try:
+                out["_raw"] = {
+                    "choices": [c.to_dict() if hasattr(c, 'to_dict') else str(c) for c in getattr(comp, 'choices', [])],
+                }
+            except Exception:
+                out["_raw"] = "<unavailable>"
+
+        return JSONResponse(out)
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Text query pipeline failed: {e}")
@@ -916,19 +744,50 @@ async def voice_pipeline(
     request: Request,
     audio: UploadFile = File(...),
     history: Optional[str] = Form(None),
+    token: Optional[str] = Form(None),
+    metadata: Optional[str] = Form(None),
+    auth: Optional[str] = Form(None),
 ):
     """
     Accepts recorded audio, transcribes with Whisper, generates a chat reply, and optional TTS audio.
     Returns a JSON body compatible with the frontend voice handler.
     """
-    # ðŸ”‘ Extract Authorization token from headers
+    # Extract Authorization token from headers or form (frontend may send token in form-data)
     headers = request.headers
+    # Debug: log header names so we can see if Authorization is arriving (do not log values)
+    try:
+        header_names = list(headers.keys())
+        logging.info(f"voice_pipeline: received headers: {header_names}")
+        logging.info(f"voice_pipeline: has 'authorization' header? {'authorization' in (h.lower() for h in header_names)}")
+    except Exception:
+        pass
     auth_header = headers.get("authorization")
-    user_token = auth_header.replace("Bearer ", "") if auth_header else None
+    # if frontend provided an explicit `auth` or `authorization` form field, prefer that
+    if not auth_header and auth:
+        auth_header = auth if auth.startswith("Bearer ") else f"Bearer {auth}"
+
+    if not auth_header and token:
+        # token provided in form-data; construct Bearer header for downstream helpers
+        auth_header = f"Bearer {token}"
+
+    # Preserve raw metadata form (if provided) for fallback uid extraction
+    metadata_raw = metadata
+
+    user_token = None
+    if auth_header:
+        user_token = auth_header.replace("Bearer ", "")
 
     if not user_token:
         # fallback for local development
         user_token = os.getenv("TEST_USER_TOKEN", "local-dev-token")
+    else:
+        # Optional masked debug: show that a token was received without printing the whole secret
+        try:
+            if os.getenv("DEV_DEBUG_TOKENS") == "1":
+                masked = (user_token[:8] + "...") if len(user_token) > 8 else user_token
+                logging.info(f"voice_pipeline: received token (masked)={masked}")
+        except Exception:
+            pass
     
     try:
         # 1) Persist upload to temp file (OpenAI SDK expects a real file object)
@@ -979,27 +838,67 @@ async def voice_pipeline(
                 "userText": user_input,
             })
 
-        # Extract user ID from authorization header
+        # Extract user ID from authorization header (preferred)
         user_id = None
         if auth_header:
             try:
                 user_id = get_uid_from_token(auth_header)
             except Exception as e:
                 print(f"Could not extract user ID from token: {e}")
-                user_id = "anonymous"  # Fallback for development
-        else:
-            user_id = None
+                user_id = None
 
-        # No dev-mode passthrough for voice; require real auth tokens for user resolution.
+        # If we couldn't resolve a user_id via token, try common fallbacks
+        if not user_id or user_id == "anonymous":
+            # 1) Check common debug header (x-user-id)
+            header_user = request.headers.get("x-user-id") or request.headers.get("x-userid") or request.headers.get("x-uid")
+            if header_user:
+                user_id = header_user
+                logging.info(f"voice_pipeline: resolved user_id from header x-user-id: {user_id}")
+
+        if (not user_id or user_id == "anonymous") and metadata_raw:
+            try:
+                # Log a short preview of metadata for debugging (do not log full secrets)
+                try:
+                    preview = (metadata_raw[:200] + '...') if isinstance(metadata_raw, str) and len(metadata_raw) > 200 else str(metadata_raw)
+                    logging.info(f"voice_pipeline: metadata preview: {preview}")
+                except Exception:
+                    pass
+
+                md = json.loads(metadata_raw) if isinstance(metadata_raw, str) else metadata_raw
+
+                # Try a few common shapes
+                possible = None
+                if isinstance(md, dict):
+                    possible = md.get("userId") or md.get("user_id") or md.get("uid") or md.get("id")
+                    if not possible:
+                        # nested shapes: {"user": {"id": "..."}} or {"meta": {"userId": "..."}}
+                        user_obj = md.get("user") or md.get("meta") or md.get("payload")
+                        if isinstance(user_obj, dict):
+                            possible = user_obj.get("id") or user_obj.get("userId") or user_obj.get("user_id")
+
+                if possible:
+                    user_id = str(possible)
+                    try:
+                        logging.info(f"voice_pipeline: resolved user_id from metadata: {user_id}")
+                    except Exception:
+                        pass
+            except Exception:
+                # ignore parse failures
+                pass
+
+        if not user_id:
+            user_id = "anonymous"
         
-        # Get memory service and helpers
-        memory_service = get_memory_service()
-        memory_manager = get_memory_manager()
-        intelligent_learner = get_intelligent_learner()
         # Get memory service (handle gracefully if modules don't exist)
         memory_service = get_memory_service() if get_memory_service else None
         memory_manager = get_memory_manager() if get_memory_manager else None
         intelligent_learner = get_intelligent_learner() if get_intelligent_learner else None
+
+        # Debug: show whether memory components are available and the resolved user_id
+        try:
+            logging.info(f"voice_pipeline: user_id={user_id} memory_service={'yes' if memory_service else 'no'} memory_manager={'yes' if memory_manager else 'no'} learner={'yes' if intelligent_learner else 'no'}")
+        except Exception:
+            pass
 
         # 2.5) Intent: Morning brief navigate
 
@@ -1095,20 +994,25 @@ async def voice_pipeline(
         # Retrieve relevant memories for context
         memory_context = ""
         personalization_context = ""
-        if user_id and user_id != "anonymous" and memory_manager and intelligent_learner:
+        if user_id and user_id != "anonymous":
             try:
-                # Use the efficient memory manager for context retrieval
-                memory_context = memory_manager.get_relevant_context(
-                    user_id=user_id,
-                    query=user_input,
-                    max_memories=3
-                )
+                # Fetch memory context if memory manager is available (don't require learner)
+                if memory_manager:
+                    memory_context = memory_manager.get_relevant_context(
+                        user_id=user_id,
+                        query=user_input,
+                        max_memories=3
+                    )
 
-                # Get personalization context from intelligent learner
-                personalization_context = intelligent_learner.get_personalization_context(
-                    user_id=user_id,
-                    current_query=user_input
-                )
+                # Get personalization context only if intelligent learner is present
+                if intelligent_learner:
+                    try:
+                        personalization_context = intelligent_learner.get_personalization_context(
+                            user_id=user_id,
+                            current_query=user_input
+                        )
+                    except Exception:
+                        personalization_context = ""
             except Exception as e:
                 print(f"Error retrieving memories: {e}")
                 memory_context = ""
@@ -1142,7 +1046,7 @@ Curious: "Really? Tell me more, Iâ€™m intrigued."
 Mischievous: "Oh, I see what you did thereâ€¦ clever move!"""
 
         if memory_context:
-            system_prompt += f"\n\nRelevant facts:\n{memory_context}"
+            system_prompt += f"\n\nRelevant context from previous conversations:\n{memory_context}"
 
         messages: List[Dict[str, Any]] = [
             {
@@ -1159,33 +1063,26 @@ Mischievous: "Oh, I see what you did thereâ€¦ clever move!"""
             except Exception:
                 pass
 
-        # 4) Generate reply via central conversation manager (respond_with_memory)
+        # 4) Generate reply
         response_text = "I'm here."
         try:
-            # Normalize history into a list of messages if provided (frontend may send JSON-stringified history)
-            parsed_history = None
-            if history:
-                try:
-                    tmp = json.loads(history)
-                    if isinstance(tmp, list):
-                        parsed_history = tmp
-                except Exception:
-                    parsed_history = None
+            
+            oa = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+            # Debug: log the memory_context passed into the voice LLM so we can
+            # verify that retrieved facts are actually included in the prompt.
+            try:
+                logging.info(f"voice_pipeline: memory_context_len={len(memory_context)} preview={memory_context[:1000]}")
+            except Exception:
+                pass
 
-            logging.info("Calling respond_with_memory for voice pipeline")
-            logging.info(f"voice_pipeline: user_id={user_id} user_input={user_input[:80]}")
-            result = respond_with_memory(
-                user_id=user_id,
-                user_input=user_input,
-                history=parsed_history,
-                memory_manager=memory_manager,
-                intelligent_learner=intelligent_learner,
+            comp = oa.chat.completions.create(
                 model="gpt-4o-mini",
-                max_memories=3,
+                messages=messages,
+                temperature=0.8,
+                max_tokens=200,
             )
-            response_text = result.get("response_text", "Sorry, something went wrong while generating my response.")
-        except Exception as e:
-            logging.exception(f"Voice pipeline LLM call failed: {e}")
+            response_text = (comp.choices[0].message.content or "I'm here.").strip()
+        except Exception:
             response_text = "Sorry, something went wrong while generating my response."
 
         # 5) TTS via ElevenLabs (best-effort)
@@ -1213,16 +1110,52 @@ Mischievous: "Oh, I see what you did thereâ€¦ clever move!"""
         except Exception:
             audio_base64 = None
 
-        # Do not store full conversations — only facts are stored elsewhere.
-        # (Previously we stored conversation turns here; removed per new policy.)
         # Store conversation in memory (async, don't wait)
-        if user_id and user_id != "anonymous" and response_text not in ["I'm here.", "Sorry, something went wrong while generating my response."] and memory_service:
-            # Fire and forget - don't wait for completion
-            asyncio.create_task(memory_service.store_conversation_memory_async(
-                user_id=user_id,
-                user_message=user_input,
-                assistant_response=response_text
-            ))
+        if user_id and user_id != "anonymous" and response_text not in ["I'm here.", "Sorry, something went wrong while generating my response."]:
+            # Prefer internal memory manager if available (still a no-op for conversations)
+            if memory_manager:
+                try:
+                    asyncio.create_task(memory_manager.store_conversation(
+                        user_id=user_id,
+                        user_message=user_input,
+                        assistant_response=response_text
+                    ))
+                    try:
+                        print(f"voice_pipeline: scheduled memory_manager.store_conversation for user_id={user_id}")
+                    except Exception:
+                        pass
+                except Exception as e:
+                    print(f"voice_pipeline: failed to schedule memory_manager.store_conversation: {e}")
+
+            # Fallback to memory service async call (kept for compatibility)
+            if memory_service:
+                try:
+                    asyncio.create_task(memory_service.store_conversation_memory_async(
+                        user_id=user_id,
+                        user_message=user_input,
+                        assistant_response=response_text
+                    ))
+                    try:
+                        print(f"voice_pipeline: scheduled memory_service.store_conversation_memory_async for user_id={user_id}")
+                    except Exception:
+                        pass
+                except Exception as e:
+                    print(f"voice_pipeline: failed to schedule memory_service.store_conversation_memory_async: {e}")
+
+            # Ask the intelligent learner to analyze and store any fact-level insights
+            if intelligent_learner:
+                try:
+                    asyncio.create_task(intelligent_learner.analyze_conversation(
+                        user_id=user_id,
+                        user_message=user_input,
+                        assistant_response=response_text
+                    ))
+                    try:
+                        print(f"voice_pipeline: scheduled intelligent_learner.analyze_conversation for user_id={user_id}")
+                    except Exception:
+                        pass
+                except Exception as e:
+                    print(f"voice_pipeline: failed to schedule intelligent_learner.analyze_conversation: {e}")
 
         # 6) Response compatible with frontend
         return JSONResponse({
@@ -1297,3 +1230,24 @@ def generate_voice(text: str) -> tuple[str, str]:
         import traceback
         traceback.print_exc()
         return "", ""
+
+
+@router.post("/debug/uid")
+async def debug_uid(request: Request, token: Optional[str] = Form(None)):
+    """Dev helper: resolve a Bearer token to a user id using get_uid_from_token.
+
+    Accepts Authorization header or a form field `token` (multipart/form-data).
+    Returns JSON { "uid": "..." } or { "error": "..." } with a 400 status on failure.
+    """
+    auth_header = request.headers.get("authorization")
+    if not auth_header and token:
+        auth_header = f"Bearer {token}"
+
+    if not auth_header:
+        return JSONResponse({"error": "no token provided"}, status_code=400)
+
+    try:
+        uid = get_uid_from_token(auth_header)
+        return JSONResponse({"uid": uid})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=400)

@@ -5,7 +5,7 @@ from datetime import datetime
 import hashlib
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 from openai import OpenAI
 from settings import supabase
 
@@ -32,6 +32,12 @@ class MemoryService:
                 _ = self.supabase.table("facts").select("id").limit(1).execute()
             except Exception:
                 logging.info("Supabase client initialized but `facts` table may not exist or is inaccessible yet")
+            # Developer-friendly visibility (do not print keys)
+            try:
+                sb_url = os.environ.get("SUPABASE_URL")
+                print(f"MemoryService initialized. Supabase client present={bool(self.supabase)} SUPABASE_URL_set={bool(sb_url)}")
+            except Exception:
+                pass
         except Exception:
             logging.exception("Failed to initialize Supabase client; memory operations will be no-ops")
             self.supabase = None
@@ -124,35 +130,116 @@ class MemoryService:
         return await loop.run_in_executor(self.executor, self.store_conversation_memory,
                                           user_id, user_message, assistant_response, timestamp)
 
-    def store_fact_memory(self, user_id: str, fact: str, category: str = "general",
+    def store_fact_memory(self, user_id: str, fact: Union[str, Dict[str, Any]], category: str = "general",
                           importance: int = 1) -> str:
-        embedding = self._embed([fact])[0]
+        """Store a fact for a user.
+
+        Accepts either a simple fact string or a fact dict with keys like
+        `content`/`fact` and optional `metadata` fields. This makes the API
+        tolerant to callers that pass a dict-shaped fact object.
+        """
+
+        # Normalize fact input to a string content and metadata dict
+        if isinstance(fact, dict):
+            # Support both {"content": ...} and {"fact": ...} shapes
+            content = fact.get("content") or fact.get("fact") or ""
+            meta_in = fact.get("metadata") or {}
+            # allow category/importance overrides in the dict
+            category = meta_in.get("category", category)
+            importance = int(meta_in.get("importance", importance))
+        else:
+            content = str(fact)
+            meta_in = {}
+
+        if not content:
+            logging.warning("store_fact_memory called with empty content for user_id=%s", user_id)
+            content = ""
+
+        embedding = self._embed([content])[0]
 
         metadata = {
             "user_id": user_id,
-            "fact": fact,
+            "fact": content,
             "category": category,
             "importance": importance,
             "timestamp": datetime.now().isoformat(),
             "type": "fact",
         }
 
-        memory_id = self._generate_id(fact, user_id)
+        # Merge any incoming metadata fields (without overwriting essential keys)
+        try:
+            for k, v in (meta_in or {}).items():
+                if k not in metadata:
+                    metadata[k] = v
+        except Exception:
+            pass
 
-        if self.supabase:
+        memory_id = self._generate_id(content, user_id)
+
+        # Debug: make it explicit when the Supabase client is not available
+        if not self.supabase:
+            logging.warning("Supabase client not initialized; skipping insert for memory_id=%s user_id=%s", memory_id, user_id)
+            return memory_id
+
+        try:
+            row = {
+                "id": memory_id,
+                "user_id": user_id,
+                "content": fact,
+                "metadata": metadata,
+                "embedding": embedding,
+                "importance": importance,
+                "timestamp": datetime.now().isoformat(),
+            }
+            # Visibility: print row summary so devs can see attempts in console
             try:
-                row = {
-                    "id": memory_id,
-                    "user_id": user_id,
-                    "content": fact,
-                    "metadata": metadata,
-                    "embedding": embedding,
-                    "importance": importance,
-                    "timestamp": datetime.now().isoformat(),
-                }
-                self.supabase.table("facts").insert(row).execute()
+                summary = (fact[:120] + '...') if len(fact) > 120 else fact
             except Exception:
-                logging.exception("Failed to insert fact into Supabase")
+                summary = "<unprintable>"
+            print(f"MemoryService: inserting fact for user_id={user_id} id={memory_id} content_preview={summary}")
+            try:
+                resp = self.supabase.table("facts").insert(row).execute()
+            except Exception as e:
+                logging.exception("Supabase insert raised exception: %s", e)
+                print(f"MemoryService: Supabase insert raised exception: {e}")
+                return memory_id
+
+            # Log supabase response for visibility in debugging (data and error fields vary by client)
+            try:
+                # Try to surface the most useful details for debugging
+                data = getattr(resp, 'data', None)
+                error = getattr(resp, 'error', None)
+                status = getattr(resp, 'status_code', None) or getattr(resp, 'status', None)
+                print(f"MemoryService: Supabase insert response: status={status} data_len={(len(data) if data is not None else 0)} error={error}")
+                if error:
+                    logging.warning("Supabase reported an error inserting fact: %s", error)
+            except Exception:
+                # Fallback: print the raw response object
+                try:
+                    print(f"MemoryService: Supabase insert raw response: {repr(resp)}")
+                except Exception:
+                    logging.info("Supabase insert executed (raw response could not be repr())")
+        except Exception:
+            logging.exception("Failed to prepare/insert fact into Supabase for user_id=%s id=%s", user_id, memory_id)
+
+        # After inserting a new fact, run autopilot in background to allow merge/update/delete decisions.
+        try:
+            # Local import to avoid circular imports at module import time
+            from memory_autopilot import run_autopilot_debug
+            import threading
+
+            def _run_autopilot():
+                try:
+                    # Use the fact text as the conversation input so autopilot can compare and decide
+                    run_autopilot_debug(user_id=user_id, user_message=content if isinstance(content, str) else str(content), assistant_response="(autopilot-run)")
+                except Exception as _e:
+                    logging.debug(f"Autopilot background run failed: {_e}")
+
+            t = threading.Thread(target=_run_autopilot, daemon=True)
+            t.start()
+        except Exception:
+            # Don't let autopilot failures affect normal flow
+            logging.debug("Autopilot scheduling skipped or failed")
 
         return memory_id
 
@@ -181,8 +268,21 @@ class MemoryService:
             return []
 
         try:
+            print(f"MemoryService: retrieving facts for user_id={user_id} (limit=200)")
             resp = self.supabase.table("facts").select("id, content, metadata, embedding").eq("user_id", user_id).limit(200).execute()
-            rows = resp.data or []
+            try:
+                rows = getattr(resp, 'data', None) or []
+            except Exception:
+                rows = resp.data if hasattr(resp, 'data') else []
+            try:
+                logging.debug(f"Supabase retrieve relevant facts response: data_count={len(rows)} error={getattr(resp, 'error', None)}")
+                print(f"MemoryService: retrieve_relevant_memories returned {len(rows)} rows for user_id={user_id}")
+            except Exception:
+                logging.debug(f"Supabase retrieve response: {repr(resp)}")
+                try:
+                    print(f"MemoryService: retrieve_relevant_memories raw response: {repr(resp)}")
+                except Exception:
+                    pass
         except Exception:
             logging.exception("Supabase query failed when retrieving relevant facts")
             return []
@@ -203,8 +303,11 @@ class MemoryService:
         if not self.supabase:
             return []
         try:
+            print(f"MemoryService: retrieve_similar_facts query for user_id={user_id} limit=200")
             resp = self.supabase.table("facts").select("id, content, metadata, embedding").eq("user_id", user_id).limit(200).execute()
-            rows = resp.data or []
+            rows = getattr(resp, 'data', None) or []
+            logging.debug(f"Supabase retrieve_similar_facts response: data_count={len(rows)} error={getattr(resp, 'error', None)}")
+            print(f"MemoryService: retrieve_similar_facts returned {len(rows)} rows for user_id={user_id}")
         except Exception:
             logging.exception("Supabase query failed when retrieving similar facts")
             return []
@@ -219,7 +322,7 @@ class MemoryService:
         out.sort(key=lambda x: x.get("distance", 1.0))
         return out[:limit]
 
-    def upsert_fact_memory(self, user_id: str, fact: str, category: str = "general", importance: int = 1,
+    def upsert_fact_memory(self, user_id: str, fact: Union[str, Dict[str, Any]], category: str = "general", importance: int = 1,
                            dedupe_distance_threshold: float = None) -> str:
         if dedupe_distance_threshold is None:
             try:
@@ -227,10 +330,30 @@ class MemoryService:
             except Exception:
                 dedupe_distance_threshold = 0.2
 
-        candidates = self.retrieve_similar_facts(user_id=user_id, text=fact, limit=3)
+        # Normalize fact input to plain text for embedding/lookup
+        if isinstance(fact, dict):
+            fact_text = fact.get("content") or fact.get("fact") or ""
+        else:
+            fact_text = str(fact)
+
+        # Small normalization to improve similarity matching
+        try:
+            fact_text_for_search = fact_text.strip()
+        except Exception:
+            fact_text_for_search = fact_text
+
+        candidates = self.retrieve_similar_facts(user_id=user_id, text=fact_text_for_search, limit=3)
         if candidates:
+            # Log candidates for debugging the dedupe behavior
+            try:
+                cand_debug = ", ".join([f"id={c.get('id')} dist={c.get('distance'):.4f}" for c in candidates])
+                print(f"MemoryService.upsert: candidates for user_id={user_id}: {cand_debug} threshold={dedupe_distance_threshold}")
+            except Exception:
+                pass
+
             best = candidates[0]
             dist = best.get("distance")
+            # If best candidate is similar enough, merge into it
             if dist is not None and dist < dedupe_distance_threshold and best.get("id"):
                 existing_id = best.get("id")
                 existing_meta = best.get("metadata", {}) or {}
@@ -238,12 +361,28 @@ class MemoryService:
                 new_importance = max(existing_importance, int(importance))
                 existing_meta.update({"importance": new_importance})
                 hist = existing_meta.get("history", [])
-                hist.append({"merged_at": datetime.now().isoformat(), "source": "upsert", "content": fact})
+                hist.append({"merged_at": datetime.now().isoformat(), "source": "upsert", "content": fact_text_for_search})
                 existing_meta["history"] = hist
 
                 if self.supabase:
                     try:
                         self.supabase.table("facts").update({"metadata": existing_meta}).eq("id", existing_id).execute()
+                        print(f"MemoryService.upsert: merged into existing_id={existing_id} dist={dist:.4f}")
+                        # After merging, run autopilot in background to allow further maintenance decisions
+                        try:
+                            from memory_autopilot import run_autopilot_debug
+                            import threading
+
+                            def _run_autopilot_merge():
+                                try:
+                                    run_autopilot_debug(user_id=user_id, user_message=fact_text_for_search, assistant_response="(autopilot-merge)")
+                                except Exception as _e:
+                                    logging.debug(f"Autopilot (merge) background run failed: {_e}")
+
+                            tm = threading.Thread(target=_run_autopilot_merge, daemon=True)
+                            tm.start()
+                        except Exception:
+                            logging.debug("Autopilot (merge) scheduling skipped or failed")
                     except Exception:
                         logging.exception("Failed to update existing fact metadata in Supabase")
                 return existing_id
@@ -281,7 +420,8 @@ class MemoryService:
         out = []
         try:
             resp = self.supabase.table("facts").select("content, metadata").eq("user_id", user_id).execute()
-            rows = resp.data or []
+            rows = getattr(resp, 'data', None) or []
+            logging.debug(f"Supabase get_user_memories response: data_count={len(rows)} error={getattr(resp, 'error', None)}")
             for r in rows:
                 out.append({"content": r.get("content"), "metadata": r.get("metadata")})
             return out

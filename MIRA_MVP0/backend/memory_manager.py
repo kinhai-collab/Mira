@@ -63,12 +63,17 @@ class MemoryManager:
     def add_user_fact(self, user_id: str, fact: str, category: str = "general", importance: int = 1) -> bool:
         """Add an important fact about the user."""
         try:
-            self.memory_service.store_fact_memory(
+            # Use upsert to avoid creating duplicate facts when similar content exists.
+            # upsert_fact_memory will attempt to merge with a nearby existing fact
+            # based on embedding distance and update importance/history if needed.
+            mem_id = self.memory_service.upsert_fact_memory(
                 user_id=user_id,
                 fact=fact,
                 category=category,
-                importance=importance
+                importance=importance,
             )
+            if not mem_id:
+                raise Exception("upsert returned no id")
             return True
         except Exception as e:
             print(f"Error storing user fact: {e}")
@@ -87,6 +92,11 @@ class MemoryManager:
         except Exception as e:
             print(f"Error searching user facts: {e}")
             return []
+
+    # Backwards-compatible alias: some callers expect `search_facts`
+    def search_facts(self, user_id: str, query: str, limit: int = 3) -> List[str]:
+        """Alias for search_user_facts to preserve older call sites."""
+        return self.search_user_facts(user_id=user_id, query=query, limit=limit)
 
 # Global instance
 _memory_manager = None
