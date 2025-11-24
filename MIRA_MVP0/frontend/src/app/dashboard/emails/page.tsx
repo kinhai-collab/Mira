@@ -6,6 +6,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import { fetchEmailList, type Email } from "@/utils/dashboardApi";
+import { fetchEmailSummary} from "@/utils/dashboardApi";
 import { getWeather } from "@/utils/weather";
 
 // Helper: Generate days for a given month
@@ -28,6 +29,8 @@ export default function EmailsPage() {
 	const [showEmailPopup, setShowEmailPopup] = useState(false);
 	const [emails, setEmails] = useState<Email[]>([]);
 	const [isLoading, setIsLoading] = useState(true);
+	const [summary, setSummary] = useState<string | null>(null);
+    const [summaryLoading, setSummaryLoading] = useState(false);
 
 	// Weather & location state
 	const [location, setLocation] = useState<string>("New York");
@@ -51,6 +54,28 @@ export default function EmailsPage() {
 
 		loadEmails();
 	}, []);
+	useEffect(() => {
+		if (!selectedEmail?.id) {
+			setSummary(null);
+			return;
+		}
+
+		const getSummary = async () => {
+		    setSummaryLoading(true);
+    		try {
+	    		const result = await fetchEmailSummary(selectedEmail.id);
+		    	if (result?.status === "success") setSummary(result.summary);
+    			else setSummary(null);
+	    	} catch (error) {
+		    	console.error(error);
+		    	setSummary(null);
+    		} finally {
+	    		setSummaryLoading(false);
+		    }
+	    };
+
+		getSummary();
+	}, [selectedEmail]);
 
 	// Fetch weather using Open-Meteo API directly
 	const fetchWeatherForCoords = async (lat: number, lon: number) => {
@@ -604,11 +629,15 @@ export default function EmailsPage() {
 
 						{/* Content */}
 						<div className="flex-1 overflow-y-auto p-5">
-							{selectedEmail.summary ? (
+							  {summaryLoading ? (
+								<div className="text-center text-gray-400 text-[16px] py-12">
+									Loading summary...
+									</div>
+							   )  :	summary ? (
 								<div
 									className="text-gray-700 text-[14px] leading-relaxed whitespace-pre-wrap"
 									dangerouslySetInnerHTML={{
-										__html: selectedEmail.summary.replace(/\n/g, "<br />"),
+										__html: summary.replace(/\n/g, "<br />"),
 									}}
 								/>
 							) : (

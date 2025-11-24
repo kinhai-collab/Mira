@@ -973,25 +973,6 @@ async def get_reminder_stats(authorization: Optional[str] = Header(default=None)
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error fetching reminder stats: {str(e)}")
 
-# Summarize the emails using GPT-4o-mini
-async def summarize_email(text: str) -> str:
-    # Ignore tiny useless bodies
-    if not text or len(text.strip()) < 20:
-        return ""
-
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "Summarize this email in a short clear paragraph."},
-                {"role": "user", "content": text}
-            ],
-            max_tokens=120
-        )
-        return response.choices[0].message.content.strip()
-    except Exception as e:
-        print("Summary error:", e)
-        return ""
 
 @router.get("/dashboard/emails/list")
 async def get_email_list(
@@ -1058,7 +1039,7 @@ async def get_email_list(
                 print(f"📊 Dashboard: Found {len(messages)} Gmail messages in last {days_back} days")
                 
                 # Fetch detailed info for each Gmail email
-                for i, msg in enumerate(messages):
+                for msg in messages:
                     try:
                         msg_id = msg["id"]
                         detail_data = gmail_service.users().messages().get(
@@ -1142,12 +1123,6 @@ async def get_email_list(
                         # Check if unread
                         is_unread = "UNREAD" in labels
 
-                        # Only summarize the first 10 Gmail emails
-                        if i < 10:
-                            summary = await summarize_email(body)
-                        else:
-                            summary = ""
-
                         email_info = {
                             "id": f"gmail_{msg_id}",  # ✅ Prefix with provider
                             "sender_name": sender_name,
@@ -1157,7 +1132,6 @@ async def get_email_list(
                             "subject": subject,
                             "snippet": snippet,
                             "body": body,
-                            "summary": summary,
                             "priority": priority,
                             "time_ago": time_ago,
                             "timestamp": email_datetime.isoformat(),
@@ -1301,6 +1275,100 @@ async def get_email_list(
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error fetching email list: {str(e)}")
 
+async def summarize_email(text: str) -> str:
+    if not text or len(text.strip()) < 20:
+        return ""
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system", 
+                    "content": (
+                        "You are an assistant that summarizes emails. "
+                        "Generate a clear and concise summary of the full email "
+                        "in 2-3 short sentences."
+                        "Make each sentence very brief and to-the-point, focusing only on the key updates."
+                    )
+                },
+                {"role": "user", "content": text}
+            ],
+            max_tokens=180  
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        print("Summary error:", e)
+        return ""
+
+@router.get("/dashboard/emails/summary/{email_id}")
+async def get_email_summary(
+    email_id: str,
+    authorization: Optional[str] = Header(default=None)
+):
+    """Return a GPT-generated summary for a single email by ID."""
+    try:
+        if email_id.startswith("gmail_"):
+            email_id = email_id[len("gmail_"):]
+        elif email_id.startswith("outlook_"):
+            email_id = email_id[len("outlook_"):]
+        # Authenticate user
+        user = get_user_from_token(authorization)
+        creds_row = get_creds(user["id"])
+        if not creds_row:
+            return {"status": "not_connected", "message": "Gmail not connected"}
+        
+        # Build Gmail service
+        credentials = _creds(creds_row)
+        gmail_service = build("gmail", "v1", credentials=credentials)
+        
+        # Fetch email details
+        detail_data = gmail_service.users().messages().get(
+            userId="me",
+            id=email_id,
+            format="full"
+        ).execute()
+        
+        # Extract body
+        payload = detail_data.get("payload", {})
+        body = ""
+
+        def get_body_from_parts(parts):
+            for part in parts:
+                if part.get("mimeType") == "text/html":
+                    import base64
+                    data = part.get("body", {}).get("data", "")
+                    if data:
+                        return base64.urlsafe_b64decode(data).decode("utf-8", errors="ignore")
+                elif part.get("mimeType") == "text/plain":
+                    import base64
+                    data = part.get("body", {}).get("data", "")
+                    if data:
+                        return base64.urlsafe_b64decode(data).decode("utf-8", errors="ignore")
+                elif "parts" in part:
+                    nested_body = get_body_from_parts(part["parts"])
+                    if nested_body:
+                        return nested_body
+            return ""
+        
+        if "parts" in payload:
+            body = get_body_from_parts(payload["parts"])
+        elif payload.get("body", {}).get("data"):
+            import base64
+            body = base64.urlsafe_b64decode(payload["body"]["data"]).decode("utf-8", errors="ignore")
+        
+        # Fallback to snippet
+        if not body:
+            body = detail_data.get("snippet", "")
+        
+        # Generate summary
+        summary = await summarize_email(body)
+        
+        return {"status": "success", "email_id": email_id, "summary": summary}
+    
+    except Exception as e:
+        print(f"❌ Error fetching summary for email {email_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error fetching summary: {str(e)}")
 
 @router.get("/dashboard/summary")
 async def get_dashboard_summary(authorization: Optional[str] = Header(default=None)):
