@@ -730,8 +730,8 @@ export default function Home() {
 
 				{/* Input Bar — Always Visible */}
 				<div className="relative mt-10 sm:mt-14 w-full max-w-md sm:max-w-xl flex flex-col items-center">
-					<div className="w-full rounded-[24px] bg-gradient-to-r from-[#F4A4D3] to-[#B5A6F7] p-[1.5px] shadow-[0_12px_35px_rgba(181,166,247,0.45)]">
-						<div className="flex items-center rounded-[22px] bg-white px-4 sm:px-5 py-2 sm:py-2.5 w-full">
+					<div className="w-full rounded-[10px] bg-gradient-to-r from-[#F4A4D3] to-[#B5A6F7] p-[1.5px] shadow-[0_12px_35px_rgba(181,166,247,0.45)]">
+						<div className="flex items-center rounded-[10px] bg-white px-4 sm:px-5 py-2 sm:py-2.5 w-full">
 							<input
 								type="text"
 								value={input}
