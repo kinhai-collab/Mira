@@ -1132,7 +1132,6 @@ async def get_email_list(
                             "subject": subject,
                             "snippet": snippet,
                             "body": body,
-                            "summary": summary,
                             "priority": priority,
                             "time_ago": time_ago,
                             "timestamp": email_datetime.isoformat(),
@@ -1309,6 +1308,10 @@ async def get_email_summary(
 ):
     """Return a GPT-generated summary for a single email by ID."""
     try:
+        if email_id.startswith("gmail_"):
+            email_id = email_id[len("gmail_"):]
+        elif email_id.startswith("outlook_"):
+            email_id = email_id[len("outlook_"):]
         # Authenticate user
         user = get_user_from_token(authorization)
         creds_row = get_creds(user["id"])
