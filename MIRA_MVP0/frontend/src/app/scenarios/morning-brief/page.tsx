@@ -14,6 +14,7 @@ import {
 	setMiraMute,
 } from "@/utils/voice/voiceHandler";
 import { getValidToken, requireAuth } from "@/utils/auth";
+import { getWeather } from "@/utils/weather";
 
 interface MorningBriefData {
 	text: string;
@@ -21,6 +22,25 @@ interface MorningBriefData {
 	audio_url?: string;
 	audio_base64?: string;
 	user_name: string;
+	// Event data
+	events?: {
+		id: string;
+		title: string;
+		timeRange: string;
+		provider?: string;
+	}[];
+	total_events?: number;
+	total_teams?: number;
+	next_event?: {
+		summary: string;
+		start: string;
+		duration: number;
+	};
+	// Email data
+	email_important?: number;
+	gmail_count?: number;
+	outlook_count?: number;
+	total_unread?: number;
 }
 
 export default function MorningBrief() {
@@ -29,54 +49,130 @@ export default function MorningBrief() {
 		"thinking" | "recommendation" | "confirmation"
 	>("thinking");
 
-	const [isListening, setIsListening] = useState(false); // Start with mic OFF
-	const [isMuted, setIsMuted] = useState(false);
+	const [isListening, setIsListening] = useState(true);
 	const [isConversationActive, setIsConversationActive] = useState(false);
+	const [isMuted, setIsMuted] = useState(false);
 	const [briefData, setBriefData] = useState<MorningBriefData | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 	const audioRef = useRef<HTMLAudioElement | null>(null);
-	
-	const playAudio = () => {
-		if (!audioRef.current) return;
-		
-		// Prefer base64 audio (works in Lambda)
-		if (briefData?.audio_base64) {
-			try {
-				const audioBinary = atob(briefData.audio_base64);
-				const arrayBuffer = new ArrayBuffer(audioBinary.length);
-				const view = new Uint8Array(arrayBuffer);
-				for (let i = 0; i < audioBinary.length; i++) {
-					view[i] = audioBinary.charCodeAt(i);
-				}
-				const blob = new Blob([view], { type: "audio/mpeg" });
-				const url = URL.createObjectURL(blob);
-				audioRef.current.src = url;
-				audioRef.current.play().catch((err) => {
-					console.error("Error playing audio:", err);
-				});
-				// Clean up URL when done
-				audioRef.current.addEventListener("ended", () => {
-					URL.revokeObjectURL(url);
-				}, { once: true });
-			} catch (err) {
-				console.error("Error decoding base64 audio:", err);
+
+	// 🌤 Weather + Location
+	const [location, setLocation] = useState<string>("Detecting...");
+	const [latitude, setLatitude] = useState<number | null>(null);
+	const [longitude, setLongitude] = useState<number | null>(null);
+	const [temperatureC, setTemperatureC] = useState<number | null>(null);
+	const [isLocationLoading, setIsLocationLoading] = useState<boolean>(true);
+	const [isWeatherLoading, setIsWeatherLoading] = useState<boolean>(false);
+
+	const [timezone, setTimezone] = useState<string>(
+		Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
+	);
+
+	const fetchWeatherForCoords = async (lat: number, lon: number) => {
+		try {
+			setIsWeatherLoading(true);
+			const data = await getWeather(lat, lon);
+
+			if (typeof data?.temperatureC === "number") {
+				setTemperatureC(Math.round(data.temperatureC));
 			}
-		} else if (briefData?.audio_url) {
-			// Fallback to URL if base64 not available
-			const apiBase = (
-				process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
-			).replace(/\/+$/, "");
-			const fullAudioUrl = `${apiBase}${briefData.audio_url}`;
-			audioRef.current.src = fullAudioUrl;
-			audioRef.current.play().catch((err) => {
-				console.error("Error playing audio:", err);
-			});
+		} catch (err) {
+			console.error("Error fetching weather:", err);
+		} finally {
+			setIsWeatherLoading(false);
 		}
 	};
+	const speakMorningBrief = (text: string) => {
+		if (!text) return;
+		window.dispatchEvent(new CustomEvent("miraSpeak", { detail: { text } }));
+	};
 
+	useEffect(() => {
+		const handler = (e: Event) => {
+			const customEvent = e as CustomEvent<{ text: string }>;
+			console.log("🔥 miraSpeak event RECEIVED in page:", customEvent.detail);
+		};
+		window.addEventListener("miraSpeak", handler);
+		return () => window.removeEventListener("miraSpeak", handler);
+	}, []);
+
+	useEffect(() => {
+		const ipFallback = async () => {
+			try {
+				const res = await fetch("https://ipapi.co/json/");
+				const data = await res.json();
+
+				setLocation(data.city || data.region || "Unknown");
+				setTimezone(data.timezone || timezone);
+
+				if (data.latitude && data.longitude) {
+					setLatitude(Number(data.latitude));
+					setLongitude(Number(data.longitude));
+				}
+			} catch (err) {
+				console.error("IP fallback error:", err);
+			} finally {
+				setIsLocationLoading(false);
+			}
+		};
+
+		if (!("geolocation" in navigator)) {
+			ipFallback();
+			return;
+		}
+
+		navigator.geolocation.getCurrentPosition(
+			async (pos) => {
+				const { latitude, longitude } = pos.coords;
+				setLatitude(latitude);
+				setLongitude(longitude);
+
+				try {
+					const res = await fetch(
+						`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}`
+					);
+					const data = await res.json();
+
+					const city =
+						data?.address?.city ||
+						data?.address?.town ||
+						data?.address?.village ||
+						data?.address?.state ||
+						data?.address?.county ||
+						"Unknown";
+
+					setLocation(city);
+				} catch {
+					await ipFallback();
+				}
+
+				setIsLocationLoading(false);
+			},
+			async () => {
+				await ipFallback();
+			},
+			{ timeout: 10000 }
+		);
+	}, [timezone]);
+
+	useEffect(() => {
+		if (latitude != null && longitude != null) {
+			fetchWeatherForCoords(latitude, longitude);
+		}
+	}, [latitude, longitude]);
+
+	const handleMuteToggle = () => {
+		const muteState = !isMuted;
+		setIsMuted(muteState);
+		setMiraMute(muteState);
+	};
 	// Handle calendar modification from voice commands
-	const handleCalendarModify = async (eventName: string, action: string, newTime?: string) => {
+	const handleCalendarModify = async (
+		eventName: string,
+		action: string,
+		newTime?: string
+	) => {
 		try {
 			const token = await getValidToken();
 			if (!token) {
@@ -108,7 +204,9 @@ export default function MorningBrief() {
 			);
 
 			if (!response.ok) {
-				const errorData = await response.json().catch(() => ({ detail: "Unknown error" }));
+				const errorData = await response
+					.json()
+					.catch(() => ({ detail: "Unknown error" }));
 				throw new Error(errorData.detail || `HTTP ${response.status}`);
 			}
 
@@ -125,13 +223,11 @@ export default function MorningBrief() {
 	useEffect(() => {
 		if (!requireAuth(router)) return;
 	}, [router]);
-	
+
 	// Stop any active voice when entering morning brief page
 	useEffect(() => {
 		// Stop voice handler on mount to avoid conflicts with brief audio
 		stopMiraVoice();
-		setIsConversationActive(false);
-		setIsListening(false);
 		setIsMuted(false);
 		setMiraMute(false);
 	}, []);
@@ -142,16 +238,16 @@ export default function MorningBrief() {
 			try {
 				setLoading(true);
 				setError(null); // Clear any previous errors
-				
+
 				// Get token - try to refresh if expired, but also try using existing token
 				const { getStoredToken } = await import("@/utils/auth");
 				let token = await getValidToken();
-				
+
 				// If getValidToken fails, try using stored token anyway (backend will validate)
 				if (!token) {
 					token = getStoredToken();
 				}
-				
+
 				if (!token) {
 					setError("Not authenticated. Please log in again.");
 					setLoading(false);
@@ -180,7 +276,9 @@ export default function MorningBrief() {
 					if (refreshedToken && refreshedToken !== token) {
 						// Retry with new token
 						response = await fetch(
-							`${apiBase}/morning-brief?timezone=${encodeURIComponent(timezone)}`,
+							`${apiBase}/morning-brief?timezone=${encodeURIComponent(
+								timezone
+							)}`,
 							{
 								method: "POST",
 								headers: {
@@ -190,7 +288,7 @@ export default function MorningBrief() {
 							}
 						);
 					}
-					
+
 					// If still 401 after refresh attempt, redirect to login
 					if (response.status === 401) {
 						setError("Your session has expired. Redirecting to login...");
@@ -203,29 +301,21 @@ export default function MorningBrief() {
 				}
 
 				if (!response.ok) {
-					const errorData = await response.json().catch(() => ({ detail: "Unknown error" }));
+					const errorData = await response
+						.json()
+						.catch(() => ({ detail: "Unknown error" }));
 					throw new Error(errorData.detail || `HTTP ${response.status}`);
 				}
 
 				const data = await response.json();
 				setBriefData(data);
 				setError(null);
-				
+
 				// Play audio if available (check for base64 or URL)
 				if (data.audio_base64 || data.audio_url) {
-					// Stop any active voice conversation to avoid conflicts (safe to call even if not active)
-					stopMiraVoice();
-					setIsConversationActive(false);
-					setIsListening(false);
-					
 					// Small delay to ensure audio element is rendered
 					setTimeout(() => {
 						if (audioRef.current) {
-							// Ensure voice is stopped before playing brief audio
-							stopMiraVoice();
-							setIsConversationActive(false);
-							setIsListening(false);
-							
 							// Prefer base64 audio (works in Lambda)
 							if (data.audio_base64) {
 								try {
@@ -238,11 +328,15 @@ export default function MorningBrief() {
 									const blob = new Blob([view], { type: "audio/mpeg" });
 									const url = URL.createObjectURL(blob);
 									audioRef.current.src = url;
-									
+
 									// Clean up URL when done
-									audioRef.current.addEventListener("ended", () => {
-										URL.revokeObjectURL(url);
-									}, { once: true });
+									audioRef.current.addEventListener(
+										"ended",
+										() => {
+											URL.revokeObjectURL(url);
+										},
+										{ once: true }
+									);
 								} catch (err) {
 									console.error("Error decoding base64 audio:", err);
 									return;
@@ -257,7 +351,7 @@ export default function MorningBrief() {
 							} else {
 								return;
 							}
-							
+
 							// Try to play automatically - navigation click counts as user interaction
 							// This should work since user clicked to navigate to this page
 							const playPromise = audioRef.current.play();
@@ -268,18 +362,22 @@ export default function MorningBrief() {
 									})
 									.catch((err) => {
 										// Autoplay blocked - play button will be shown (it's already in the UI)
-										console.log("⚠️ Autoplay blocked - user can click 'Play Morning Brief' button:", err);
+										console.log(
+											"⚠️ Autoplay blocked - user can click 'Play Morning Brief' button:",
+											err
+										);
 									});
 							}
-							
+
 							// Stop voice handler while brief audio is playing (one-time listener)
 							const handlePlay = () => {
 								stopMiraVoice();
-								setIsConversationActive(false);
-								setIsListening(false);
+
 								audioRef.current?.removeEventListener("play", handlePlay);
 							};
-							audioRef.current.addEventListener("play", handlePlay, { once: true });
+							audioRef.current.addEventListener("play", handlePlay, {
+								once: true,
+							});
 						}
 					}, 100);
 				}
@@ -294,7 +392,14 @@ export default function MorningBrief() {
 		};
 
 		fetchMorningBrief();
-	}, []);
+	}, [router]);
+
+	// Speak morning brief when data is loaded and conditions are met
+	useEffect(() => {
+		if (!isMuted && isListening && briefData?.text) {
+			speakMorningBrief(briefData.text);
+		}
+	}, [briefData, isListening, isMuted]);
 
 	// Auto-advance from thinking stage after loading completes
 	useEffect(() => {
@@ -343,7 +448,10 @@ export default function MorningBrief() {
 		}
 		return () => {
 			if (typeof window !== "undefined") {
-				window.removeEventListener("miraCalendarModify", handler as EventListener);
+				window.removeEventListener(
+					"miraCalendarModify",
+					handler as EventListener
+				);
 			}
 		};
 	}, []);
@@ -404,7 +512,9 @@ export default function MorningBrief() {
 							width={14}
 							height={14}
 						/>
-						<span className="text-gray-700 font-medium">New York</span>
+						<span className="text-gray-700 font-medium">
+							{isLocationLoading ? "Detecting..." : location}
+						</span>
 					</div>
 
 					<div
@@ -417,54 +527,67 @@ export default function MorningBrief() {
 							width={14}
 							height={14}
 						/>
-						<span className="text-gray-700 font-medium">20°</span>
+						<span className="text-gray-700 font-medium">
+							{isWeatherLoading
+								? "…"
+								: temperatureC != null
+								? `${temperatureC}°`
+								: "—"}
+						</span>
 					</div>
 				</div>
 
-				{/* Top Right */}
-				<div
-					className="absolute top-6 right-4 sm:right-6 md:right-10 
-					flex flex-wrap justify-center sm:justify-end items-center gap-2 sm:gap-4 text-xs sm:text-sm"
-				>
+				<audio
+					ref={audioRef}
+					autoPlay={false}
+					controls={false}
+					style={{ display: "none" }}
+				/>
+
+				{/* Top-right: Morning Brief + Mute (ALWAYS VISIBLE) */}
+				<div className="absolute top-4 sm:top-6 right-4 sm:right-10 flex items-center gap-3 sm:gap-4">
+					{/* Morning Brief Button */}
 					<button
+						onClick={() => router.push("/scenarios/morning-brief")}
 						className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 
-						bg-[#FFF8E7] border border-[#FFE9B5] rounded-full font-medium 
-						text-[#B58B00] shadow-sm hover:shadow-md transition"
+        bg-[#FFF8E7] border border-[#FFE9B5] rounded-full text-sm font-medium 
+        text-[#B58B00] shadow-sm hover:shadow-md transition"
 					>
 						<Image
 							src="/Icons/Property 1=Sun.svg"
 							alt="Morning Brief"
-							width={14}
-							height={14}
+							width={16}
+							height={16}
 						/>
 						<span>Morning Brief</span>
 					</button>
 
-					{/* Mute toggle */}
-					{isConversationActive && (
-						<button
-							onClick={() => {
-								const muteState = !isMuted;
-								setIsMuted(muteState);
-								setMiraMute(muteState);
-							}}
-							className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 
-							bg-[#F5F5F5] border border-gray-200 rounded-full font-medium 
-							text-gray-700 shadow-sm hover:shadow-md transition"
-						>
-							<Image
-								src={
-									isMuted
-										? "/Icons/Property 1=VoiceOff.svg"
-										: "/Icons/Property 1=VoiceOn.svg"
-								}
-								alt={isMuted ? "Muted" : "Unmuted"}
-								width={14}
-								height={14}
-							/>
-							<span>{isMuted ? "Muted" : "Mute"}</span>
-						</button>
-					)}
+					{/* 🔊 Always-visible Mute Toggle */}
+					<button
+						onClick={handleMuteToggle}
+						className={`
+            flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-full text-sm font-medium 
+            shadow-sm hover:shadow-md transition border 
+            ${
+							isMuted
+								? "bg-[#E8ECF9] border-[#B8C7F2] text-[#5568A2]"
+								: "bg-[#F5F5F5] border-gray-200 text-gray-700"
+						}
+        `}
+					>
+						<Image
+							src={
+								isMuted
+									? "/Icons/Property 1=VoiceOff.svg"
+									: "/Icons/Property 1=VoiceOn.svg"
+							}
+							alt={isMuted ? "Muted" : "Mute"}
+							width={18}
+							height={18}
+							className="opacity-80"
+						/>
+						<span>{isMuted ? "Muted" : "Mute"}</span>
+					</button>
 				</div>
 
 				{/* Orb */}
@@ -493,14 +616,31 @@ export default function MorningBrief() {
 							<>
 								{/* Play Audio Button */}
 								{(briefData.audio_base64 || briefData.audio_url) && (
-									<div className="mb-4 flex justify-center">
-									</div>
+									<div className="mb-4 flex justify-center"></div>
 								)}
 								{stage === "recommendation" && (
-									<RecommendationPanel
-										briefText={briefData.text}
-										onAccept={() => setStage("confirmation")}
-									/>
+									<div
+										className="
+		recommendation-scroll
+		relative max-w-[900px] mx-auto h-[75vh]
+		overflow-y-auto scroll-smooth backdrop-blur-[6px]
+	"
+									>
+										<RecommendationPanel
+											briefText={briefData.text}
+											temperatureC={temperatureC}
+											isWeatherLoading={isWeatherLoading}
+											onAccept={() => setStage("confirmation")}
+											events={briefData.events}
+											totalEvents={briefData.total_events}
+											totalTeams={briefData.total_teams}
+											nextEvent={briefData.next_event}
+											emailImportant={briefData.email_important}
+											gmailCount={briefData.gmail_count}
+											outlookCount={briefData.outlook_count}
+											totalUnread={briefData.total_unread}
+										/>
+									</div>
 								)}
 								{stage === "confirmation" && (
 									<ConfirmationPanel briefText={briefData.text} />
@@ -509,14 +649,6 @@ export default function MorningBrief() {
 						)}
 					</div>
 				</div>
-
-				{/* Hidden audio element for playing the brief */}
-				<audio
-					ref={audioRef}
-					autoPlay={false}
-					controls={false}
-					style={{ display: "none" }}
-				/>
 
 				{/* Mic & Keyboard Toggle */}
 				<div className="mt-10 sm:mt-12 flex items-center justify-center">

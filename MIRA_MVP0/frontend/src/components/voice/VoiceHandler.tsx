@@ -2,6 +2,7 @@
 
 "use client";
 import { useState, useRef } from "react";
+import { getValidToken } from "@/utils/auth";
 
 export default function VoiceHandler() {
 	const [isRecording, setIsRecording] = useState(false);
@@ -21,8 +22,24 @@ export default function VoiceHandler() {
 			const formData = new FormData();
 			formData.append("audio", audioBlob, "user_input.webm");
 
-			const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
-			const res = await fetch(`${apiBase}/api/voice`, { method: "POST", body: formData });
+			const apiBase =
+				process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+
+			// Try to get a valid token and send it in the Authorization header if available
+			let headers: Record<string, string> = {};
+			try {
+				const token = await getValidToken();
+				if (token) headers.Authorization = `Bearer ${token}`;
+			} catch (e) {
+				// token retrieval failed — proceed without header
+				console.warn('Could not get auth token for voice request', e);
+			}
+
+			const res = await fetch(`${apiBase}/api/voice`, {
+				method: "POST",
+				headers,
+				body: formData,
+			});
 			const audio = await res.blob();
 			const url = URL.createObjectURL(audio);
 			const audioEl = new Audio(url);

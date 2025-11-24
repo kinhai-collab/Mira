@@ -537,12 +537,22 @@ export default function Dashboard() {
 								) : eventStats?.next_event ? (
 									<div className="flex items-center gap-3">
 										<div className="border border-gray-300 rounded-full p-[6px] flex items-center justify-center">
-											<Image
-												src="/Icons/Property 1=Calendar.svg"
-												alt="Meeting"
-												width={22}
-												height={22}
-											/>
+											{/* Show provider-specific icon */}
+											{eventStats.next_event.provider === "outlook" ? (
+												<Image
+													src="/Icons/Email/vscode-icons_file-type-outlook.png"
+													alt="Outlook Calendar"
+													width={22}
+													height={22}
+												/>
+											) : (
+												<Image
+													src="/Icons/Email/skill-icons_gmail-light.png"
+													alt="Google Calendar"
+													width={22}
+													height={22}
+												/>
+											)}
 										</div>
 										<div>
 											<p className="text-[15px] leading-tight">{eventStats.next_event.summary}</p>
@@ -811,9 +821,27 @@ export default function Dashboard() {
 												Next Event
 											</p>
 											<div className="bg-[#F8F9FB] border border-gray-200 rounded-xl px-4 py-3 mb-4">
-												<p className="text-[16px] font-semibold text-gray-900 mb-2">
-													{eventStats.next_event.summary}
-												</p>
+												<div className="flex items-start justify-between gap-2 mb-2">
+													<p className="text-[16px] font-semibold text-gray-900 flex-1">
+														{eventStats.next_event.summary}
+													</p>
+													{/* Provider Badge */}
+													{eventStats.next_event.provider && (
+														<div className="flex items-center gap-1">
+															<Image
+																src={
+																	eventStats.next_event.provider === "google"
+																		? "/Icons/Email/skill-icons_gmail-light.png"
+																		: "/Icons/Email/vscode-icons_file-type-outlook.png"
+																}
+																alt={eventStats.next_event.provider === "google" ? "Google Calendar" : "Outlook Calendar"}
+																width={16}
+																height={16}
+																className="opacity-80"
+															/>
+														</div>
+													)}
+												</div>
 
 												{/* Time */}
 												<div className="flex items-center gap-2 text-[14px] text-gray-600 mb-1">
