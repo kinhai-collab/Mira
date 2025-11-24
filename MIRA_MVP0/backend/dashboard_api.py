@@ -1,8 +1,9 @@
 """Dashboard API endpoints for Gmail and Google Calendar data aggregation."""
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, HTTPException, Header, Request
 from typing import Optional
 import requests
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 import os
 import re
 from dotenv import load_dotenv
@@ -16,9 +17,32 @@ from Google_Calendar_API.tasks_service import get_all_tasks
 load_dotenv()
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+GRAPH_API_URL = "https://graph.microsoft.com/v1.0"
 
 router = APIRouter()
 client = OpenAI()
+
+# Helper function to convert Windows timezone names to IANA format
+def convert_windows_to_iana_timezone(windows_tz: str) -> str:
+    """
+    Convert Windows timezone names (used by Outlook) to IANA timezone names (used by Python).
+    Common conversions for major timezones.
+    """
+    windows_to_iana = {
+        "India Standard Time": "Asia/Kolkata",
+        "UTC": "UTC",
+        "GMT Standard Time": "Europe/London",
+        "Pacific Standard Time": "America/Los_Angeles",
+        "Mountain Standard Time": "America/Denver",
+        "Central Standard Time": "America/Chicago",
+        "Eastern Standard Time": "America/New_York",
+        "China Standard Time": "Asia/Shanghai",
+        "Tokyo Standard Time": "Asia/Tokyo",
+        "AUS Eastern Standard Time": "Australia/Sydney",
+        "Central European Standard Time": "Europe/Paris",
+        "W. Europe Standard Time": "Europe/Berlin",
+    }
+    return windows_to_iana.get(windows_tz, "UTC")
 
 def get_user_from_token(authorization: Optional[str]) -> dict:
     """Extract and validate user from Supabase token."""
@@ -43,27 +67,60 @@ def get_user_from_token(authorization: Optional[str]) -> dict:
         raise HTTPException(status_code=401, detail=f"Authentication failed: {str(e)}")
 
 
-def analyze_email_priority(subject: str, sender: str, labels: list) -> str:
+def _get_outlook_token(request: Request, user_id: str) -> Optional[str]:
+    """Get Outlook access token from cookies."""
+    outlook_token = request.cookies.get("ms_access_token")
+    if outlook_token:
+        print("✅ Found Outlook token in cookie")
+        # Validate token by making a test request
+        headers = {"Authorization": f"Bearer {outlook_token}"}
+        try:
+            response = requests.get(f"{GRAPH_API_URL}/me", headers=headers, timeout=5)
+            if response.status_code == 200:
+                user_info = response.json()
+                email = user_info.get("mail") or user_info.get("userPrincipalName")
+                print(f"✅ Dashboard: Outlook token is valid for user {user_id}")
+                return outlook_token
+            else:
+                print(f"⚠️ Dashboard: Outlook token is invalid (status {response.status_code})")
+                return None
+        except Exception as e:
+            print(f"⚠️ Dashboard: Error validating Outlook token: {e}")
+            return None
+    else:
+        print("⚠️ Dashboard: No Outlook token found in cookie")
+        return None
+
+
+def analyze_email_priority(subject: str, sender: str, labels: Optional[list] = None, importance: Optional[str] = None) -> str:
     """Simple heuristic to determine email priority."""
     subject_lower = subject.lower()
     sender_lower = sender.lower()
+    
+    # For Outlook emails, use the importance field if provided
+    if importance:
+        if importance == "high":
+            return "high"
+        elif importance == "low":
+            return "low"
     
     # High priority indicators
     high_indicators = ["urgent", "important", "asap", "critical", "emergency", "deadline"]
     if any(indicator in subject_lower for indicator in high_indicators):
         return "high"
     
-    if "IMPORTANT" in labels or "CATEGORY_PROMOTIONS" not in labels:
-        # Check if from known important senders (simplified)
-        if any(domain in sender_lower for domain in ["ceo", "director", "manager"]):
-            return "high"
+    if labels:
+        if "IMPORTANT" in labels or "CATEGORY_PROMOTIONS" not in labels:
+            # Check if from known important senders (simplified)
+            if any(domain in sender_lower for domain in ["ceo", "director", "manager"]):
+                return "high"
     
     # Low priority indicators
     low_indicators = ["newsletter", "subscription", "unsubscribe", "promo", "sale"]
     if any(indicator in subject_lower for indicator in low_indicators):
         return "low"
     
-    if "CATEGORY_PROMOTIONS" in labels or "CATEGORY_SOCIAL" in labels:
+    if labels and ("CATEGORY_PROMOTIONS" in labels or "CATEGORY_SOCIAL" in labels):
         return "low"
     
     # Default to medium
@@ -71,35 +128,47 @@ def analyze_email_priority(subject: str, sender: str, labels: list) -> str:
 
 
 @router.get("/dashboard/emails")
-async def get_email_stats(authorization: Optional[str] = Header(default=None)):
-    """Get Gmail email statistics for dashboard."""
+async def get_email_stats(request: Request, authorization: Optional[str] = Header(default=None)):
+    """Get email statistics for dashboard from both Gmail and Outlook."""
     try:
         user = get_user_from_token(authorization)
         print(f"📧 Dashboard: Fetching email stats for user {user['id']} ({user['email']})")
         
-        # Get Google credentials (same ones used for Calendar, which include Gmail scopes)
-        creds_row = get_creds(user["id"])
-        if not creds_row:
-            print(f"⚠️ Dashboard: No Google credentials found for user {user['id']}")
+        gmail_service = None
+        outlook_token = None
+        connected_providers = []
+        
+        # Try to get Google credentials
+        try:
+            creds_row = get_creds(user["id"])
+            if creds_row:
+                credentials = _creds(creds_row)
+                gmail_service = build("gmail", "v1", credentials=credentials)
+                print(f"✅ Dashboard: Gmail credentials found for user {user['id']}")
+                connected_providers.append("Gmail")
+        except Exception as e:
+            print(f"⚠️ Dashboard: Could not initialize Gmail service: {e}")
+        
+        # Try to get Outlook token from cookies
+        outlook_token = _get_outlook_token(request, user["id"])
+        if outlook_token:
+            connected_providers.append("Outlook")
+        
+        # If neither service is connected, return not_connected
+        if not gmail_service and not outlook_token:
+            print(f"⚠️ Dashboard: No valid Gmail or Outlook credentials for user {user['id']}")
             return {
                 "status": "not_connected",
-                "message": "Gmail not connected",
+                "message": "No email services connected",
                 "data": {
                     "total_important": 0,
                     "unread": 0,
                     "priority_distribution": {"high": 0, "medium": 0, "low": 0},
-                    "top_sender": "Gmail not connected",
-                    "trend": 0
+                    "top_sender": "No email service connected",
+                    "trend": 0,
+                    "providers": []
                 }
             }
-        
-        # Build credentials and refresh if needed (same as morning brief)
-        credentials = _creds(creds_row)
-        
-        # Build Gmail service using the Google API client library
-        gmail_service = build("gmail", "v1", credentials=credentials)
-        
-        print(f"✅ Dashboard: Gmail service built successfully for user {user['id']}")
         
     except Exception as e:
         print(f"❌ Dashboard: Error in initial setup: {str(e)}")
@@ -108,74 +177,139 @@ async def get_email_stats(authorization: Optional[str] = Header(default=None)):
         raise HTTPException(status_code=500, detail=f"Error fetching email stats: {str(e)}")
     
     try:
-        # Get messages from last 24 hours
-        yesterday = datetime.now(timezone.utc) - timedelta(days=1)
-        query = f"after:{int(yesterday.timestamp())}"
-        
-        # Fetch messages using Gmail API
-        messages_res = gmail_service.users().messages().list(
-            userId="me",
-            q=query,
-            maxResults=100
-        ).execute()
-        
-        messages = messages_res.get("messages", [])
-        print(f"📊 Dashboard: Found {len(messages)} messages in last 24 hours")
-        
-        # Analyze emails
+        # Initialize combined analysis variables
         priority_counts = {"high": 0, "medium": 0, "low": 0}
         sender_counts = {}
         unread_count = 0
         important_count = 0
         
-        for msg in messages[:50]:  # Limit detailed analysis to 50 most recent
+        # Get messages from last 24 hours
+        yesterday = datetime.now(timezone.utc) - timedelta(days=1)
+        
+        # FETCH FROM GMAIL
+        if gmail_service:
             try:
-                msg_id = msg["id"]
-                detail_data = gmail_service.users().messages().get(
+                query = f"after:{int(yesterday.timestamp())}"
+                messages_res = gmail_service.users().messages().list(
                     userId="me",
-                    id=msg_id,
-                    format="metadata",
-                    metadataHeaders=["From", "Subject"]
+                    q=query,
+                    maxResults=100
                 ).execute()
                 
-                # Extract headers
-                headers_list = detail_data.get("payload", {}).get("headers", [])
-                subject = next((h["value"] for h in headers_list if h["name"].lower() == "subject"), "")
-                sender = next((h["value"] for h in headers_list if h["name"].lower() == "from"), "")
+                messages = messages_res.get("messages", [])
+                print(f"📊 Dashboard: Found {len(messages)} Gmail messages in last 24 hours")
                 
-                # Extract sender name
-                sender_name = sender.split("<")[0].strip() if "<" in sender else sender.split("@")[0]
-                
-                # Get labels
-                labels = detail_data.get("labelIds", [])
-                
-                # Count unread
-                if "UNREAD" in labels:
-                    unread_count += 1
-                
-                # Count important (not in promotions/social/spam)
-                if "IMPORTANT" in labels or ("INBOX" in labels and "CATEGORY_PROMOTIONS" not in labels):
-                    important_count += 1
-                
-                # Determine priority
-                priority = analyze_email_priority(subject, sender, labels)
-                priority_counts[priority] += 1
-                
-                # Count senders
-                if sender_name:
-                    sender_counts[sender_name] = sender_counts.get(sender_name, 0) + 1
+                for msg in messages[:50]:  # Limit detailed analysis to 50 most recent
+                    try:
+                        msg_id = msg["id"]
+                        detail_data = gmail_service.users().messages().get(
+                            userId="me",
+                            id=msg_id,
+                            format="metadata",
+                            metadataHeaders=["From", "Subject"]
+                        ).execute()
+                        
+                        # Extract headers
+                        headers_list = detail_data.get("payload", {}).get("headers", [])
+                        subject = next((h["value"] for h in headers_list if h["name"].lower() == "subject"), "")
+                        sender = next((h["value"] for h in headers_list if h["name"].lower() == "from"), "")
+                        
+                        # Extract sender name
+                        sender_name = sender.split("<")[0].strip() if "<" in sender else sender.split("@")[0]
+                        
+                        # Get labels
+                        labels = detail_data.get("labelIds", [])
+                        
+                        # Count unread
+                        if "UNREAD" in labels:
+                            unread_count += 1
+                        
+                        # Count important (not in promotions/social/spam)
+                        if "IMPORTANT" in labels or ("INBOX" in labels and "CATEGORY_PROMOTIONS" not in labels):
+                            important_count += 1
+                        
+                        # Determine priority
+                        priority = analyze_email_priority(subject, sender, labels)
+                        priority_counts[priority] += 1
+                        
+                        # Count senders
+                        if sender_name:
+                            sender_counts[sender_name] = sender_counts.get(sender_name, 0) + 1
+                    except Exception as e:
+                        print(f"⚠️ Error processing Gmail message {msg_id}: {e}")
+                        continue
             except Exception as e:
-                print(f"⚠️ Error processing message {msg_id}: {e}")
-                continue
+                print(f"⚠️ Error fetching Gmail messages: {e}")
+        
+        # FETCH FROM OUTLOOK
+        if outlook_token:
+            try:
+                headers = {"Authorization": f"Bearer {outlook_token}"}
+                
+                # Format date for Microsoft Graph API - CRITICAL FIX
+                # Microsoft Graph requires ISO 8601 format with 'Z' for UTC
+                yesterday_iso = yesterday.strftime("%Y-%m-%dT%H:%M:%SZ")
+                
+                outlook_url = (
+                    f"{GRAPH_API_URL}/me/messages?"
+                    f"$top=100&"
+                    f"$filter=receivedDateTime ge {yesterday_iso}&"
+                    f"$select=id,subject,from,isRead,importance,receivedDateTime"
+                )
+                
+                # Also test without filter to see if there's ANY data
+                # First, check the mailbox being accessed
+                mailbox_info_url = f"{GRAPH_API_URL}/me/mailFolders/inbox"
+                mailbox_response = requests.get(mailbox_info_url, headers=headers, timeout=10)
+                
+                test_url = f"{GRAPH_API_URL}/me/messages?$top=5&$select=id,subject,receivedDateTime"
+                test_response = requests.get(test_url, headers=headers, timeout=10)
+                
+                response = requests.get(outlook_url, headers=headers, timeout=10)
+                
+                if response.status_code == 200:
+                    response_json = response.json()
+                    outlook_messages = response_json.get("value", [])
+                    print(f"📊 Dashboard: Found {len(outlook_messages)} Outlook messages in last 24 hours")
+                    
+                    for msg in outlook_messages[:50]:  # Limit to 50 most recent
+                        try:
+                            subject = msg.get("subject", "")
+                            from_field = msg.get("from", {}).get("emailAddress", {})
+                            sender = from_field.get("address", "")
+                            sender_name = from_field.get("name", sender.split("@")[0])
+                            
+                            # Count unread
+                            if not msg.get("isRead", True):
+                                unread_count += 1
+                            
+                            # Count important (all Outlook inbox messages are considered important unless explicitly low priority)
+                            importance_value = msg.get("importance", "normal")
+                            if importance_value != "low":
+                                important_count += 1
+                            
+                            # Determine priority
+                            priority = analyze_email_priority(subject, sender, importance=importance_value)
+                            priority_counts[priority] += 1
+                            
+                            # Count senders
+                            if sender_name:
+                                sender_counts[sender_name] = sender_counts.get(sender_name, 0) + 1
+                        except Exception as e:
+                            print(f"⚠️ Error processing Outlook message: {e}")
+                            continue
+                else:
+                    print(f"⚠️ Dashboard: Failed to fetch Outlook messages (status {response.status_code}): {response.text}")
+            except Exception as e:
+                print(f"⚠️ Error fetching Outlook messages: {e}")
         
         # Get top sender
         top_sender = max(sender_counts.items(), key=lambda x: x[1])[0] if sender_counts else "N/A"
         
-        # Calculate trend (simplified - compare with older messages)
-        # For now, we'll use a mock trend
+        # Calculate trend (simplified - mock for now)
         trend = 15  # Mock: 15% increase
         
-        print(f"✅ Dashboard: Email analysis complete - {important_count} important, {unread_count} unread")
+        print(f"✅ Dashboard: Combined email analysis complete - {important_count} important, {unread_count} unread from {', '.join(connected_providers)}")
         
         return {
             "status": "success",
@@ -185,7 +319,8 @@ async def get_email_stats(authorization: Optional[str] = Header(default=None)):
                 "priority_distribution": priority_counts,
                 "top_sender": top_sender,
                 "trend": trend,
-                "timeframe": "last 24 hours"
+                "timeframe": "last 24 hours",
+                "providers": connected_providers
             }
         }
     
@@ -197,20 +332,38 @@ async def get_email_stats(authorization: Optional[str] = Header(default=None)):
 
 
 @router.get("/dashboard/events")
-async def get_event_stats(authorization: Optional[str] = Header(default=None)):
-    """Get Google Calendar event statistics for dashboard."""
+async def get_event_stats(request: Request, authorization: Optional[str] = Header(default=None)):
+    """Get event statistics for dashboard from both Google Calendar and Outlook Calendar."""
     try:
         user = get_user_from_token(authorization)
         print(f"📅 Dashboard: Fetching event stats for user {user['id']} ({user['email']})")
         
-        # Get Google credentials (same method as morning brief)
-        creds_row = get_creds(user["id"])
-        if not creds_row:
-            print(f"⚠️ Dashboard: No Google Calendar credentials found for user {user['id']}")
-            # Return empty/default values when credentials are not found
+        calendar_service = None
+        outlook_token = None
+        connected_providers = []
+        
+        # Try to get Google credentials
+        try:
+            creds_row = get_creds(user["id"])
+            if creds_row:
+                credentials = _creds(creds_row)
+                calendar_service = build("calendar", "v3", credentials=credentials)
+                print(f"✅ Dashboard: Google Calendar credentials found for user {user['id']}")
+                connected_providers.append("Google Calendar")
+        except Exception as e:
+            print(f"⚠️ Dashboard: Could not initialize Google Calendar service: {e}")
+        
+        # Try to get Outlook token from cookies
+        outlook_token = _get_outlook_token(request, user["id"])
+        if outlook_token:
+            connected_providers.append("Outlook Calendar")
+        
+        # If neither service is connected, return not_connected
+        if not calendar_service and not outlook_token:
+            print(f"⚠️ Dashboard: No valid Google Calendar or Outlook credentials for user {user['id']}")
             return {
                 "status": "not_connected",
-                "message": "Google Calendar not connected",
+                "message": "No calendar services connected",
                 "data": {
                     "total_events": 0,
                     "total_hours": 0,
@@ -219,17 +372,12 @@ async def get_event_stats(authorization: Optional[str] = Header(default=None)):
                     "deep_work_blocks": 0,
                     "at_risk_tasks": 0,
                     "next_event": None,
-                    "events": []
+                    "events": [],
+                    "providers": []
                 }
             }
         
-        # Build credentials and refresh if needed
-        credentials = _creds(creds_row)
-        
-        # Build Calendar service using the Google API client library
-        calendar_service = build("calendar", "v3", credentials=credentials)
-        
-        print(f"✅ Dashboard: Calendar service built successfully for user {user['id']}")
+        print(f"✅ Dashboard: Calendar services built successfully for user {user['id']}")
         
     except Exception as e:
         print(f"❌ Dashboard: Error in initial setup: {str(e)}")
@@ -243,28 +391,127 @@ async def get_event_stats(authorization: Optional[str] = Header(default=None)):
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         today_end = today_start + timedelta(days=1)
         
-        # Fetch events using Calendar API
-        events_res = calendar_service.events().list(
-            calendarId="primary",
-            timeMin=today_start.isoformat(),
-            timeMax=today_end.isoformat(),
-            singleEvents=True,
-            orderBy="startTime",
-            maxResults=100
-        ).execute()
+        # Combined events list
+        all_events = []
         
-        events = events_res.get("items", [])
-        print(f"📊 Dashboard: Found {len(events)} events today")
+        # FETCH FROM GOOGLE CALENDAR
+        if calendar_service:
+            try:
+                events_res = calendar_service.events().list(
+                    calendarId="primary",
+                    timeMin=today_start.isoformat(),
+                    timeMax=today_end.isoformat(),
+                    singleEvents=True,
+                    orderBy="startTime",
+                    maxResults=100
+                ).execute()
+                
+                google_events = events_res.get("items", [])
+                print(f"📊 Dashboard: Found {len(google_events)} Google Calendar events today")
+                
+                # Tag events with provider
+                for event in google_events:
+                    event["_provider"] = "google"
+                    all_events.append(event)
+            except Exception as e:
+                print(f"⚠️ Error fetching Google Calendar events: {e}")
         
-        # Analyze events
-        total_events = len(events)
+        # FETCH FROM OUTLOOK CALENDAR
+        if outlook_token:
+            try:
+                headers = {"Authorization": f"Bearer {outlook_token}"}
+                
+                # Format dates for Microsoft Graph API - CRITICAL FIX
+                # Microsoft Graph requires ISO 8601 format with 'Z' for UTC
+                today_start_iso = today_start.strftime("%Y-%m-%dT%H:%M:%SZ")
+                today_end_iso = today_end.strftime("%Y-%m-%dT%H:%M:%SZ")
+                
+                outlook_events_url = (
+                    f"{GRAPH_API_URL}/me/calendar/calendarView?"
+                    f"startDateTime={today_start_iso}&"
+                    f"endDateTime={today_end_iso}&"
+                    f"$top=100"
+                )
+                
+                # Check what calendars exist
+                calendars_url = f"{GRAPH_API_URL}/me/calendars"
+                calendars_response = requests.get(calendars_url, headers=headers, timeout=10)
+                
+                # Check ALL calendars for events (not just primary)
+                future_end = (now + timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
+                all_calendars_url = f"{GRAPH_API_URL}/me/calendarView?startDateTime={today_start_iso}&endDateTime={future_end}&$top=10"
+                all_cal_response = requests.get(all_calendars_url, headers=headers, timeout=10)
+                
+                response = requests.get(outlook_events_url, headers=headers, timeout=10)
+                
+                if response.status_code == 200:
+                    response_json = response.json()
+                    outlook_events = response_json.get("value", [])
+                    print(f"📊 Dashboard: Found {len(outlook_events)} Outlook Calendar events today")
+                    
+                    # Transform Outlook events to Google Calendar format for consistency
+                    for o_event in outlook_events:
+                        transformed_event = {
+                            "id": o_event.get("id", ""),
+                            "summary": o_event.get("subject", "Untitled Event"),
+                            "start": {
+                                "dateTime": o_event.get("start", {}).get("dateTime", ""),
+                                "timeZone": o_event.get("start", {}).get("timeZone", "UTC")
+                            },
+                            "end": {
+                                "dateTime": o_event.get("end", {}).get("dateTime", ""),
+                                "timeZone": o_event.get("end", {}).get("timeZone", "UTC")
+                            },
+                            "location": o_event.get("location", {}).get("displayName", ""),
+                            "description": o_event.get("bodyPreview", ""),
+                            "attendees": [{"email": att.get("emailAddress", {}).get("address", "")} for att in o_event.get("attendees", [])],
+                            "_provider": "outlook",
+                            "_importance": o_event.get("importance", "normal"),
+                            "_onlineMeeting": o_event.get("onlineMeeting")
+                        }
+                        all_events.append(transformed_event)
+                else:
+                    print(f"⚠️ Dashboard: Failed to fetch Outlook events (status {response.status_code}): {response.text}")
+            except Exception as e:
+                print(f"⚠️ Error fetching Outlook Calendar events: {e}")
+        
+        # Sort combined events by start time
+        def get_event_start_time(event):
+            start = event.get("start", {})
+            start_time = start.get("dateTime") or start.get("date")
+            if start_time:
+                try:
+                    # Handle both Google (with Z or +00:00) and Outlook (with timeZone field) formats
+                    dt = datetime.fromisoformat(start_time.replace("Z", "+00:00").split('.')[0])
+                    
+                    # If timezone-naive, check for Outlook timeZone field
+                    if dt.tzinfo is None:
+                        tz_name = start.get("timeZone", "UTC")
+                        try:
+                            # Convert Windows timezone names to IANA format
+                            tz_name = convert_windows_to_iana_timezone(tz_name)
+                            dt = dt.replace(tzinfo=ZoneInfo(tz_name))
+                        except Exception as e:
+                            print(f"⚠️ Could not parse timezone '{tz_name}': {e}, assuming UTC")
+                            dt = dt.replace(tzinfo=timezone.utc)
+                    return dt
+                except:
+                    return datetime.min.replace(tzinfo=timezone.utc)
+            return datetime.min.replace(tzinfo=timezone.utc)
+        
+        all_events.sort(key=get_event_start_time)
+        
+        print(f"📊 Dashboard: Analyzing {len(all_events)} combined events")
+        
+        # Analyze combined events
+        total_events = len(all_events)
         total_minutes = 0
         rsvp_pending = 0
         next_event = None
         deep_work_blocks = 0
         at_risk_tasks = 0
         
-        for event in events:
+        for event in all_events:
             # Calculate duration
             start = event.get("start", {})
             end = event.get("end", {})
@@ -274,8 +521,27 @@ async def get_event_stats(authorization: Optional[str] = Header(default=None)):
             
             if start_time and end_time:
                 try:
-                    start_dt = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
-                    end_dt = datetime.fromisoformat(end_time.replace("Z", "+00:00"))
+                    # Parse and ensure timezone-aware (handle both Google and Outlook formats)
+                    start_dt = datetime.fromisoformat(start_time.replace("Z", "+00:00").split('.')[0])
+                    if start_dt.tzinfo is None:
+                        # Check for Outlook timeZone field
+                        tz_name = start.get("timeZone", "UTC")
+                        try:
+                            tz_name = convert_windows_to_iana_timezone(tz_name)
+                            start_dt = start_dt.replace(tzinfo=ZoneInfo(tz_name))
+                        except:
+                            start_dt = start_dt.replace(tzinfo=timezone.utc)
+                    
+                    end_dt = datetime.fromisoformat(end_time.replace("Z", "+00:00").split('.')[0])
+                    if end_dt.tzinfo is None:
+                        # Check for Outlook timeZone field
+                        tz_name = end.get("timeZone", "UTC")
+                        try:
+                            tz_name = convert_windows_to_iana_timezone(tz_name)
+                            end_dt = end_dt.replace(tzinfo=ZoneInfo(tz_name))
+                        except:
+                            end_dt = end_dt.replace(tzinfo=timezone.utc)
+                    
                     duration_minutes = (end_dt - start_dt).total_seconds() / 60
                     total_minutes += duration_minutes
                     
@@ -302,17 +568,38 @@ async def get_event_stats(authorization: Optional[str] = Header(default=None)):
             # Get next upcoming event
             if not next_event and start_time:
                 try:
-                    start_dt = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
-                    if start_dt > now:
-                        duration_minutes = (end_dt - start_dt).total_seconds() / 60 if end_time else 0
+                    # Parse and ensure timezone-aware
+                    start_dt_next = datetime.fromisoformat(start_time.replace("Z", "+00:00").split('.')[0])
+                    if start_dt_next.tzinfo is None:
+                        # Check for Outlook timeZone field
+                        tz_name = start.get("timeZone", "UTC")
+                        try:
+                            tz_name = convert_windows_to_iana_timezone(tz_name)
+                            start_dt_next = start_dt_next.replace(tzinfo=ZoneInfo(tz_name))
+                        except:
+                            start_dt_next = start_dt_next.replace(tzinfo=timezone.utc)
+                    
+                    if start_dt_next > now:
+                        # Calculate duration
+                        evt_duration = 0
+                        if end_time:
+                            end_dt_next = datetime.fromisoformat(end_time.replace("Z", "+00:00").split('.')[0])
+                            if end_dt_next.tzinfo is None:
+                                end_dt_next = end_dt_next.replace(tzinfo=timezone.utc)
+                            evt_duration = int((end_dt_next - start_dt_next).total_seconds() / 60)
+                        
+                        # Convert datetime to proper ISO format with timezone for frontend
+                        # This ensures JavaScript's Date() can properly parse and convert to local time
+                        start_iso = start_dt_next.isoformat()
                         
                         next_event = {
                             "summary": event.get("summary", "Untitled Event"),
-                            "start": start_time,
-                            "duration": int(duration_minutes),
+                            "start": start_iso,  # ✅ Send as ISO string with timezone
+                            "duration": evt_duration,
                             "location": event.get("location"),
                             "conference_data": event.get("conferenceData"),
-                            "attendees_count": len(attendees)
+                            "attendees_count": len(attendees),
+                            "provider": event.get("_provider", "google")  # ✅ Check _provider for Outlook events
                         }
                 except Exception as e:
                     print(f"⚠️ Error setting next_event: {e}")
@@ -329,11 +616,11 @@ async def get_event_stats(authorization: Optional[str] = Header(default=None)):
         else:
             busy_level = "busy"
         
-        print(f"✅ Dashboard: Event analysis complete - {total_events} events, {total_hours}h total, busy level: {busy_level}")
+        print(f"✅ Dashboard: Combined event analysis complete - {total_events} events, {total_hours}h total, busy level: {busy_level} from {', '.join(connected_providers)}")
         
         # Format events for frontend display (needed for homepage overlay)
         formatted_events = []
-        for event in events:
+        for event in all_events:
             start = event.get("start", {})
             end = event.get("end", {})
             start_time = start.get("dateTime") or start.get("date")
@@ -343,8 +630,26 @@ async def get_event_stats(authorization: Optional[str] = Header(default=None)):
             time_range = "All day"
             if start_time and end_time:
                 try:
-                    start_dt = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
-                    end_dt = datetime.fromisoformat(end_time.replace("Z", "+00:00"))
+                    start_dt = datetime.fromisoformat(start_time.replace("Z", "+00:00").split('.')[0])
+                    if start_dt.tzinfo is None:
+                        # Check for Outlook timeZone field
+                        tz_name = start.get("timeZone", "UTC")
+                        try:
+                            tz_name = convert_windows_to_iana_timezone(tz_name)
+                            start_dt = start_dt.replace(tzinfo=ZoneInfo(tz_name))
+                        except:
+                            start_dt = start_dt.replace(tzinfo=timezone.utc)
+                    
+                    end_dt = datetime.fromisoformat(end_time.replace("Z", "+00:00").split('.')[0])
+                    if end_dt.tzinfo is None:
+                        # Check for Outlook timeZone field
+                        tz_name = end.get("timeZone", "UTC")
+                        try:
+                            tz_name = convert_windows_to_iana_timezone(tz_name)
+                            end_dt = end_dt.replace(tzinfo=ZoneInfo(tz_name))
+                        except:
+                            end_dt = end_dt.replace(tzinfo=timezone.utc)
+                    
                     time_range = f"{start_dt.strftime('%I:%M %p')} - {end_dt.strftime('%I:%M %p')}"
                 except Exception:
                     time_range = "Time TBD"
@@ -378,7 +683,15 @@ async def get_event_stats(authorization: Optional[str] = Header(default=None)):
             
             # Detect meeting provider
             provider = "other"
-            if event.get("conferenceData"):
+            
+            # For Outlook events, check for Teams meeting
+            if event.get("_provider") == "outlook":
+                if event.get("_onlineMeeting"):
+                    provider = "microsoft-teams"
+                elif raw_description and "teams" in raw_description.lower():
+                    provider = "microsoft-teams"
+            # For Google events
+            elif event.get("conferenceData"):
                 conference_solution = event.get("conferenceData", {}).get("conferenceSolution", {}).get("name", "").lower()
                 if "meet" in conference_solution:
                     provider = "google-meet"
@@ -434,7 +747,8 @@ async def get_event_stats(authorization: Optional[str] = Header(default=None)):
                 "location": event.get("location", ""),
                 "note": description if description else None,
                 "meetingLink": meeting_link if meeting_link else None,
-                "provider": provider
+                "provider": provider,  # Meeting provider (teams, meet, zoom, etc.)
+                "calendar_provider": event.get("_provider", "google")  # ✅ Calendar provider (google/outlook)
             })
         
         return {
@@ -447,7 +761,8 @@ async def get_event_stats(authorization: Optional[str] = Header(default=None)):
                 "busy_level": busy_level,
                 "deep_work_blocks": deep_work_blocks,
                 "at_risk_tasks": at_risk_tasks,
-                "events": formatted_events  # ✅ Added events list for homepage overlay
+                "events": formatted_events,  # ✅ Added events list for homepage overlay
+                "providers": connected_providers  # ✅ Added providers list
             }
         }
     
@@ -680,173 +995,303 @@ async def summarize_email(text: str) -> str:
 
 @router.get("/dashboard/emails/list")
 async def get_email_list(
+    request: Request,
     authorization: Optional[str] = Header(default=None),
     max_results: int = 50,
     days_back: int = 7
 ):
-    """Get detailed list of emails for the emails page."""
+    """Get detailed list of emails from both Gmail and Outlook for the emails page."""
     try:
         user = get_user_from_token(authorization)
         print(f"📧 Dashboard: Fetching email list for user {user['id']} ({user['email']})")
         
-        # Get Google credentials
-        creds_row = get_creds(user["id"])
-        if not creds_row:
-            print(f"⚠️ Dashboard: No Google credentials found for user {user['id']}")
+        gmail_service = None
+        outlook_token = None
+        connected_providers = []
+        
+        # Try to get Google credentials
+        try:
+            creds_row = get_creds(user["id"])
+            if creds_row:
+                credentials = _creds(creds_row)
+                gmail_service = build("gmail", "v1", credentials=credentials)
+                print(f"✅ Dashboard: Gmail service built successfully for user {user['id']}")
+                connected_providers.append("gmail")
+        except Exception as e:
+            print(f"⚠️ Could not initialize Gmail service: {e}")
+        
+        # Try to get Outlook token from cookies
+        outlook_token = _get_outlook_token(request, user["id"])
+        if outlook_token:
+            connected_providers.append("outlook")
+        
+        # If neither service is connected, return empty
+        if not gmail_service and not outlook_token:
+            print(f"⚠️ Dashboard: No email services connected for user {user['id']}")
             return {
                 "status": "not_connected",
-                "message": "Gmail not connected",
+                "message": "No email services connected",
                 "data": {
                     "emails": [],
-                    "total_count": 0
+                    "total_count": 0,
+                    "providers": []
                 }
             }
         
-        # Build credentials and Gmail service
-        credentials = _creds(creds_row)
-        gmail_service = build("gmail", "v1", credentials=credentials)
-        
-        print(f"✅ Dashboard: Gmail service built successfully for user {user['id']}")
-        
         # Get messages from specified days back
         days_ago = datetime.now(timezone.utc) - timedelta(days=days_back)
-        query = f"after:{int(days_ago.timestamp())}"
-        
-        # Fetch messages using Gmail API
-        messages_res = gmail_service.users().messages().list(
-            userId="me",
-            q=query,
-            maxResults=max_results
-        ).execute()
-        
-        messages = messages_res.get("messages", [])
-        print(f"📊 Dashboard: Found {len(messages)} messages in last {days_back} days")
-        
-        # Fetch detailed info for each email
         emails_list = []
         
-        for i, msg in enumerate(messages):
+        # ========== FETCH GMAIL EMAILS ==========
+        if gmail_service:
             try:
-                msg_id = msg["id"]
-                detail_data = gmail_service.users().messages().get(
+                query = f"after:{int(days_ago.timestamp())}"
+                
+                # Fetch messages using Gmail API
+                messages_res = gmail_service.users().messages().list(
                     userId="me",
-                    id=msg_id,
-                    format="full"
+                    q=query,
+                    maxResults=max_results
                 ).execute()
                 
-                # Extract headers
-                headers_list = detail_data.get("payload", {}).get("headers", [])
-                subject = next((h["value"] for h in headers_list if h["name"].lower() == "subject"), "No Subject")
-                sender = next((h["value"] for h in headers_list if h["name"].lower() == "from"), "Unknown")
+                messages = messages_res.get("messages", [])
+                print(f"📊 Dashboard: Found {len(messages)} Gmail messages in last {days_back} days")
                 
-                # Extract sender name and email
-                if "<" in sender:
-                    sender_name = sender.split("<")[0].strip().strip('"')
-                    sender_email = sender.split("<")[1].strip(">")
-                else:
-                    sender_name = sender.split("@")[0]
-                    sender_email = sender
-                
-                # Get labels
-                labels = detail_data.get("labelIds", [])
-                
-                # Determine priority
-                priority = analyze_email_priority(subject, sender, labels)
-                
-                # Parse internal date (milliseconds since epoch)
-                internal_date = int(detail_data.get("internalDate", 0))
-                email_datetime = datetime.fromtimestamp(internal_date / 1000, tz=timezone.utc)
-                
-                # Calculate time ago
-                time_diff = datetime.now(timezone.utc) - email_datetime
-                if time_diff.total_seconds() < 60:
-                    time_ago = "just now"
-                elif time_diff.total_seconds() < 3600:
-                    minutes = int(time_diff.total_seconds() / 60)
-                    time_ago = f"{minutes}m ago"
-                elif time_diff.total_seconds() < 86400:
-                    hours = int(time_diff.total_seconds() / 3600)
-                    time_ago = f"{hours}h ago"
-                else:
-                    days = int(time_diff.days)
-                    time_ago = f"{days}d ago"
-                
-                # Extract snippet/preview
-                snippet = detail_data.get("snippet", "")
-                
-                # Get email body
-                body = ""
-                payload = detail_data.get("payload", {})
-                
-                # Try to extract HTML or plain text body
-                def get_body_from_parts(parts):
-                    for part in parts:
-                        if part.get("mimeType") == "text/html":
-                            data = part.get("body", {}).get("data", "")
-                            if data:
-                                import base64
-                                return base64.urlsafe_b64decode(data).decode("utf-8", errors="ignore")
-                        elif part.get("mimeType") == "text/plain":
-                            data = part.get("body", {}).get("data", "")
-                            if data:
-                                import base64
-                                return base64.urlsafe_b64decode(data).decode("utf-8", errors="ignore")
-                        elif "parts" in part:
-                            nested_body = get_body_from_parts(part["parts"])
-                            if nested_body:
-                                return nested_body
-                    return ""
-                
-                if "parts" in payload:
-                    body = get_body_from_parts(payload["parts"])
-                elif payload.get("body", {}).get("data"):
-                    import base64
-                    body = base64.urlsafe_b64decode(payload["body"]["data"]).decode("utf-8", errors="ignore")
-                
-                if not body:
-                    body = snippet
-                
-                # Check if unread
-                is_unread = "UNREAD" in labels
+                # Fetch detailed info for each Gmail email
+                for i, msg in enumerate(messages):
+                    try:
+                        msg_id = msg["id"]
+                        detail_data = gmail_service.users().messages().get(
+                            userId="me",
+                            id=msg_id,
+                            format="full"
+                        ).execute()
+                        
+                        # Extract headers
+                        headers_list = detail_data.get("payload", {}).get("headers", [])
+                        subject = next((h["value"] for h in headers_list if h["name"].lower() == "subject"), "No Subject")
+                        sender = next((h["value"] for h in headers_list if h["name"].lower() == "from"), "Unknown")
+                        
+                        # Extract sender name and email
+                        if "<" in sender:
+                            sender_name = sender.split("<")[0].strip().strip('"')
+                            sender_email = sender.split("<")[1].strip(">")
+                        else:
+                            sender_name = sender.split("@")[0]
+                            sender_email = sender
+                        
+                        # Get labels
+                        labels = detail_data.get("labelIds", [])
+                        
+                        # Determine priority
+                        priority = analyze_email_priority(subject, sender, labels)
+                        
+                        # Parse internal date (milliseconds since epoch)
+                        internal_date = int(detail_data.get("internalDate", 0))
+                        email_datetime = datetime.fromtimestamp(internal_date / 1000, tz=timezone.utc)
+                        
+                        # Calculate time ago
+                        time_diff = datetime.now(timezone.utc) - email_datetime
+                        if time_diff.total_seconds() < 60:
+                            time_ago = "just now"
+                        elif time_diff.total_seconds() < 3600:
+                            minutes = int(time_diff.total_seconds() / 60)
+                            time_ago = f"{minutes}m ago"
+                        elif time_diff.total_seconds() < 86400:
+                            hours = int(time_diff.total_seconds() / 3600)
+                            time_ago = f"{hours}h ago"
+                        else:
+                            days = int(time_diff.days)
+                            time_ago = f"{days}d ago"
+                        
+                        # Extract snippet/preview
+                        snippet = detail_data.get("snippet", "")
+                        
+                        # Get email body
+                        body = ""
+                        payload = detail_data.get("payload", {})
+                        
+                        # Try to extract HTML or plain text body
+                        def get_body_from_parts(parts):
+                            for part in parts:
+                                if part.get("mimeType") == "text/html":
+                                    data = part.get("body", {}).get("data", "")
+                                    if data:
+                                        import base64
+                                        return base64.urlsafe_b64decode(data).decode("utf-8", errors="ignore")
+                                elif part.get("mimeType") == "text/plain":
+                                    data = part.get("body", {}).get("data", "")
+                                    if data:
+                                        import base64
+                                        return base64.urlsafe_b64decode(data).decode("utf-8", errors="ignore")
+                                elif "parts" in part:
+                                    nested_body = get_body_from_parts(part["parts"])
+                                    if nested_body:
+                                        return nested_body
+                            return ""
+                        
+                        if "parts" in payload:
+                            body = get_body_from_parts(payload["parts"])
+                        elif payload.get("body", {}).get("data"):
+                            import base64
+                            body = base64.urlsafe_b64decode(payload["body"]["data"]).decode("utf-8", errors="ignore")
+                        
+                        if not body:
+                            body = snippet
+                        
+                        # Check if unread
+                        is_unread = "UNREAD" in labels
 
-                # Only summarize the first 10 emails
-                if i < 10:
-                    summary = await summarize_email(body)
-                else:
-                    summary = ""
+                        # Only summarize the first 10 Gmail emails
+                        if i < 10:
+                            summary = await summarize_email(body)
+                        else:
+                            summary = ""
 
-                email_info = {
-                    "id": msg_id,
-                    "sender_name": sender_name,
-                    "sender_email": sender_email,
-                    "from": sender,  # ✅ Added for EmailCalendarOverlay compatibility
-                    "senderEmail": sender_email,  # ✅ Added for EmailCalendarOverlay compatibility
-                    "subject": subject,
-                    "snippet": snippet,
-                    "body": body,
-                    "summary": summary,
-                    "priority": priority,
-                    "time_ago": time_ago,
-                    "timestamp": email_datetime.isoformat(),
-                    "receivedAt": email_datetime.isoformat(),  # ✅ Added for EmailCalendarOverlay compatibility
-                    "is_unread": is_unread,
-                    "labels": labels
-                }
+                        email_info = {
+                            "id": f"gmail_{msg_id}",  # ✅ Prefix with provider
+                            "sender_name": sender_name,
+                            "sender_email": sender_email,
+                            "from": sender,
+                            "senderEmail": sender_email,
+                            "subject": subject,
+                            "snippet": snippet,
+                            "body": body,
+                            "summary": summary,
+                            "priority": priority,
+                            "time_ago": time_ago,
+                            "timestamp": email_datetime.isoformat(),
+                            "receivedAt": email_datetime.isoformat(),
+                            "is_unread": is_unread,
+                            "labels": labels,
+                            "provider": "gmail"  # ✅ Add provider field
+                        }
+                        
+                        emails_list.append(email_info)
+                        
+                    except Exception as e:
+                        print(f"⚠️ Error processing Gmail message {msg_id}: {e}")
+                        continue
                 
-                emails_list.append(email_info)
+                print(f"✅ Dashboard: Successfully fetched {len(emails_list)} Gmail emails")
                 
             except Exception as e:
-                print(f"⚠️ Error processing message {msg_id}: {e}")
-                continue
+                print(f"⚠️ Error fetching Gmail emails: {e}")
         
-        print(f"✅ Dashboard: Successfully fetched {len(emails_list)} emails")
+        # ========== FETCH OUTLOOK EMAILS ==========
+        if outlook_token:
+            try:
+                headers = {
+                    "Authorization": f"Bearer {outlook_token}",
+                    "Content-Type": "application/json"
+                }
+                
+                # Calculate date filter for Outlook
+                days_ago_iso = days_ago.strftime("%Y-%m-%dT%H:%M:%SZ")
+                
+                # Fetch Outlook messages (max 50 to match Gmail)
+                outlook_url = f"{GRAPH_API_URL}/me/messages?$top={max_results}&$filter=receivedDateTime ge {days_ago_iso}&$select=id,subject,from,isRead,importance,receivedDateTime,bodyPreview,body&$orderby=receivedDateTime desc"
+                print(f"📊 Dashboard: Fetching Outlook emails from URL: {outlook_url}")
+                
+                response = requests.get(outlook_url, headers=headers, timeout=10)
+                
+                if response.status_code == 200:
+                    outlook_messages = response.json().get("value", [])
+                    print(f"📊 Dashboard: Found {len(outlook_messages)} Outlook messages in last {days_back} days")
+                    
+                    # Process Outlook emails
+                    for i, msg in enumerate(outlook_messages):
+                        try:
+                            # Extract sender info
+                            sender_obj = msg.get("from", {}).get("emailAddress", {})
+                            sender_name = sender_obj.get("name", "Unknown")
+                            sender_email = sender_obj.get("address", "unknown@outlook.com")
+                            sender = f"{sender_name} <{sender_email}>"
+                            
+                            # Extract subject
+                            subject = msg.get("subject", "No Subject")
+                            
+                            # Extract importance and determine priority
+                            importance = msg.get("importance", "normal")
+                            priority = analyze_email_priority(subject, sender, importance=importance)
+                            
+                            # Parse received date
+                            received_date_str = msg.get("receivedDateTime", "")
+                            if received_date_str:
+                                email_datetime = datetime.fromisoformat(received_date_str.replace("Z", "+00:00"))
+                            else:
+                                email_datetime = datetime.now(timezone.utc)
+                            
+                            # Calculate time ago
+                            time_diff = datetime.now(timezone.utc) - email_datetime
+                            if time_diff.total_seconds() < 60:
+                                time_ago = "just now"
+                            elif time_diff.total_seconds() < 3600:
+                                minutes = int(time_diff.total_seconds() / 60)
+                                time_ago = f"{minutes}m ago"
+                            elif time_diff.total_seconds() < 86400:
+                                hours = int(time_diff.total_seconds() / 3600)
+                                time_ago = f"{hours}h ago"
+                            else:
+                                days = int(time_diff.days)
+                                time_ago = f"{days}d ago"
+                            
+                            # Extract body and snippet
+                            snippet = msg.get("bodyPreview", "")
+                            body = msg.get("body", {}).get("content", snippet)
+                            
+                            # Check if unread
+                            is_unread = not msg.get("isRead", True)
+                            
+                            # Only summarize the first 10 Outlook emails
+                            if i < 10 and len(body) > 20:
+                                summary = await summarize_email(body)
+                            else:
+                                summary = ""
+                            
+                            email_info = {
+                                "id": f"outlook_{msg['id']}",  # ✅ Prefix with provider
+                                "sender_name": sender_name,
+                                "sender_email": sender_email,
+                                "from": sender,
+                                "senderEmail": sender_email,
+                                "subject": subject,
+                                "snippet": snippet,
+                                "body": body,
+                                "summary": summary,
+                                "priority": priority,
+                                "time_ago": time_ago,
+                                "timestamp": email_datetime.isoformat(),
+                                "receivedAt": email_datetime.isoformat(),
+                                "is_unread": is_unread,
+                                "labels": ["OUTLOOK"],  # Mark as Outlook for consistency
+                                "provider": "outlook"  # ✅ Add provider field
+                            }
+                            
+                            emails_list.append(email_info)
+                            
+                        except Exception as e:
+                            print(f"⚠️ Error processing Outlook message {msg.get('id')}: {e}")
+                            continue
+                    
+                    print(f"✅ Dashboard: Successfully fetched {len(outlook_messages)} Outlook emails")
+                else:
+                    print(f"⚠️ Outlook API returned status {response.status_code}")
+                    
+            except Exception as e:
+                print(f"⚠️ Error fetching Outlook emails: {e}")
+        
+        # Sort all emails by timestamp (most recent first)
+        emails_list.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+        
+        print(f"✅ Dashboard: Successfully fetched {len(emails_list)} total emails from {len(connected_providers)} provider(s)")
         
         return {
             "status": "success",
             "data": {
-                "provider": "gmail", 
                 "emails": emails_list,
-                "total_count": len(emails_list)
+                "total_count": len(emails_list),
+                "providers": connected_providers  # ✅ List of connected providers
             }
         }
     

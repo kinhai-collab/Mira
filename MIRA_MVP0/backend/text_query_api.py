@@ -33,7 +33,6 @@ async def text_query(request: Request):
     if token:
         try:
             user_id = get_uid_from_token(f"Bearer {token}")
-            print("DEBUG: resolved user_id from request body token", user_id)
         except Exception as e:
             print(f"Could not extract user ID from body token: {e}")
             user_id = None
@@ -51,7 +50,6 @@ async def text_query(request: Request):
     intelligent_learner = get_intelligent_learner() if get_intelligent_learner else None
 
     try:
-        print(f"DEBUG: about to call respond_with_memory user_id={user_id} input={user_input[:80]}")
         result = respond_with_memory(
             user_id=user_id,
             user_input=user_input,
@@ -61,7 +59,6 @@ async def text_query(request: Request):
             model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
             max_memories=3,
         )
-        print(f"DEBUG: respond_with_memory returned keys={list(result.keys())}")
         return JSONResponse({"text": result.get("response_text"), "userText": user_input})
     except Exception as e:
         print(f"Error in text-query handler: {e}")

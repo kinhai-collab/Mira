@@ -277,8 +277,7 @@ async def save_gmail_credentials(
         
         return JSONResponse(content={
             "status": "success",
-            "message": "Gmail credentials saved successfully",
-            "debug": {"uid": uid, "has_refresh_token": bool(gmail_refresh_token)}
+            "message": "Gmail credentials saved successfully"
         })
     except HTTPException:
         raise
@@ -399,7 +398,7 @@ def microsoft_oauth_start(purpose: str = Query(None), return_to: str = Query(Non
         "redirect_uri": MICROSOFT_REDIRECT_URI,
         "response_mode": "query",
         "scope": " ".join(MICROSOFT_SCOPES),
-        "prompt": "select_account consent"
+        "prompt": "select_account"  # Fixed: Only one prompt value allowed
     }
     if state:
         params["state"] = state
@@ -649,17 +648,12 @@ def profile_update(
                 error_msg = r.text or f"HTTP {r.status_code}: {r.reason}"
                 error_code = None
             
-            print(f"Supabase admin API error: {r.status_code} - {error_msg}")
-            print(f"Request URL: {SUPABASE_URL.rstrip('/')}/auth/v1/admin/users/{user_id}")
-            print(f"Service role key present: {bool(SUPABASE_SERVICE_ROLE_KEY)}")
-            
             raise HTTPException(
                 status_code=r.status_code, 
                 detail={
                     "message": error_msg, 
                     "status": "error", 
                     "error_code": error_code,
-                    "debug": f"Failed to update user {user_id}",
                     "hint": "Check if SUPABASE_SERVICE_ROLE_KEY is correctly set in environment variables"
                 }
             )
@@ -681,19 +675,6 @@ def profile_update(
 @router.get("/test")
 def test():
     return {"status": "ok", "message": "Server is running"}
-
-# Debug endpoint to check environment variables
-@router.get("/debug/env")
-def debug_env():
-    return {
-        "CLIENT_ID": CLIENT_ID,
-        "CLIENT_SECRET_SET": bool(CLIENT_SECRET),
-        "REDIRECT_URI": REDIRECT_URI,
-        "SUPABASE_URL": SUPABASE_URL,
-        "SUPABASE_KEY_SET": bool(SUPABASE_KEY),
-        "TOKEN_URL": TOKEN_URL,
-        "AUTH_URL": AUTH_URL
-    }
 
 # Handle CORS preflight for profile_update
 @router.options("/profile_update")
