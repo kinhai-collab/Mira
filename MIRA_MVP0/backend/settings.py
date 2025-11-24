@@ -8,6 +8,13 @@ SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
 # Normalize URL to remove trailing slash to prevent double-slash issues
 supabase: Client = create_client(SUPABASE_URL.rstrip('/') if SUPABASE_URL else "", SUPABASE_SERVICE_ROLE_KEY)
 
+# Postgres (pgvector) configuration. Override with environment variables in prod.
+PG_HOST = os.environ.get("PG_HOST", "localhost")
+PG_PORT = os.environ.get("PG_PORT", "5432")
+PG_DATABASE = os.environ.get("PG_DATABASE", "mira")
+PG_USER = os.environ.get("PG_USER", "postgres")
+PG_PASSWORD = os.environ.get("PG_PASSWORD", "postgres")
+
 router = APIRouter()
 
 # Helper function to extract UID from Authorization header
