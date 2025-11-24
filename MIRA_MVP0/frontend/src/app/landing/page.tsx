@@ -2,6 +2,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 
 export default function LandingPage() {
 	return (
@@ -12,7 +13,7 @@ export default function LandingPage() {
 				alt="left glow"
 				width={1500}
 				height={1500}
-				className="absolute top-[-20%] left-[-5%] opacity-[0.92] z-[1]"
+				className="absolute top-[-30%] left-[-5%] opacity-[0.92] z-[1]"
 			/>
 
 			{/* ==== RIGHT GRADIENT ==== */}
@@ -59,7 +60,7 @@ export default function LandingPage() {
 						alt="left arrow up"
 						width={70}
 						height={70}
-						className="absolute left-[80%] top-[25%] z-[25]"
+						className="absolute left-[90%] top-[25%] z-[25]"
 					/>
 
 					{/* ==== RIGHT ARROW (up curve) ==== */}
@@ -68,7 +69,7 @@ export default function LandingPage() {
 						alt="right arrow down"
 						width={50}
 						height={50}
-						className="absolute right-[84%] top-[22%] z-[25]"
+						className="absolute right-[75%] top-[22%] z-[25]"
 					/>
 
 					{/* ===================== BOX + FLOATING ICONS ===================== */}
@@ -128,8 +129,8 @@ export default function LandingPage() {
 							src="/Icons/LandingIcons/Frame 1337.png"
 							width={55}
 							height={55}
-							className="absolute left-[-10%] top-[28%] animate-float-slow z-[30]"
-							alt="clock"
+							className="absolute left-[0%] top-[28%] animate-float-slow z-[30]"
+							alt="search"
 						/>
 
 						<Image
@@ -152,7 +153,7 @@ export default function LandingPage() {
 							src="/Icons/LandingIcons/Frame 1339.png"
 							width={60}
 							height={60}
-							className="absolute right-[-22%] top-[100%] animate-float z-[30]"
+							className="absolute right-[-22%] top-[10%] animate-float z-[30]"
 							alt=""
 						/>
 
@@ -161,7 +162,7 @@ export default function LandingPage() {
 							width={60}
 							height={60}
 							className="absolute right-[10%] top-[10%] animate-float z-[30]"
-							alt=""
+							alt="Camera"
 						/>
 
 						<Image
@@ -274,6 +275,17 @@ export default function LandingPage() {
 				}
 					
 			`}</style>
+			<div className="mt-12 flex justify-center relative z-[50]">
+				<Link href="/login">
+					<button
+						className="bg-black text-white py-3 px-10 rounded-full text-lg font-medium shadow-lg
+                       transition-all duration-300 ease-out
+                       hover:opacity-90 hover:shadow-[0_8px_20px_rgba(0,0,0,0.35)] hover:-translate-y-1"
+					>
+						Get Started
+					</button>
+				</Link>
+			</div>
 
 			{/* ===================== SECTION 2 ===================== */}
 			<div className="relative w-full mt-32 px-6 md:px-16 lg:px-24 z-[10]">
