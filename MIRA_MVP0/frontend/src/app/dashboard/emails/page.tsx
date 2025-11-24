@@ -135,12 +135,27 @@ export default function EmailsPage() {
 		low: { bar: "#95D6A4", bg: "#E7F8EB", text: "#49A15A" },
 	};
 
-	const filteredEmails =
-		activeTab === "All"
-			? emails
-			: emails.filter((e) => e.priority === activeTab.toLowerCase());
+	// Filter emails based on active tab
+	let filteredEmails = emails;
+	
+	// Priority tabs
+	if (["High", "Medium", "Low"].includes(activeTab)) {
+		filteredEmails = emails.filter((e) => e.priority === activeTab.toLowerCase());
+	}
+	// Provider tabs
+	else if (activeTab === "Gmail") {
+		filteredEmails = emails.filter((e) => e.provider === "gmail");
+	}
+	else if (activeTab === "Outlook") {
+		filteredEmails = emails.filter((e) => e.provider === "outlook");
+	}
+	// All tab shows everything
 	
 	const totalImportantCount = filteredEmails.length;
+	
+	// Count emails by provider
+	const gmailCount = emails.filter((e) => e.provider === "gmail").length;
+	const outlookCount = emails.filter((e) => e.provider === "outlook").length;
 
 	const today = new Date();
 	const year = selectedDate.getFullYear();
@@ -330,12 +345,67 @@ export default function EmailsPage() {
 				</div>
 
 				{/* Tabs */}
-				<div className="flex border-b border-[#E7E7E7] text-[15px] text-gray-500">
-					{["All", "High", "Medium", "Low"].map((tab, i) => (
+				<div className="flex border-b border-[#E7E7E7] text-[15px] text-gray-500 overflow-x-auto">
+					{/* All Tab */}
+					<div
+						onClick={() => setActiveTab("All")}
+						className={`px-8 py-4 cursor-pointer text-center transition-all whitespace-nowrap ${
+							activeTab === "All"
+								? "text-[#62445E] border-b-[2px] border-[#62445E] bg-white"
+								: "hover:bg-[#F9F9FC]"
+						}`}
+					>
+						All
+					</div>
+					
+					{/* Gmail Tab (only show if there are Gmail emails) */}
+					{gmailCount > 0 && (
+						<div
+							onClick={() => setActiveTab("Gmail")}
+							className={`px-8 py-4 cursor-pointer text-center transition-all whitespace-nowrap flex items-center gap-2 ${
+								activeTab === "Gmail"
+									? "text-[#62445E] border-b-[2px] border-[#62445E] bg-white"
+									: "hover:bg-[#F9F9FC]"
+							}`}
+						>
+							<Image
+								src="/Icons/Email/skill-icons_gmail-light.png"
+								alt="Gmail"
+								width={18}
+								height={18}
+								className="opacity-90"
+							/>
+							Gmail ({gmailCount})
+						</div>
+					)}
+					
+					{/* Outlook Tab (only show if there are Outlook emails) */}
+					{outlookCount > 0 && (
+						<div
+							onClick={() => setActiveTab("Outlook")}
+							className={`px-8 py-4 cursor-pointer text-center transition-all whitespace-nowrap flex items-center gap-2 ${
+								activeTab === "Outlook"
+									? "text-[#62445E] border-b-[2px] border-[#62445E] bg-white"
+									: "hover:bg-[#F9F9FC]"
+							}`}
+						>
+							<Image
+								src="/Icons/Email/vscode-icons_file-type-outlook.png"
+								alt="Outlook"
+								width={18}
+								height={18}
+								className="opacity-90"
+							/>
+							Outlook ({outlookCount})
+						</div>
+					)}
+					
+					{/* Priority Tabs */}
+					{["High", "Medium", "Low"].map((tab, i) => (
 						<div
 							key={i}
 							onClick={() => setActiveTab(tab)}
-							className={`px-12 py-4 cursor-pointer text-center transition-all ${
+							className={`px-8 py-4 cursor-pointer text-center transition-all whitespace-nowrap ${
 								activeTab === tab
 									? "text-[#62445E] border-b-[2px] border-[#62445E] bg-white"
 									: "hover:bg-[#F9F9FC]"
@@ -387,6 +457,18 @@ export default function EmailsPage() {
 												{email.sender_name}
 												{email.is_unread && (
 													<span className="inline-block w-2 h-2 bg-blue-500 rounded-full"></span>
+												)}
+												{/* Show provider badge only in "All" tab */}
+												{activeTab === "All" && (
+													<span
+														className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${
+															email.provider === "gmail"
+																? "bg-blue-100 text-blue-700"
+																: "bg-purple-100 text-purple-700"
+														}`}
+													>
+														{email.provider === "gmail" ? "Gmail" : "Outlook"}
+													</span>
 												)}
 											</p>
 											<p className="text-gray-600 text-[14px] truncate">

@@ -181,7 +181,6 @@ export default function LoginPage() {
 	};
 
 	const handleGoogleLogin = async () => {
-		console.log("Google login clicked");
 		try {
             const { error } = await supabase.auth.signInWithOAuth({
 				provider: 'google',
@@ -191,12 +190,15 @@ export default function LoginPage() {
 			});
 			
 			if (error) {
-				console.error("Google OAuth error:", error);
-				alert("Google login failed. Please try again.");
+				const errorMsg = error.message || 'Unknown error';
+				if (errorMsg.includes('556') || errorMsg.toLowerCase().includes('paused')) {
+					alert('⚠️ Your Supabase project appears to be PAUSED. Please go to Supabase Dashboard and restore your project, then try again.');
+				} else {
+					alert(`Google login failed: ${errorMsg}`);
+				}
 			}
-		} catch (err) {
-			console.error("Error during Google login:", err);
-			alert("Something went wrong with Google login. Please try again.");
+		} catch (err: any) {
+			alert(`Something went wrong with Google login: ${err.message || 'Unknown error'}`);
 		}
 	};
 

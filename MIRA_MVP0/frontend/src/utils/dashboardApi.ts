@@ -39,6 +39,7 @@ export interface NextEvent {
 		type?: string;
 	};
 	attendees_count: number;
+	provider?: "google" | "outlook";  // ✅ Add provider field
 }
 
 export interface CalendarEvent {
@@ -48,7 +49,8 @@ export interface CalendarEvent {
 	location?: string;
 	note?: string | null;
 	meetingLink?: string | null;
-	provider?: string | null;
+	provider?: string | null;  // Meeting provider (teams, meet, zoom)
+	calendar_provider?: "google" | "outlook";  // ✅ Calendar provider (google/outlook)
 }
 
 export interface EventStats {
@@ -100,6 +102,7 @@ export async function fetchEmailStats(): Promise<EmailStats> {
 				Authorization: `Bearer ${token}`,
 				"Content-Type": "application/json",
 			},
+			credentials: "include",  // ✅ Include cookies for Outlook token
 		});
 
 		console.log("Email stats response status:", response.status);
@@ -169,6 +172,7 @@ export async function fetchEventStats(): Promise<EventStats> {
 				Authorization: `Bearer ${token}`,
 				"Content-Type": "application/json",
 			},
+			credentials: "include",  // ✅ Include cookies for Outlook token
 		});
 
 		console.log("Event stats response status:", response.status);
@@ -232,6 +236,7 @@ export async function fetchDashboardSummary(): Promise<DashboardSummary> {
 				Authorization: `Bearer ${token}`,
 				"Content-Type": "application/json",
 			},
+			credentials: "include",  // ✅ Include cookies for Outlook token
 		});
 
 		if (!response.ok) {
@@ -353,6 +358,7 @@ export async function fetchTaskStats(): Promise<TaskStats> {
 				Authorization: `Bearer ${token}`,
 				"Content-Type": "application/json",
 			},
+			credentials: "include",  // ✅ Include cookies for Outlook token
 		});
 
 		console.log("Task stats response status:", response.status);
@@ -408,6 +414,7 @@ export async function fetchReminderStats(): Promise<ReminderStats> {
 				Authorization: `Bearer ${token}`,
 				"Content-Type": "application/json",
 			},
+			credentials: "include",  // ✅ Include cookies for Outlook token
 		});
 
 		console.log("Reminder stats response status:", response.status);
@@ -560,6 +567,7 @@ export interface Email {
 	timestamp: string;
 	is_unread: boolean;
 	labels: string[];
+	provider: "gmail" | "outlook";  // ✅ Added provider field
 }
 
 export interface EmailListData {
@@ -595,6 +603,7 @@ export async function fetchEmailList(
 					Authorization: `Bearer ${token}`,
 					"Content-Type": "application/json",
 				},
+				credentials: "include",  // ✅ Include cookies for Outlook token
 			}
 		);
 
