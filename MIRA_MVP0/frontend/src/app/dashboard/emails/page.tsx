@@ -6,7 +6,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import { fetchEmailList, type Email } from "@/utils/dashboardApi";
-import { fetchEmailSummary} from "@/utils/dashboardApi";
+import { fetchEmailSummary } from "@/utils/dashboardApi";
 import { getWeather } from "@/utils/weather";
 
 // Helper: Generate days for a given month
@@ -30,7 +30,7 @@ export default function EmailsPage() {
 	const [emails, setEmails] = useState<Email[]>([]);
 	const [isLoading, setIsLoading] = useState(true);
 	const [summary, setSummary] = useState<string | null>(null);
-    const [summaryLoading, setSummaryLoading] = useState(false);
+	const [summaryLoading, setSummaryLoading] = useState(false);
 
 	// Weather & location state
 	const [location, setLocation] = useState<string>("New York");
@@ -61,18 +61,18 @@ export default function EmailsPage() {
 		}
 
 		const getSummary = async () => {
-		    setSummaryLoading(true);
-    		try {
-	    		const result = await fetchEmailSummary(selectedEmail.id);
-		    	if (result?.status === "success") setSummary(result.summary);
-    			else setSummary(null);
-	    	} catch (error) {
-		    	console.error(error);
-		    	setSummary(null);
-    		} finally {
-	    		setSummaryLoading(false);
-		    }
-	    };
+			setSummaryLoading(true);
+			try {
+				const result = await fetchEmailSummary(selectedEmail.id);
+				if (result?.status === "success") setSummary(result.summary);
+				else setSummary(null);
+			} catch (error) {
+				console.error(error);
+				setSummary(null);
+			} finally {
+				setSummaryLoading(false);
+			}
+		};
 
 		getSummary();
 	}, [selectedEmail]);
@@ -81,12 +81,12 @@ export default function EmailsPage() {
 	const fetchWeatherForCoords = async (lat: number, lon: number) => {
 		try {
 			setIsWeatherLoading(true);
-			console.log('Emails page: fetching weather for coords:', lat, lon);
+			console.log("Emails page: fetching weather for coords:", lat, lon);
 			const data = await getWeather(lat, lon);
 			const temp = data?.temperatureC;
-			if (typeof temp === 'number') setTemperatureC(temp);
+			if (typeof temp === "number") setTemperatureC(temp);
 		} catch (err) {
-			console.error('Emails page: Error fetching weather:', err);
+			console.error("Emails page: Error fetching weather:", err);
 		} finally {
 			setIsWeatherLoading(false);
 		}
@@ -96,22 +96,23 @@ export default function EmailsPage() {
 	useEffect(() => {
 		const ipFallback = async () => {
 			try {
-				const res = await fetch('https://ipapi.co/json/');
+				const res = await fetch("https://ipapi.co/json/");
 				if (!res.ok) return;
 				const data = await res.json();
-				const city = data.city || data.region || data.region_code || data.country_name;
+				const city =
+					data.city || data.region || data.region_code || data.country_name;
 				if (city) setLocation(city);
 				if (data.latitude && data.longitude) {
 					fetchWeatherForCoords(Number(data.latitude), Number(data.longitude));
 				}
 			} catch (e) {
-				console.error('Emails page IP fallback error:', e);
+				console.error("Emails page IP fallback error:", e);
 			} finally {
 				setIsLocationLoading(false);
 			}
 		};
 
-		if (!('geolocation' in navigator)) {
+		if (!("geolocation" in navigator)) {
 			ipFallback();
 			return;
 		}
@@ -119,7 +120,7 @@ export default function EmailsPage() {
 		const success = async (pos: GeolocationPosition) => {
 			try {
 				const { latitude: lat, longitude: lon } = pos.coords;
-				
+
 				// Use OpenStreetMap Nominatim reverse geocoding
 				const res = await fetch(
 					`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}`
@@ -136,10 +137,10 @@ export default function EmailsPage() {
 					data?.address?.state ||
 					data?.address?.county;
 				if (city) setLocation(city);
-				
+
 				fetchWeatherForCoords(lat, lon).catch((e) => console.error(e));
 			} catch (err) {
-				console.error('Emails page reverse geocode error:', err);
+				console.error("Emails page reverse geocode error:", err);
 				await ipFallback();
 			} finally {
 				setIsLocationLoading(false);
@@ -147,11 +148,13 @@ export default function EmailsPage() {
 		};
 
 		const failure = async (err: GeolocationPositionError) => {
-			console.warn('Emails page geolocation failed:', err);
+			console.warn("Emails page geolocation failed:", err);
 			await ipFallback();
 		};
 
-		navigator.geolocation.getCurrentPosition(success, failure, { timeout: 10000 });
+		navigator.geolocation.getCurrentPosition(success, failure, {
+			timeout: 10000,
+		});
 	}, []);
 
 	const colorMap = {
@@ -162,22 +165,23 @@ export default function EmailsPage() {
 
 	// Filter emails based on active tab
 	let filteredEmails = emails;
-	
+
 	// Priority tabs
 	if (["High", "Medium", "Low"].includes(activeTab)) {
-		filteredEmails = emails.filter((e) => e.priority === activeTab.toLowerCase());
+		filteredEmails = emails.filter(
+			(e) => e.priority === activeTab.toLowerCase()
+		);
 	}
 	// Provider tabs
 	else if (activeTab === "Gmail") {
 		filteredEmails = emails.filter((e) => e.provider === "gmail");
-	}
-	else if (activeTab === "Outlook") {
+	} else if (activeTab === "Outlook") {
 		filteredEmails = emails.filter((e) => e.provider === "outlook");
 	}
 	// All tab shows everything
-	
+
 	const totalImportantCount = filteredEmails.length;
-	
+
 	// Count emails by provider
 	const gmailCount = emails.filter((e) => e.provider === "gmail").length;
 	const outlookCount = emails.filter((e) => e.provider === "outlook").length;
@@ -187,7 +191,9 @@ export default function EmailsPage() {
 	const month = selectedDate.getMonth();
 	const days = generateCalendarDays(year, month);
 
-	const displayLocation = isLocationLoading ? "Locating..." : location || "New York";
+	const displayLocation = isLocationLoading
+		? "Locating..."
+		: location || "New York";
 	const displayTemperature =
 		temperatureC != null
 			? `${Math.round(temperatureC)}°C`
@@ -273,7 +279,11 @@ export default function EmailsPage() {
 				<div className="flex justify-between items-center px-6 py-5 border-b border-[#E7E7E7] bg-[#F8F9FB]">
 					<div className="flex items-center gap-4">
 						<p className="text-[16px] text-gray-800 font-normal">
-							{isLoading ? "Loading..." : `${totalImportantCount} ${totalImportantCount === 1 ? "Email" : "Emails"}`}
+							{isLoading
+								? "Loading..."
+								: `${totalImportantCount} ${
+										totalImportantCount === 1 ? "Email" : "Emails"
+								  }`}
 						</p>
 						{!isLoading && (
 							<div className="flex items-center gap-2">
@@ -382,7 +392,7 @@ export default function EmailsPage() {
 					>
 						All
 					</div>
-					
+
 					{/* Gmail Tab (only show if there are Gmail emails) */}
 					{gmailCount > 0 && (
 						<div
@@ -403,7 +413,7 @@ export default function EmailsPage() {
 							Gmail ({gmailCount})
 						</div>
 					)}
-					
+
 					{/* Outlook Tab (only show if there are Outlook emails) */}
 					{outlookCount > 0 && (
 						<div
@@ -424,7 +434,7 @@ export default function EmailsPage() {
 							Outlook ({outlookCount})
 						</div>
 					)}
-					
+
 					{/* Priority Tabs */}
 					{["High", "Medium", "Low"].map((tab, i) => (
 						<div
@@ -451,7 +461,9 @@ export default function EmailsPage() {
 						</div>
 					) : filteredEmails.length === 0 ? (
 						<p className="text-center py-6 text-gray-400 text-[14px]">
-							{emails.length === 0 ? "No emails found. Connect your Gmail to see emails." : "No emails found for this category."}
+							{emails.length === 0
+								? "No emails found. Connect your Gmail to see emails."
+								: "No emails found for this category."}
 						</p>
 					) : (
 						filteredEmails.map((email, index) => {
@@ -539,8 +551,23 @@ export default function EmailsPage() {
 			</div>
 			{/* Email Popup */}
 			{showEmailPopup && selectedEmail && (
-				<div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
-					<div className="relative bg-[#FFFFFF] w-[80%] max-w-[800px] h-[70vh] rounded-[12px] shadow-lg flex flex-col overflow-hidden animate-fadeUp">
+				<div
+					className="fixed inset-0 
+        bg-black/55
+        backdrop-blur-[2px]
+        flex items-center justify-center
+        z-50 transition-all"
+				>
+					<div
+						className="relative bg-white 
+    w-[85%] max-w-[850px] 
+    max-h-[80vh] 
+    rounded-lg
+    shadow-[0_8px_40px_rgba(0,0,0,0.10)]
+    overflow-y-auto 
+    p-0 
+    animate-fadeUp"
+					>
 						{/* PopUp Header */}
 						<div className="flex justify-between items-center p-5 border-b border-gray-200 bg-[#FAFAFA]">
 							<div className="flex items-center gap-3">
@@ -629,11 +656,11 @@ export default function EmailsPage() {
 
 						{/* Content */}
 						<div className="flex-1 overflow-y-auto p-5">
-							  {summaryLoading ? (
+							{summaryLoading ? (
 								<div className="text-center text-gray-400 text-[16px] py-12">
 									Loading summary...
-									</div>
-							   )  :	summary ? (
+								</div>
+							) : summary ? (
 								<div
 									className="text-gray-700 text-[14px] leading-relaxed whitespace-pre-wrap"
 									dangerouslySetInnerHTML={{
