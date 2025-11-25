@@ -11,19 +11,10 @@ import os
 
 openai = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-
 def run_morning_brief(user_id: str, user_name: str, tz: str):
     """
     Orchestrates full Morning Brief flow following GA-01 to GA-05.
     """
-
-    # Import TTS generator lazily to avoid import-time failure if voice module is broken
-    try:
-        from voice.voice_generation import generate_voice
-    except Exception:
-        # If voice module is broken, provide a fallback that returns no audio
-        def generate_voice(text: str):
-            return None, None
 
     # 1️⃣ Greeting
     greeting_text = generate_greeting(user_name)
@@ -76,10 +67,10 @@ def run_morning_brief(user_id: str, user_name: str, tz: str):
     email_counts = get_email_counts(user_id)
 
     return {
-        "text": brief, 
-        "audio_base64": audio_base64, 
-        "audio_filename": filename,
-        "events": events,
-        "total_events": len(events),
-        "email_counts": email_counts
-    }
+            "text": brief, 
+            "audio_base64": audio_base64, 
+            "audio_filename": filename,
+            "events": events,
+            "total_events": len(events),
+            "email_counts": email_counts
+        }

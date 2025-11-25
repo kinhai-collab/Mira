@@ -15,6 +15,7 @@ import {
 } from "@/utils/voice/voiceHandler";
 import { getValidToken, requireAuth } from "@/utils/auth";
 import { getWeather } from "@/utils/weather";
+import HeaderBar from "@/components/HeaderBar";
 
 interface MorningBriefData {
 	text: string;
@@ -461,7 +462,7 @@ export default function MorningBrief() {
 	}, []);
 
 	return (
-		<div className="relative flex min-h-screen bg-[#F8F8FB] text-gray-800 overflow-hidden">
+		<div className=" flex min-h-screen bg-[#F8F8FB] text-gray-800 overflow-hidden">
 			{/* Sidebar */}
 			<aside
 				className="fixed left-0 top-0 h-full w-[70px] bg-white
@@ -491,240 +492,169 @@ export default function MorningBrief() {
 					/>
 				</button>
 			</aside>
+			<div className=" absolute top-6 left-0 w-full pl-[70px] md:pl-[90px]">
+				<HeaderBar
+					dateLabel={new Date().toLocaleDateString("en-US", {
+						weekday: "short",
+						month: "short",
+						day: "numeric",
+					})}
+					locationLabel={location}
+					temperatureLabel={temperatureC != null ? `${temperatureC}°` : "—"}
+					isLocationLoading={isLocationLoading}
+					isWeatherLoading={isWeatherLoading}
+				/>
+			</div>
 
 			{/* Main */}
 			<main
-				className="flex-1 flex flex-col items-center justify-center relative
-				px-4 sm:px-6 md:px-10 lg:px-16"
+				className="flex-1 flex flex-col items-center relative 
+px-4 sm:px-6 md:px-10 lg:px-16 pt-28"
 			>
-				{/* Top Bar */}
-				<div
-					className="absolute top-6 left-[90px] md:left-24 flex flex-wrap items-center 
-					gap-2 sm:gap-3 text-xs sm:text-sm"
-				>
-					<span className="font-medium text-gray-800 whitespace-nowrap">
-						Wed, Oct 15
-					</span>
+				{/* SCALE CONTAINER */}
+				<div className="scale-[0.85] flex flex-col items-center">
+					<audio
+						ref={audioRef}
+						autoPlay={false}
+						controls={false}
+						style={{ display: "none" }}
+					/>
 
-					<div
-						className="flex items-center gap-1 px-2.5 py-1 border border-gray-200 
-					rounded-full bg-white/40 backdrop-blur-sm text-xs sm:text-sm"
-					>
-						<Image
-							src="/Icons/Property 1=Location.svg"
-							alt="Location"
-							width={14}
-							height={14}
-						/>
-						<span className="text-gray-700 font-medium">
-							{isLocationLoading ? "Detecting..." : location}
-						</span>
+					{/* Orb */}
+					<div className="flex flex-col items-center justify-center">
+						<Orb />
 					</div>
 
-					<div
-						className="flex items-center gap-1 px-2.5 py-1 border border-gray-200 
-					rounded-full bg-white/40 backdrop-blur-sm text-xs sm:text-sm"
-					>
-						<Image
-							src="/Icons/Property 1=Sun.svg"
-							alt="Weather"
-							width={14}
-							height={14}
-						/>
-						<span className="text-gray-700 font-medium">
-							{isWeatherLoading
-								? "…"
-								: temperatureC != null
-								? `${temperatureC}°`
-								: "—"}
-						</span>
-					</div>
-				</div>
-
-				<audio
-					ref={audioRef}
-					autoPlay={false}
-					controls={false}
-					style={{ display: "none" }}
-				/>
-
-				{/* Top-right: Morning Brief + Mute (ALWAYS VISIBLE) */}
-				<div className="absolute top-4 sm:top-6 right-4 sm:right-10 flex items-center gap-3 sm:gap-4">
-					{/* Morning Brief Button */}
-					<button
-						onClick={() => router.push("/scenarios/morning-brief")}
-						className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 
-        bg-[#FFF8E7] border border-[#FFE9B5] rounded-full text-sm font-medium 
-        text-[#B58B00] shadow-sm hover:shadow-md transition"
-					>
-						<Image
-							src="/Icons/Property 1=Sun.svg"
-							alt="Morning Brief"
-							width={16}
-							height={16}
-						/>
-						<span>Morning Brief</span>
-					</button>
-
-					{/* 🔊 Always-visible Mute Toggle */}
-					<button
-						onClick={handleMuteToggle}
-						className={`
-            flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-full text-sm font-medium 
-            shadow-sm hover:shadow-md transition border 
-            ${
-							isMuted
-								? "bg-[#E8ECF9] border-[#B8C7F2] text-[#5568A2]"
-								: "bg-[#F5F5F5] border-gray-200 text-gray-700"
-						}
-        `}
-					>
-						<Image
-							src={
-								isMuted
-									? "/Icons/Property 1=VoiceOff.svg"
-									: "/Icons/Property 1=VoiceOn.svg"
-							}
-							alt={isMuted ? "Muted" : "Mute"}
-							width={18}
-							height={18}
-							className="opacity-80"
-						/>
-						<span>{isMuted ? "Muted" : "Mute"}</span>
-					</button>
-				</div>
-
-				{/* Orb */}
-				<Orb />
-
-				{/* Panel */}
-				<div className="w-full flex justify-center mt-10 transition-all duration-700">
-					<div
-						className="w-[92%] sm:w-[85%] md:w-[80%] lg:w-[720px] 
+					{/* Panel */}
+					<div className="w-full flex justify-center mt-10 transition-all duration-700">
+						<div
+							className="w-[92%] sm:w-[85%] md:w-[80%] lg:w-[720px] 
 						transition-all duration-700 ease-in-out"
-					>
-						{loading && stage === "thinking" && <ThinkingPanel />}
-						{error && (
-							<div className="bg-white text-sm rounded-2xl border border-red-200 shadow-lg p-6">
-								<p className="text-red-600 mb-2">Error loading morning brief</p>
-								<p className="text-gray-600 text-sm">{error}</p>
-								<button
-									onClick={() => window.location.reload()}
-									className="mt-4 px-4 py-2 bg-black text-white rounded-full text-sm hover:bg-gray-800"
-								>
-									Retry
-								</button>
-							</div>
-						)}
-						{!loading && !error && briefData && (
-							<>
-								{/* Play Audio Button */}
-								{(briefData.audio_base64 || briefData.audio_url) && (
-									<div className="mb-4 flex justify-center"></div>
-								)}
-								{stage === "recommendation" && (
-									<div
-										className="
+						>
+							{loading && stage === "thinking" && <ThinkingPanel />}
+							{error && (
+								<div className="bg-white text-sm rounded-2xl border border-red-200 shadow-lg p-6">
+									<p className="text-red-600 mb-2">
+										Error loading morning brief
+									</p>
+									<p className="text-gray-600 text-sm">{error}</p>
+									<button
+										onClick={() => window.location.reload()}
+										className="mt-4 px-4 py-2 bg-black text-white rounded-full text-sm hover:bg-gray-800"
+									>
+										Retry
+									</button>
+								</div>
+							)}
+							{!loading && !error && briefData && (
+								<>
+									{/* Play Audio Button */}
+									{(briefData.audio_base64 || briefData.audio_url) && (
+										<div className="mb-4 flex justify-center"></div>
+									)}
+									{stage === "recommendation" && (
+										<div
+											className="
 		recommendation-scroll
 		relative max-w-[900px] mx-auto h-[75vh]
 		overflow-y-auto scroll-smooth backdrop-blur-[6px]
 	"
-									>
-										<RecommendationPanel
-											briefText={briefData.text}
-											temperatureC={temperatureC}
-											weatherCondition={weatherCondition}
-											isWeatherLoading={isWeatherLoading}
-											onAccept={() => setStage("confirmation")}
-											events={briefData.events}
-											totalEvents={briefData.total_events}
-											totalTeams={briefData.total_teams}
-											nextEvent={briefData.next_event}
-											emailImportant={briefData.email_important}
-											gmailCount={briefData.gmail_count}
-											outlookCount={briefData.outlook_count}
-											totalUnread={briefData.total_unread}
-										/>
-									</div>
-								)}
-								{stage === "confirmation" && (
-									<ConfirmationPanel briefText={briefData.text} />
-								)}
-							</>
-						)}
+										>
+											<RecommendationPanel
+												briefText={briefData.text}
+												temperatureC={temperatureC}
+												isWeatherLoading={isWeatherLoading}
+												onAccept={() => setStage("confirmation")}
+												events={briefData.events}
+												totalEvents={briefData.total_events}
+												totalTeams={briefData.total_teams}
+												nextEvent={briefData.next_event}
+												emailImportant={briefData.email_important}
+												gmailCount={briefData.gmail_count}
+												outlookCount={briefData.outlook_count}
+												totalUnread={briefData.total_unread}
+											/>
+										</div>
+									)}
+									{stage === "confirmation" && (
+										<ConfirmationPanel briefText={briefData.text} />
+									)}
+								</>
+							)}
+						</div>
 					</div>
-				</div>
 
-				{/* Mic & Keyboard Toggle */}
-				<div className="mt-10 sm:mt-12 flex items-center justify-center">
-					<div
-						className="relative w-[130px] sm:w-[150px] h-[36px] 
+					{/* Mic & Keyboard Toggle */}
+					<div className="mt-10 sm:mt-12 flex items-center justify-center">
+						<div
+							className="relative w-[130px] sm:w-[150px] h-[36px] 
 						border border-[#000] bg-white rounded-full px-[6px] 
 						shadow-[0_1px_4px_rgba(0,0,0,0.08)] 
 						flex items-center justify-between"
-					>
-						{/* Mic Button */}
-						<button
-							onClick={() => {
-								const newState = !isListening;
-								setIsListening(newState);
-								if (newState) {
-									// Only start voice when user explicitly clicks mic
-									setIsConversationActive(true);
-									startMiraVoice();
-								} else {
+						>
+							{/* Mic Button */}
+							<button
+								onClick={() => {
+									const newState = !isListening;
+									setIsListening(newState);
+									if (newState) {
+										// Only start voice when user explicitly clicks mic
+										setIsConversationActive(true);
+										startMiraVoice();
+									} else {
+										setIsConversationActive(false);
+										stopMiraVoice();
+										setIsMuted(false);
+										setMiraMute(false);
+									}
+								}}
+								className={`flex items-center justify-center w-[60px] h-[28px] rounded-full border border-gray-200 transition-all duration-300 ${
+									isListening
+										? "bg-black hover:bg-gray-800"
+										: "bg-white hover:bg-gray-50"
+								}`}
+							>
+								<Image
+									src={
+										isListening
+											? "/Icons/Property 1=Mic.svg"
+											: "/Icons/Property 1=MicOff.svg"
+									}
+									alt={isListening ? "Mic On" : "Mic Off"}
+									width={16}
+									height={16}
+									className={`transition-all duration-300 ${
+										isListening ? "invert" : "brightness-0"
+									}`}
+								/>
+							</button>
+
+							{/* Keyboard Button */}
+							<button
+								onClick={() => {
+									setIsListening(false);
 									setIsConversationActive(false);
 									stopMiraVoice();
 									setIsMuted(false);
 									setMiraMute(false);
-								}
-							}}
-							className={`flex items-center justify-center w-[60px] h-[28px] rounded-full border border-gray-200 transition-all duration-300 ${
-								isListening
-									? "bg-black hover:bg-gray-800"
-									: "bg-white hover:bg-gray-50"
-							}`}
-						>
-							<Image
-								src={
-									isListening
-										? "/Icons/Property 1=Mic.svg"
-										: "/Icons/Property 1=MicOff.svg"
-								}
-								alt={isListening ? "Mic On" : "Mic Off"}
-								width={16}
-								height={16}
-								className={`transition-all duration-300 ${
-									isListening ? "invert" : "brightness-0"
+								}}
+								className={`flex items-center justify-center w-[60px] h-[28px] rounded-full border border-gray-200 transition-all duration-300 ${
+									!isListening
+										? "bg-black hover:bg-gray-800"
+										: "bg-white hover:bg-gray-50"
 								}`}
-							/>
-						</button>
-
-						{/* Keyboard Button */}
-						<button
-							onClick={() => {
-								setIsListening(false);
-								setIsConversationActive(false);
-								stopMiraVoice();
-								setIsMuted(false);
-								setMiraMute(false);
-							}}
-							className={`flex items-center justify-center w-[60px] h-[28px] rounded-full border border-gray-200 transition-all duration-300 ${
-								!isListening
-									? "bg-black hover:bg-gray-800"
-									: "bg-white hover:bg-gray-50"
-							}`}
-						>
-							<Image
-								src="/Icons/Property 1=Keyboard.svg"
-								alt="Keyboard Icon"
-								width={16}
-								height={16}
-								className={`transition-all duration-300 ${
-									!isListening ? "invert" : "brightness-0"
-								}`}
-							/>
-						</button>
+							>
+								<Image
+									src="/Icons/Property 1=Keyboard.svg"
+									alt="Keyboard Icon"
+									width={16}
+									height={16}
+									className={`transition-all duration-300 ${
+										!isListening ? "invert" : "brightness-0"
+									}`}
+								/>
+							</button>
+						</div>
 					</div>
 				</div>
 			</main>

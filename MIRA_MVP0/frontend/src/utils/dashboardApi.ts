@@ -721,3 +721,39 @@ export async function fetchEmailList(
 		};
 	}
 }
+export async function fetchEmailSummary(emailId: string): Promise<{status: string, email_id: string, summary: string} | null> {
+	try {
+		const token = await getValidToken();
+		if (!token) {
+			console.error("No authentication token available");
+			return null;
+		}
+
+		const endpoint = buildApiUrl(`dashboard/emails/summary/${emailId}`);
+		console.log("Fetching email summary from:", endpoint);
+
+		const response = await fetch(endpoint, {
+			method: "GET",
+			headers: {
+				Authorization: `Bearer ${token}`,
+				"Content-Type": "application/json",
+			},
+		});
+
+		console.log("Email summary response status:", response.status);
+
+		if (!response.ok) {
+			const errorText = await response.text();
+			console.error(`Failed to fetch email summary: ${response.statusText}`, errorText);
+			throw new Error(`Failed to fetch email summary: ${response.statusText}`);
+		}
+
+		const result = await response.json();
+		console.log("Email summary result:", result);
+
+		return result;
+	} catch (error) {
+		console.error("Error fetching email summary:", error);
+		return null;
+	}
+}
