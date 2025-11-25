@@ -15,6 +15,7 @@ import {
 } from "@/utils/voice/voiceHandler";
 import { getValidToken, requireAuth } from "@/utils/auth";
 import { getWeather } from "@/utils/weather";
+import HeaderBar from "@/components/HeaderBar";
 
 interface MorningBriefData {
 	text: string;
@@ -457,7 +458,7 @@ export default function MorningBrief() {
 	}, []);
 
 	return (
-		<div className="relative flex min-h-screen bg-[#F8F8FB] text-gray-800 overflow-hidden">
+		<div className=" flex min-h-screen bg-[#F8F8FB] text-gray-800 overflow-hidden">
 			{/* Sidebar */}
 			<aside
 				className="fixed left-0 top-0 h-full w-[70px] bg-white
@@ -487,56 +488,25 @@ export default function MorningBrief() {
 					/>
 				</button>
 			</aside>
+			<div className="absolute top-6 left-0 w-full pl-[70px] md:pl-[90px]">
+				<HeaderBar
+					dateLabel={new Date().toLocaleDateString("en-US", {
+						weekday: "short",
+						month: "short",
+						day: "numeric",
+					})}
+					locationLabel={location}
+					temperatureLabel={temperatureC != null ? `${temperatureC}°` : "—"}
+					isLocationLoading={isLocationLoading}
+					isWeatherLoading={isWeatherLoading}
+				/>
+			</div>
 
 			{/* Main */}
 			<main
-				className="flex-1 flex flex-col items-center justify-center relative
+				className="flex-1 flex flex-col justify-center relative
 				px-4 sm:px-6 md:px-10 lg:px-16"
 			>
-				{/* Top Bar */}
-				<div
-					className="absolute top-6 left-[90px] md:left-24 flex flex-wrap items-center 
-					gap-2 sm:gap-3 text-xs sm:text-sm"
-				>
-					<span className="font-medium text-gray-800 whitespace-nowrap">
-						Wed, Oct 15
-					</span>
-
-					<div
-						className="flex items-center gap-1 px-2.5 py-1 border border-gray-200 
-					rounded-full bg-white/40 backdrop-blur-sm text-xs sm:text-sm"
-					>
-						<Image
-							src="/Icons/Property 1=Location.svg"
-							alt="Location"
-							width={14}
-							height={14}
-						/>
-						<span className="text-gray-700 font-medium">
-							{isLocationLoading ? "Detecting..." : location}
-						</span>
-					</div>
-
-					<div
-						className="flex items-center gap-1 px-2.5 py-1 border border-gray-200 
-					rounded-full bg-white/40 backdrop-blur-sm text-xs sm:text-sm"
-					>
-						<Image
-							src="/Icons/Property 1=Sun.svg"
-							alt="Weather"
-							width={14}
-							height={14}
-						/>
-						<span className="text-gray-700 font-medium">
-							{isWeatherLoading
-								? "…"
-								: temperatureC != null
-								? `${temperatureC}°`
-								: "—"}
-						</span>
-					</div>
-				</div>
-
 				<audio
 					ref={audioRef}
 					autoPlay={false}
@@ -591,7 +561,10 @@ export default function MorningBrief() {
 				</div>
 
 				{/* Orb */}
-				<Orb />
+
+				<div className="flex flex-col items-center justify-center">
+					<Orb />
+				</div>
 
 				{/* Panel */}
 				<div className="w-full flex justify-center mt-10 transition-all duration-700">

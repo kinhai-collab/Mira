@@ -18,6 +18,7 @@ import {
 	setMiraMute,
 } from "@/utils/voice/voiceHandler";
 import { getWeather } from "@/utils/weather";
+import HeaderBar from "@/components/HeaderBar";
 
 const DEFAULT_SUMMARY_STEPS = [
 	{ id: "emails", label: "Checking your inbox for priority emails..." },
@@ -626,7 +627,7 @@ export default function Home() {
 		<div className="flex flex-col min-h-screen bg-[#F8F8FB] text-gray-800 overflow-hidden">
 			<main className="flex-1 flex flex-col items-center justify-center px-4 sm:px-6 md:px-8 relative overflow-y-auto pb-20 md:pb-0">
 				{/* Top-left bar */}
-				<div className="absolute top-4 sm:top-6 left-4 sm:left-10 flex flex-wrap items-center gap-2 sm:gap-3 text-xs sm:text-sm">
+				{/* <div className="absolute top-4 sm:top-6 left-4 sm:left-10 flex flex-wrap items-center gap-2 sm:gap-3 text-xs sm:text-sm">
 					<span className="font-medium text-gray-800">
 						{getFormattedDate(timezone)}
 					</span>
@@ -646,6 +647,18 @@ export default function Home() {
 								: "—"}
 						</span>
 					</div>
+				</div> */}
+				{/* Global Header Bar */}
+				<div className="absolute top-4 sm:top-6 left-4 sm:left-10">
+					<HeaderBar
+						dateLabel={getFormattedDate(timezone)}
+						locationLabel={location}
+						temperatureLabel={
+							temperatureC != null ? `${Math.round(temperatureC)}°` : "—"
+						}
+						isLocationLoading={isLocationLoading}
+						isWeatherLoading={isWeatherLoading}
+					/>
 				</div>
 
 				{/* Top-right: Morning Brief + Mute */}
