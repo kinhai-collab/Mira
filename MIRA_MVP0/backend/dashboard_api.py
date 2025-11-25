@@ -1732,70 +1732,124 @@ async def summarize_email(text: str) -> str:
 @router.get("/dashboard/emails/summary/{email_id}")
 async def get_email_summary(
     email_id: str,
+    request: Request,
     authorization: Optional[str] = Header(default=None)
 ):
     """Return a GPT-generated summary for a single email by ID."""
     try:
-        if email_id.startswith("gmail_"):
-            email_id = email_id[len("gmail_"):]
-        elif email_id.startswith("outlook_"):
-            email_id = email_id[len("outlook_"):]
+        # Detect provider BEFORE stripping prefix
+        is_outlook = email_id.startswith("outlook_")
+        is_gmail = email_id.startswith("gmail_")
+        
+        # Strip prefix to get actual email ID
+        if is_outlook:
+            actual_email_id = email_id[len("outlook_"):]
+        elif is_gmail:
+            actual_email_id = email_id[len("gmail_"):]
+        else:
+            # No prefix, assume Gmail for backward compatibility
+            actual_email_id = email_id
+            is_gmail = True
+        
         # Authenticate user
         user = get_user_from_token(authorization)
-        creds_row = get_creds(user["id"])
-        if not creds_row:
-            return {"status": "not_connected", "message": "Gmail not connected"}
-        
-        # Build Gmail service
-        credentials = _creds(creds_row)
-        gmail_service = build("gmail", "v1", credentials=credentials)
-        
-        # Fetch email details
-        detail_data = gmail_service.users().messages().get(
-            userId="me",
-            id=email_id,
-            format="full"
-        ).execute()
-        
-        # Extract body
-        payload = detail_data.get("payload", {})
         body = ""
+        
+        # Handle Outlook emails
+        if is_outlook:
+            # Get Outlook access token
+            outlook_token = _get_outlook_token(request, user["id"])
+            if not outlook_token:
+                return {"status": "not_connected", "message": "Outlook not connected"}
+            
+            # Fetch email from Microsoft Graph API
+            headers = {"Authorization": f"Bearer {outlook_token}"}
+            # FastAPI automatically URL-decodes path parameters, so actual_email_id is already decoded
+            
+            response = requests.get(
+                f"{GRAPH_API_URL}/me/messages/{actual_email_id}",
+                params={"$select": "id,subject,receivedDateTime,from,body,bodyPreview"},
+                headers=headers
+            )
+            
+            if response.status_code != 200:
+                print(f"❌ Outlook API error: {response.status_code} - {response.text}")
+                raise HTTPException(
+                    status_code=response.status_code, 
+                    detail=f"Error fetching Outlook email: {response.text}"
+                )
+            
+            msg_data = response.json()
+            
+            # Extract body content (prefer HTML, fallback to plain text, then preview)
+            body_obj = msg_data.get("body", {})
+            body = body_obj.get("content", "")
+            
+            # If no body content, use bodyPreview as fallback
+            if not body:
+                body = msg_data.get("bodyPreview", "")
+            
+        # Handle Gmail emails
+        elif is_gmail:
+            creds_row = get_creds(user["id"])
+            if not creds_row:
+                return {"status": "not_connected", "message": "Gmail not connected"}
+            
+            # Build Gmail service
+            credentials = _creds(creds_row)
+            gmail_service = build("gmail", "v1", credentials=credentials)
+            
+            # Fetch email details
+            detail_data = gmail_service.users().messages().get(
+                userId="me",
+                id=actual_email_id,
+                format="full"
+            ).execute()
+            
+            # Extract body
+            payload = detail_data.get("payload", {})
 
-        def get_body_from_parts(parts):
-            for part in parts:
-                if part.get("mimeType") == "text/html":
-                    import base64
-                    data = part.get("body", {}).get("data", "")
-                    if data:
-                        return base64.urlsafe_b64decode(data).decode("utf-8", errors="ignore")
-                elif part.get("mimeType") == "text/plain":
-                    import base64
-                    data = part.get("body", {}).get("data", "")
-                    if data:
-                        return base64.urlsafe_b64decode(data).decode("utf-8", errors="ignore")
-                elif "parts" in part:
-                    nested_body = get_body_from_parts(part["parts"])
-                    if nested_body:
-                        return nested_body
-            return ""
-        
-        if "parts" in payload:
-            body = get_body_from_parts(payload["parts"])
-        elif payload.get("body", {}).get("data"):
-            import base64
-            body = base64.urlsafe_b64decode(payload["body"]["data"]).decode("utf-8", errors="ignore")
-        
-        # Fallback to snippet
-        if not body:
-            body = detail_data.get("snippet", "")
+            def get_body_from_parts(parts):
+                for part in parts:
+                    if part.get("mimeType") == "text/html":
+                        import base64
+                        data = part.get("body", {}).get("data", "")
+                        if data:
+                            return base64.urlsafe_b64decode(data).decode("utf-8", errors="ignore")
+                    elif part.get("mimeType") == "text/plain":
+                        import base64
+                        data = part.get("body", {}).get("data", "")
+                        if data:
+                            return base64.urlsafe_b64decode(data).decode("utf-8", errors="ignore")
+                    elif "parts" in part:
+                        nested_body = get_body_from_parts(part["parts"])
+                        if nested_body:
+                            return nested_body
+                return ""
+            
+            if "parts" in payload:
+                body = get_body_from_parts(payload["parts"])
+            elif payload.get("body", {}).get("data"):
+                import base64
+                body = base64.urlsafe_b64decode(payload["body"]["data"]).decode("utf-8", errors="ignore")
+            
+            # Fallback to snippet
+            if not body:
+                body = detail_data.get("snippet", "")
+        else:
+            raise HTTPException(status_code=400, detail="Unknown email provider")
         
         # Generate summary
         summary = await summarize_email(body)
         
-        return {"status": "success", "email_id": email_id, "summary": summary}
+        return {"status": "success", "email_id": actual_email_id, "summary": summary}
     
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"❌ Error fetching summary for email {email_id}: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error fetching summary: {str(e)}")
 
 @router.get("/dashboard/summary")

@@ -25,11 +25,17 @@ class MemoryAutopilot:
         self.model = os.getenv("MEMORY_AUTOPILOT_MODEL", "gpt-4o-mini")
         self.memory_service = get_memory_service()
         # Audit log file (append-only JSONL)
-        audit_dir = os.path.join(os.getcwd(), "data", "autopilot")
+        # In Lambda, use /tmp (read-write). Otherwise use local data directory
+        if os.getenv("AWS_LAMBDA_FUNCTION_NAME"):
+            audit_dir = "/tmp/autopilot"
+        else:
+            audit_dir = os.path.join(os.getcwd(), "data", "autopilot")
         try:
             os.makedirs(audit_dir, exist_ok=True)
         except Exception:
-            audit_dir = os.path.join(os.getcwd(), "data")
+            # Fallback to /tmp if data directory fails
+            audit_dir = "/tmp/autopilot"
+            os.makedirs(audit_dir, exist_ok=True)
         self.audit_path = os.path.join(audit_dir, "autopilot_audit.jsonl")
 
     async def run_autopilot_for_conversation(self, user_id: str, user_message: str, assistant_response: str) -> Optional[Dict[str, Any]]:

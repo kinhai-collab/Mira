@@ -469,8 +469,11 @@ def get_memory_service() -> MemoryService:
     """Get the global memory service instance."""
     global _memory_service
     if _memory_service is None:
-        # Create persist directory if it doesn't exist
-        persist_dir = os.path.join(os.getcwd(), "data", "chroma_db")
+        # In Lambda, use /tmp (read-write). Otherwise use local data directory
+        if os.getenv("AWS_LAMBDA_FUNCTION_NAME"):
+            persist_dir = "/tmp/chroma_db"
+        else:
+            persist_dir = os.path.join(os.getcwd(), "data", "chroma_db")
         os.makedirs(persist_dir, exist_ok=True)
         _memory_service = MemoryService(persist_directory=persist_dir)
     return _memory_service
