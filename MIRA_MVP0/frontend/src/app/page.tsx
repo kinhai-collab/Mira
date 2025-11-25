@@ -626,7 +626,7 @@ export default function Home() {
 	return (
 		<div className="flex flex-col min-h-screen bg-[#F8F8FB] text-gray-800 overflow-hidden">
 			{/* Global Header Bar */}
-			<div className=" absolute top-6 left-0 w-full pl-[70px] md:pl-[90px]">
+			<div className="absolute top-6 left-0 w-full pl-[70px] md:pl-[90px]">
 				<HeaderBar
 					dateLabel={new Date().toLocaleDateString("en-US", {
 						weekday: "short",
@@ -640,9 +640,9 @@ export default function Home() {
 				/>
 			</div>
 
-			<main className="flex-1 flex flex-col items-center justify-center px-4 sm:px-6 md:px-8 relative overflow-y-auto pb-20 md:pb-0">
+			<main className="flex-1 flex flex-col items-center px-4 sm:px-6 md:px-8 pt-20 relative overflow-y-auto pb-20 md:pb-0">
 				{/* SCALE CONTAINER */}
-				<div className="scale-[0.85] flex flex-col items-center">
+				<div className="scale-[0.85] flex flex-col items-center w-full max-w-[900px] mx-auto px-4">
 					{/* Orb + Greeting */}
 					<div className="relative flex flex-col items-center mt-16 sm:mt-20">
 						<div className="w-32 h-32 sm:w-44 sm:h-44 rounded-full bg-gradient-to-br from-[#C4A0FF] via-[#E1B5FF] to-[#F5C5E5] shadow-[0_0_80px_15px_rgba(210,180,255,0.45)] animate-pulse"></div>
@@ -687,7 +687,7 @@ export default function Home() {
 					)}
 
 					{/* Input Bar — Always Visible */}
-					<div className="relative mt-10 sm:mt-14 w-full max-w-md sm:max-w-xl flex flex-col items-center">
+					<div className="relative mt-10 sm:mt-14 w-full max-w-[700px] flex flex-col items-center">
 						<div className="w-full rounded-[10px] bg-gradient-to-r from-[#F4A4D3] to-[#B5A6F7] p-[1.5px] shadow-[0_12px_35px_rgba(181,166,247,0.45)]">
 							<div className="flex items-center rounded-[10px] bg-white px-4 sm:px-5 py-2 sm:py-2.5 w-full">
 								<input
@@ -697,7 +697,7 @@ export default function Home() {
 									onKeyDown={(e) => {
 										if (e.key === "Enter" && !e.shiftKey) {
 											e.preventDefault();
-											setIsConversationActive(true); // ✅ conversation started
+											setIsConversationActive(true);
 											handleTextSubmit();
 										}
 									}}
@@ -710,7 +710,7 @@ export default function Home() {
 								<button
 									type="button"
 									onClick={() => {
-										setIsConversationActive(true); // ✅ conversation started
+										setIsConversationActive(true);
 										handleTextSubmit();
 									}}
 									disabled={isLoadingResponse || !input.trim()}
