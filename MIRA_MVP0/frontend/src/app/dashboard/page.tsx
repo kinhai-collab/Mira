@@ -932,6 +932,7 @@ export default function Dashboard() {
 
 						{/* View All Button */}
 						<button
+							onClick={() => router.push("/dashboard/calendar")}
 							className="mt-5 w-full rounded-full text-[15px] font-medium text-[#1E1E1E] tracking-[0.01em] transition-all duration-150 hover:bg-[#F8F8F8] active:scale-[0.99]"
 							style={{
 								border: "1px solid #1E1E1E",

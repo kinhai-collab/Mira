@@ -75,94 +75,6 @@ export default function Home() {
 		() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
 	);
 
-	// --- Outlook helpers  ---
-	// DISABLED: Outlook integration temporarily disabled due to authentication issues
-	// Using Google Calendar and Gmail only
-	const fetchOutlookEvents = useCallback(async (): Promise<
-		VoiceSummaryCalendarEvent[]
-	> => {
-		// Return empty array - Outlook integration disabled
-		console.log(
-			"⚠️ Outlook integration is disabled. Using Google Calendar/Gmail only."
-		);
-		return [];
-
-		/* COMMENTED OUT - Outlook API calls causing 401 errors
-	const apiBaseUrl = (
-		process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
-	).replace(/\/+$/, "");
-	// Reuse your token util so the request includes the user's Outlook access_token
-	const { getValidToken } = await import("@/utils/auth");
-	const token = await getValidToken();
-	if (!token) return [];
-
-	// Hit both Outlook endpoints from your FastAPI backend
-	const [calRes, icsRes] = await Promise.all([
-		fetch(`${apiBaseUrl}/outlook/calendar?access_token=${token}&limit=20`),
-		fetch(`${apiBaseUrl}/outlook/emails?access_token=${token}&limit=20`),
-	]);
-
-	// Be resilient if either call fails
-	interface OutlookEvent {
-		id?: string;
-		subject?: string;
-		start?: string;
-		end?: string;
-		location?: string;
-		organizer?: string;
-	}
-	
-	const calJson = (await calRes.json().catch(() => ({ events: [] }))) as {
-		events?: OutlookEvent[];
-	};
-	const icsJson = (await icsRes.json().catch(() => ({ events: [] }))) as {
-		events?: OutlookEvent[];
-	};
-
-	// Merge and de-dup like the backend (subject+start+end)
-	const merged = [...(calJson.events || []), ...(icsJson.events || [])];
-	const seen = new Set<string>();
-	const unique = merged.filter((e: OutlookEvent) => {
-		const key = `${(e.subject || "").trim().toLowerCase()}|${e.start}|${e.end}`;
-		if (seen.has(key)) return false;
-		seen.add(key);
-		return true;
-	});
-
-		// Define helper locally to avoid affecting hook deps
-	const formatTimeRangeLocal = (
-		startIso?: string,
-		endIso?: string,
-		tz: string = timezone
-	) => {
-		try {
-			if (!startIso) return "N/A";
-			const s = new Date(startIso);
-			const e = endIso ? new Date(endIso) : null;
-			const opts: Intl.DateTimeFormatOptions = {
-				hour: "2-digit",
-				minute: "2-digit",
-				timeZone: tz,
-			};
-			return e
-				? `${s.toLocaleTimeString([], opts)}–${e.toLocaleTimeString([], opts)}`
-				: s.toLocaleTimeString([], opts);
-		} catch {
-			return "N/A";
-		}
-	};
-
-	// Map backend events to the overlay's shape
-	return unique.map((e: OutlookEvent) => ({
-		id: e.id || `${e.subject}-${e.start}`,
-		title: e.subject || "(no subject)",
-		timeRange: formatTimeRangeLocal(e.start, e.end, timezone),
-		location: e.location || "",
-		note: e.organizer ? `Organizer: ${e.organizer}` : undefined,
-		provider: "outlook",
-	}));
-	*/
-	}, []);
 
 	// Weather state: store coords and current temperature. We'll call Open-Meteo (no API key)
 	const [latitude, setLatitude] = useState<number | null>(null);
@@ -405,16 +317,11 @@ export default function Home() {
 				? detail.steps
 				: DEFAULT_SUMMARY_STEPS;
 
-			// Normalize structure
-			const rawCal: unknown = detail.calendarEvents;
-			let normalizedCalendarEvents: VoiceSummaryCalendarEvent[] = [];
-
-			if (Array.isArray(rawCal)) {
-				normalizedCalendarEvents = rawCal;
-			} else {
-				// Calls your FastAPI Outlook endpoints and maps to overlay shape
-				normalizedCalendarEvents = await fetchOutlookEvents();
-			}
+			// The backend now provides both Gmail + Outlook emails and Google + Outlook Calendar events
+			// in the detail.calendarEvents array, so we can use it directly
+			const normalizedCalendarEvents: VoiceSummaryCalendarEvent[] = Array.isArray(detail.calendarEvents)
+				? detail.calendarEvents
+				: [];
 
 			setSummarySteps(prepareVoiceSteps(rawSteps));
 			setSummaryEmails(detail.emails ?? []);
@@ -440,7 +347,7 @@ export default function Home() {
 				);
 			}
 		};
-	}, [fetchOutlookEvents]);
+	}, []); // No dependencies needed since we're just using the event detail directly
 
 	useEffect(() => {
 		if (!summaryOverlayVisible || !summarySteps.length) return;
@@ -554,6 +461,7 @@ export default function Home() {
 					"Content-Type": "application/json",
 					...(token ? { Authorization: `Bearer ${token}` } : {}),
 				},
+				credentials: "include", // ✅ Include cookies (needed for Outlook ms_access_token)
 				body: JSON.stringify({
 					query: queryText,
 					history: textMessages,

@@ -89,10 +89,12 @@ async def get_morning_brief(
                             time_range = "N/A"
                     
                     formatted_events.append({
-                        "id": f"{ev.get('summary', 'event')}_{start_dt.isoformat() if start_dt else ''}",
+                        "id": ev.get("id", f"{ev.get('summary', 'event')}_{start_dt.isoformat() if start_dt else ''}"),
                         "title": ev.get("summary", "No title"),
                         "timeRange": time_range,
-                        "provider": "google"
+                        "meetingLink": ev.get("meetingLink"),
+                        "provider": ev.get("provider"),  # Meeting provider (google-meet, microsoft-teams, zoom)
+                        "calendar_provider": ev.get("calendar_provider", "google")  # Calendar source (google/outlook)
                     })
                 
                 # Find next event (first event that hasn't started yet)

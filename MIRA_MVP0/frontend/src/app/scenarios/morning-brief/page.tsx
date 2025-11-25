@@ -62,6 +62,7 @@ export default function MorningBrief() {
 	const [latitude, setLatitude] = useState<number | null>(null);
 	const [longitude, setLongitude] = useState<number | null>(null);
 	const [temperatureC, setTemperatureC] = useState<number | null>(null);
+	const [weatherCondition, setWeatherCondition] = useState<string | null>(null);
 	const [isLocationLoading, setIsLocationLoading] = useState<boolean>(true);
 	const [isWeatherLoading, setIsWeatherLoading] = useState<boolean>(false);
 
@@ -76,6 +77,9 @@ export default function MorningBrief() {
 
 			if (typeof data?.temperatureC === "number") {
 				setTemperatureC(Math.round(data.temperatureC));
+			}
+			if (data?.condition) {
+				setWeatherCondition(data.condition);
 			}
 		} catch (err) {
 			console.error("Error fetching weather:", err);
@@ -629,6 +633,7 @@ export default function MorningBrief() {
 										<RecommendationPanel
 											briefText={briefData.text}
 											temperatureC={temperatureC}
+											weatherCondition={weatherCondition}
 											isWeatherLoading={isWeatherLoading}
 											onAccept={() => setStage("confirmation")}
 											events={briefData.events}

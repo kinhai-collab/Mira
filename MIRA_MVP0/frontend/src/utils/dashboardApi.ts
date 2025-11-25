@@ -46,6 +46,8 @@ export interface CalendarEvent {
 	id: string;
 	title: string;
 	timeRange: string;
+    start?: string; // ISO string
+    end?: string;   // ISO string
 	location?: string;
 	note?: string | null;
 	meetingLink?: string | null;
@@ -330,6 +332,87 @@ export interface ReminderStats {
 	due_today: number;
 	upcoming: number;
 	next_reminders: Reminder[];
+}
+
+
+export interface EventListData {
+	events: CalendarEvent[];
+	providers: string[];
+}
+
+/**
+ * Fetch detailed list of events from Calendar
+ */
+export async function fetchEventList(
+	startDate?: Date,
+	endDate?: Date,
+	days: number = 7
+): Promise<EventListData> {
+	try {
+		const token = await getValidToken();
+		if (!token) {
+			return { events: [], providers: [] };
+		}
+
+		const endpoint = buildApiUrl("dashboard/events/list");
+		let query = `?days=${days}`;
+		if (startDate) query += `&start_date=${startDate.toISOString()}`;
+		if (endDate) query += `&end_date=${endDate.toISOString()}`;
+
+		const response = await fetch(endpoint + query, {
+			method: "GET",
+			headers: {
+				Authorization: `Bearer ${token}`,
+				"Content-Type": "application/json",
+			},
+			credentials: "include",
+		});
+
+		if (!response.ok) {
+			throw new Error(`Failed to fetch event list: ${response.statusText}`);
+		}
+
+		const result = await response.json();
+		return result.data;
+	} catch (error) {
+		console.error("Error fetching event list:", error);
+		return { events: [], providers: [] };
+	}
+}
+
+/**
+ * Create a new event
+ */
+export async function createEvent(eventData: {
+	summary: string;
+	start: string;
+	end: string;
+	description?: string;
+	location?: string;
+	attendees?: string[];
+}) {
+	const token = await getValidToken();
+	if (!token) throw new Error("No auth token");
+
+	const endpoint = buildApiUrl("api/assistant/calendar/schedule");
+	console.log("Creating event at:", endpoint, "with data:", eventData);
+
+	const response = await fetch(endpoint, {
+		method: "POST",
+		headers: {
+			Authorization: `Bearer ${token}`,
+			"Content-Type": "application/json",
+		},
+		credentials: "include", // Include cookies for Outlook token
+		body: JSON.stringify(eventData),
+	});
+
+	if (!response.ok) {
+		const errorText = await response.text();
+		console.error("Failed to create event:", response.status, errorText);
+		throw new Error(`Failed to create event: ${response.statusText}`);
+	}
+	return await response.json();
 }
 
 /**

@@ -7,6 +7,7 @@ export default function RecommendationPanel({
 	onAccept,
 	briefText,
 	temperatureC,
+	weatherCondition,
 	isWeatherLoading,
 	events = [],
 	nextEvent,
@@ -20,6 +21,7 @@ export default function RecommendationPanel({
 	onAccept: () => void;
 	briefText?: string;
 	temperatureC?: number | null;
+	weatherCondition?: string | null;
 	isWeatherLoading?: boolean;
 
 	// Event data
@@ -27,7 +29,9 @@ export default function RecommendationPanel({
 		id: string;
 		title: string;
 		timeRange: string;
-		provider?: string | null;
+		meetingLink?: string | null;
+		provider?: string | null;  // Meeting provider (google-meet, microsoft-teams, zoom)
+		calendar_provider?: string | null;
 	}[];
 
 	nextEvent?: {
@@ -157,8 +161,10 @@ export default function RecommendationPanel({
 					<p className="text-[15px] text-[#1F1F1F]">
 						{isWeatherLoading
 							? "…"
+							: temperatureC != null && weatherCondition
+							? `${weatherCondition} ${temperatureC}°`
 							: temperatureC != null
-							? `Sunny ${temperatureC}°`
+							? `${temperatureC}°`
 							: "—"}
 					</p>
 				</div>
@@ -172,15 +178,31 @@ export default function RecommendationPanel({
 					{totalEvents ?? 0} Events
 				</p>
 
-				<p className="flex items-center gap-2 text-[14px] text-[#6A6A6A]">
-					<Image
-						src="/Icons/logos_microsoft-teams.svg"
-						alt="teams"
-						width={18}
-						height={18}
-					/>
-					{totalTeams ?? 0} Teams
-				</p>
+				{(() => {
+					// Calculate Teams count dynamically from events
+					const teamsCount = events?.filter(ev => {
+						const link = ev.meetingLink || '';
+						const provider = ev.provider || '';
+						return link.includes('teams.microsoft.com') || 
+						       link.includes('teams.live.com') || 
+						       provider === 'microsoft-teams';
+					}).length || 0;
+					
+					if (teamsCount > 0) {
+						return (
+							<p className="flex items-center gap-2 text-[14px] text-[#6A6A6A]">
+								<Image
+									src="/Icons/logos_microsoft-teams.svg"
+									alt="teams"
+									width={18}
+									height={18}
+								/>
+								{teamsCount} Teams
+							</p>
+						);
+					}
+					return null;
+				})()}
 
 				{/* Next Event */}
 				{nextEvent && (
@@ -192,27 +214,62 @@ export default function RecommendationPanel({
 
 				{/* Event Cards */}
 				<div className="space-y-3">
-					{events?.map((ev) => (
-						<div
-							key={ev.id}
-							className="w-full rounded-xl border border-[#E1E2E5] p-4 flex items-center gap-3"
-						>
-							<Image
-								src="/Icons/logos_microsoft-teams.svg"
-								alt="teams"
-								width={28}
-								height={28}
-								className="min-w-[28px]"
-							/>
+					{events?.map((ev) => {
+						// Determine icon based on meeting link/provider
+						const getEventIcon = () => {
+							const link = (ev.meetingLink || '').toLowerCase();
+							const provider = (ev.provider || '').toLowerCase();
+							const calendarProvider = (ev.calendar_provider || '').toLowerCase();
+							
+							// Check link first (case-insensitive)
+							if (link.includes('meet.google.com') || link.includes('hangouts.google.com') || link.includes('google.com/meet')) {
+								return '/Icons/logos_google-meet.svg';
+							} else if (link.includes('teams.microsoft.com') || link.includes('teams.live.com') || link.includes('microsoft.com/teams')) {
+								return '/Icons/logos_microsoft-teams.svg';
+							} else if (link.includes('zoom.us') || link.includes('zoom.com')) {
+								return '/Icons/fluent_person-16-filled.svg';
+							}
+							
+							// Fallback to provider field (case-insensitive)
+							if (provider === 'google-meet' || provider.includes('google')) {
+								return '/Icons/logos_google-meet.svg';
+							} else if (provider === 'microsoft-teams' || provider.includes('teams') || provider.includes('microsoft')) {
+								return '/Icons/logos_microsoft-teams.svg';
+							} else if (provider === 'zoom' || provider.includes('zoom')) {
+								return '/Icons/fluent_person-16-filled.svg';
+							}
+							
+							// Check calendar provider as additional hint (if it's Outlook, might be Teams)
+							if (calendarProvider === 'outlook' && (link.includes('teams') || link.includes('microsoft'))) {
+								return '/Icons/logos_microsoft-teams.svg';
+							}
+							
+							// Default: no meeting link (personal event)
+							return '/Icons/fluent_person-16-filled.svg';
+						};
+						
+						return (
+							<div
+								key={ev.id}
+								className="w-full rounded-xl border border-[#E1E2E5] p-4 flex items-center gap-3"
+							>
+								<Image
+									src={getEventIcon()}
+									alt="event"
+									width={28}
+									height={28}
+									className="min-w-[28px]"
+								/>
 
-							<div className="flex flex-col">
-								<p className="text-[16px] font-medium text-[#1F1F1F]">
-									{ev.title}
-								</p>
-								<p className="text-[14px] text-[#6A6A6A]">{ev.timeRange}</p>
+								<div className="flex flex-col">
+									<p className="text-[16px] font-medium text-[#1F1F1F]">
+										{ev.title}
+									</p>
+									<p className="text-[14px] text-[#6A6A6A]">{ev.timeRange}</p>
+								</div>
 							</div>
-						</div>
-					))}
+						);
+					})}
 				</div>
 			</div>
 

@@ -1,7 +1,7 @@
 # backend/scenarios/morning_brief/email_summary.py
 import requests
 from typing import Dict, Any, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 import sys
 import os
@@ -118,7 +118,7 @@ def get_email_summary(user_id: str) -> str:
 
 def get_email_counts(user_id: str) -> Dict[str, int]:
     """
-    Fetches email counts from Gmail for the morning brief UI.
+    Fetches email counts from both Gmail and Outlook for the morning brief UI.
     Returns structured count data for display.
     """
     print(f"📊 Fetching email counts for user: {user_id}")
@@ -130,46 +130,111 @@ def get_email_counts(user_id: str) -> Dict[str, int]:
         "total_unread": 0
     }
     
-    if not EMAIL_AVAILABLE:
-        return default_counts
+    gmail_count = 0
+    outlook_count = 0
+    important_count = 0
     
+    # Fetch Gmail counts
+    if EMAIL_AVAILABLE:
+        try:
+            # Get Google credentials
+            creds_row = get_creds(user_id)
+            if creds_row:
+                # Build credentials and Gmail service
+                credentials = _creds(creds_row)
+                gmail_service = build("gmail", "v1", credentials=credentials)
+                
+                # Get total unread count
+                unread_response = gmail_service.users().messages().list(
+                    userId="me",
+                    q="is:unread",
+                    maxResults=1
+                ).execute()
+                gmail_count = unread_response.get("resultSizeEstimate", 0)
+                
+                # Get important/unread emails count
+                important_response = gmail_service.users().messages().list(
+                    userId="me",
+                    q="is:unread is:important",
+                    maxResults=1
+                ).execute()
+                important_count = important_response.get("resultSizeEstimate", 0)
+        except Exception as e:
+            print(f"⚠️ Error fetching Gmail counts: {e}")
+    
+    # Fetch Outlook counts
     try:
-        # Get Google credentials
-        creds_row = get_creds(user_id)
-        if not creds_row:
-            print("⚠️ Google credentials not found - returning zero counts")
-            return default_counts
+        from supabase import create_client
+        import os
+        SUPABASE_URL = os.getenv("SUPABASE_URL")
+        SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        GRAPH_API_URL = "https://graph.microsoft.com/v1.0"
         
-        # Build credentials and Gmail service
-        credentials = _creds(creds_row)
-        gmail_service = build("gmail", "v1", credentials=credentials)
-        
-        # Get total unread count
-        unread_response = gmail_service.users().messages().list(
-            userId="me",
-            q="is:unread",
-            maxResults=1
-        ).execute()
-        total_unread = unread_response.get("resultSizeEstimate", 0)
-        
-        # Get important/unread emails count
-        important_response = gmail_service.users().messages().list(
-            userId="me",
-            q="is:unread is:important",
-            maxResults=1
-        ).execute()
-        important_count = important_response.get("resultSizeEstimate", 0)
-        
-        return {
-            "gmail_count": total_unread,  # All Gmail unread
-            "outlook_count": 0,  # Outlook integration disabled
-            "important_count": important_count,
-            "total_unread": total_unread
-        }
-        
+        if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY:
+            supabase_db = create_client(SUPABASE_URL.rstrip('/'), SUPABASE_SERVICE_ROLE_KEY)
+            
+            # Get Outlook token from database
+            res = supabase_db.table("outlook_credentials").select("*").eq("uid", user_id).execute()
+            if res.data and len(res.data) > 0:
+                creds = res.data[0]
+                access_token = creds.get("access_token")
+                expiry_str = creds.get("expiry")
+                
+                # Check if token is expired (with 5 minute buffer)
+                if expiry_str:
+                    try:
+                        expiry = datetime.fromisoformat(expiry_str.replace("Z", "+00:00"))
+                        now = datetime.now(timezone.utc)
+                        if expiry <= (now + timedelta(minutes=5)):
+                            # Token expired, try to refresh
+                            refresh_token = creds.get("refresh_token")
+                            if refresh_token:
+                                MICROSOFT_CLIENT_ID = os.getenv("MICROSOFT_CLIENT_ID")
+                                MICROSOFT_CLIENT_SECRET = os.getenv("MICROSOFT_CLIENT_SECRET")
+                                MICROSOFT_TOKEN_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
+                                
+                                data = {
+                                    "client_id": MICROSOFT_CLIENT_ID,
+                                    "scope": "User.Read Calendars.ReadWrite Mail.Read",
+                                    "refresh_token": refresh_token,
+                                    "grant_type": "refresh_token",
+                                    "client_secret": MICROSOFT_CLIENT_SECRET
+                                }
+                                refresh_res = requests.post(MICROSOFT_TOKEN_URL, data=data)
+                                new_token_data = refresh_res.json()
+                                
+                                if "access_token" in new_token_data:
+                                    expires_in = new_token_data.get("expires_in", 3600)
+                                    new_expiry = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+                                    update_payload = {
+                                        "access_token": new_token_data.get("access_token"),
+                                        "refresh_token": new_token_data.get("refresh_token", refresh_token),
+                                        "expiry": new_expiry.isoformat(),
+                                    }
+                                    supabase_db.table("outlook_credentials").update(update_payload).eq("uid", user_id).execute()
+                                    access_token = new_token_data.get("access_token")
+                    except Exception as e:
+                        print(f"⚠️ Error refreshing Outlook token: {e}")
+                
+                if access_token:
+                    # Fetch Outlook unread count
+                    headers = {"Authorization": f"Bearer {access_token}"}
+                    outlook_url = f"{GRAPH_API_URL}/me/messages?$filter=isRead eq false&$count=true&$top=1"
+                    response = requests.get(outlook_url, headers=headers, timeout=10)
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        outlook_count = data.get("@odata.count", 0)
+                        print(f"✅ Morning Brief: Found {outlook_count} Outlook unread emails")
     except Exception as e:
-        print(f"⚠️ Error fetching email counts: {e}")
-        import traceback
-        traceback.print_exc()
-        return default_counts
+        print(f"⚠️ Error fetching Outlook counts: {e}")
+    
+    total_unread = gmail_count + outlook_count
+    
+    return {
+        "gmail_count": gmail_count,
+        "outlook_count": outlook_count,
+        "important_count": important_count,
+        "total_unread": total_unread
+    }
 

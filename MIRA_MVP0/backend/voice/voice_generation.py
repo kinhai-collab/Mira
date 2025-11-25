@@ -431,10 +431,11 @@ async def stream_voice(text: str = "Hello from Mira!"):
         raise HTTPException(status_code=500, detail=f"Voice generation failed: {e}")
 
 
-async def fetch_dashboard_data(user_token: str, has_email: bool, has_calendar: bool):
+async def fetch_dashboard_data(user_token: str, has_email: bool, has_calendar: bool, request: Request = None):
     """
-    Fetches live Gmail and Calendar data for the logged-in user.
+    Fetches live Gmail/Outlook and Google Calendar/Outlook Calendar data for the logged-in user.
     Calls internal dashboard endpoints with authentication.
+    Passes cookies from the original request to support Outlook authentication.
     """
     base_url = os.getenv("API_BASE_URL", "http://127.0.0.1:8000")
     headers = {
@@ -442,25 +443,40 @@ async def fetch_dashboard_data(user_token: str, has_email: bool, has_calendar: b
         "Content-Type": "application/json",
     }
 
+    # Extract cookies from the original request to forward them (needed for Outlook ms_access_token)
+    cookies = {}
+    if request:
+        cookies = dict(request.cookies)
+
     emails = []
     calendar_events = []
 
     async with httpx.AsyncClient(timeout=10.0) as client:
         if has_email:
             try:
-                res = await client.get(f"{base_url}/dashboard/emails/list", headers=headers)
+                res = await client.get(
+                    f"{base_url}/dashboard/emails/list", 
+                    headers=headers,
+                    cookies=cookies  # ✅ Forward cookies for Outlook authentication
+                )
                 if res.status_code == 200:
                     data = res.json()
                     emails = data.get("data", {}).get("emails", [])
+                    logging.info(f"✅ Fetched {len(emails)} emails from dashboard API (Gmail + Outlook)")
             except Exception as e:
                 logging.debug(f"Email fetch failed: {e}")
 
         if has_calendar:
             try:
-                res = await client.get(f"{base_url}/dashboard/events", headers=headers)
+                res = await client.get(
+                    f"{base_url}/dashboard/events", 
+                    headers=headers,
+                    cookies=cookies  # ✅ Forward cookies for Outlook authentication
+                )
                 if res.status_code == 200:
                     data = res.json()
                     calendar_events = data.get("data", {}).get("events", [])
+                    logging.info(f"✅ Fetched {len(calendar_events)} calendar events from dashboard API (Google + Outlook)")
             except Exception as e:
                 logging.debug(f"Calendar fetch failed: {e}")
 
@@ -527,8 +543,8 @@ async def text_query_pipeline(request: Request):
             if has_email_intent and has_calendar_intent:
                 steps.append({"id": "conflicts", "label": "Noting any schedule conflicts..."})
 
-            # ✅ Fetch live data from dashboard routes
-            emails, calendar_events = await fetch_dashboard_data(user_token, has_email_intent, has_calendar_intent)
+            # ✅ Fetch live data from dashboard routes (includes Gmail + Outlook emails, Google + Outlook Calendar events)
+            emails, calendar_events = await fetch_dashboard_data(user_token, has_email_intent, has_calendar_intent, request)
 
             action_data = {
                 "steps": steps,

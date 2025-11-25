@@ -427,6 +427,8 @@ export default function SettingsPage() {
 			const gmailEmail = urlParams.get("email");
 			const msConnected = urlParams.get("ms_connected");
 			const msEmail = urlParams.get("email");
+			const msError = urlParams.get("ms_error");
+			const errorMsg = urlParams.get("error_msg");
 			const calendarConnected = urlParams.get("calendar");
 			const calendarStatus = urlParams.get("status");
 			const returnTo = urlParams.get("return_to");
@@ -558,6 +560,24 @@ export default function SettingsPage() {
 					alert(`Gmail and Google Calendar connected successfully! Email: ${gmailEmail}`);
 				} else {
 					alert(`Gmail connected successfully! Email: ${gmailEmail}`);
+				}
+				return;
+			}
+			
+			// Handle Microsoft/Outlook error callback
+			if (msError) {
+				const decodedErrorMsg = errorMsg ? decodeURIComponent(errorMsg) : "An error occurred during Microsoft authentication.";
+				
+				// Clear URL parameters
+				window.history.replaceState({}, document.title, window.location.pathname);
+				
+				// Show user-friendly error message
+				alert(`⚠️ Outlook Connection Error\n\n${decodedErrorMsg}\n\nIf you're using a university or work email, you may need to:\n1. Contact your IT administrator to approve the MIRA application\n2. Or try using a personal Microsoft account instead`);
+				
+				// If coming from onboarding, redirect back
+				if (returnTo) {
+					window.location.href = decodeURIComponent(returnTo);
+					return;
 				}
 				return;
 			}

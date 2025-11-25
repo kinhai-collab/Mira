@@ -68,10 +68,99 @@ def get_user_from_token(authorization: Optional[str]) -> dict:
 
 
 def _get_outlook_token(request: Request, user_id: str) -> Optional[str]:
-    """Get Outlook access token from cookies."""
+    """
+    Get Outlook access token - checks database first (persistent), then cookies (fallback).
+    Automatically refreshes expired tokens from database.
+    """
+    from supabase import create_client
+    SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    supabase_db = create_client(SUPABASE_URL.rstrip('/') if SUPABASE_URL else "", SUPABASE_SERVICE_ROLE_KEY)
+    
+    # ✅ First, try to get token from database (persistent storage)
+    try:
+        res = supabase_db.table("outlook_credentials").select("*").eq("uid", user_id).execute()
+        if res.data and len(res.data) > 0:
+            creds = res.data[0]
+            access_token = creds.get("access_token")
+            expiry_str = creds.get("expiry")
+            
+            # Check if token is expired (with 5 minute buffer)
+            if expiry_str:
+                try:
+                    expiry = datetime.fromisoformat(expiry_str.replace("Z", "+00:00"))
+                    now = datetime.now(timezone.utc)
+                    # Refresh if expires within 5 minutes
+                    if expiry <= (now + timedelta(minutes=5)):
+                        print(f"🔄 Dashboard: Outlook token expired, refreshing for user {user_id}")
+                        refresh_token = creds.get("refresh_token")
+                        if refresh_token:
+                            try:
+                                # Refresh the token
+                                MICROSOFT_CLIENT_ID = os.getenv("MICROSOFT_CLIENT_ID")
+                                MICROSOFT_CLIENT_SECRET = os.getenv("MICROSOFT_CLIENT_SECRET")
+                                MICROSOFT_SCOPES = ["User.Read", "Calendars.ReadWrite", "Mail.Read"]
+                                MICROSOFT_TOKEN_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
+                                
+                                data = {
+                                    "client_id": MICROSOFT_CLIENT_ID,
+                                    "scope": " ".join(MICROSOFT_SCOPES),
+                                    "refresh_token": refresh_token,
+                                    "grant_type": "refresh_token",
+                                    "client_secret": MICROSOFT_CLIENT_SECRET
+                                }
+                                headers = {"Content-Type": "application/x-www-form-urlencoded"}
+                                refresh_res = requests.post(MICROSOFT_TOKEN_URL, data=data, headers=headers)
+                                new_token_data = refresh_res.json()
+                                
+                                if "access_token" in new_token_data:
+                                    # Update database with new tokens
+                                    expires_in = new_token_data.get("expires_in", 3600)
+                                    new_expiry = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+                                    update_payload = {
+                                        "access_token": new_token_data.get("access_token"),
+                                        "refresh_token": new_token_data.get("refresh_token", refresh_token),
+                                        "expiry": new_expiry.isoformat(),
+                                        "updated_at": datetime.now(timezone.utc).isoformat()
+                                    }
+                                    supabase_db.table("outlook_credentials").update(update_payload).eq("uid", user_id).execute()
+                                    access_token = new_token_data.get("access_token")
+                                    print(f"✅ Dashboard: Outlook token refreshed for user {user_id}")
+                                else:
+                                    print(f"⚠️ Dashboard: Failed to refresh Outlook token: {new_token_data.get('error_description')}")
+                                    access_token = None
+                            except Exception as e:
+                                print(f"⚠️ Dashboard: Error refreshing Outlook token: {e}")
+                                access_token = None
+                    else:
+                        # Token is still valid
+                        access_token = creds.get("access_token")
+                except Exception as e:
+                    print(f"⚠️ Dashboard: Error parsing expiry date: {e}")
+                    access_token = creds.get("access_token")
+            else:
+                access_token = creds.get("access_token")
+            
+            # Validate token
+            if access_token:
+                headers = {"Authorization": f"Bearer {access_token}"}
+                try:
+                    response = requests.get(f"{GRAPH_API_URL}/me", headers=headers, timeout=5)
+                    if response.status_code == 200:
+                        user_info = response.json()
+                        email = user_info.get("mail") or user_info.get("userPrincipalName")
+                        print(f"✅ Dashboard: Outlook token from database is valid for user {user_id} ({email})")
+                        return access_token
+                    else:
+                        print(f"⚠️ Dashboard: Database Outlook token is invalid (status {response.status_code}), trying cookie...")
+                except Exception as e:
+                    print(f"⚠️ Dashboard: Error validating database Outlook token: {e}, trying cookie...")
+    except Exception as e:
+        print(f"⚠️ Dashboard: Error getting Outlook token from database: {e}, trying cookie...")
+    
+    # ✅ Fallback to cookie (for backward compatibility and immediate OAuth flows)
     outlook_token = request.cookies.get("ms_access_token")
     if outlook_token:
-        print("✅ Found Outlook token in cookie")
+        print("✅ Found Outlook token in cookie (fallback)")
         # Validate token by making a test request
         headers = {"Authorization": f"Bearer {outlook_token}"}
         try:
@@ -79,16 +168,16 @@ def _get_outlook_token(request: Request, user_id: str) -> Optional[str]:
             if response.status_code == 200:
                 user_info = response.json()
                 email = user_info.get("mail") or user_info.get("userPrincipalName")
-                print(f"✅ Dashboard: Outlook token is valid for user {user_id}")
+                print(f"✅ Dashboard: Outlook token from cookie is valid for user {user_id} ({email})")
                 return outlook_token
             else:
-                print(f"⚠️ Dashboard: Outlook token is invalid (status {response.status_code})")
+                print(f"⚠️ Dashboard: Cookie Outlook token is invalid (status {response.status_code})")
                 return None
         except Exception as e:
-            print(f"⚠️ Dashboard: Error validating Outlook token: {e}")
+            print(f"⚠️ Dashboard: Error validating cookie Outlook token: {e}")
             return None
     else:
-        print("⚠️ Dashboard: No Outlook token found in cookie")
+        print("⚠️ Dashboard: No Outlook token found in database or cookie")
         return None
 
 
@@ -626,8 +715,11 @@ async def get_event_stats(request: Request, authorization: Optional[str] = Heade
             start_time = start.get("dateTime") or start.get("date")
             end_time = end.get("dateTime") or end.get("date")
             
-            # Format time range for display
+            # Format time range for display and convert to ISO with timezone
             time_range = "All day"
+            start_time_iso = None
+            end_time_iso = None
+            
             if start_time and end_time:
                 try:
                     start_dt = datetime.fromisoformat(start_time.replace("Z", "+00:00").split('.')[0])
@@ -651,6 +743,8 @@ async def get_event_stats(request: Request, authorization: Optional[str] = Heade
                             end_dt = end_dt.replace(tzinfo=timezone.utc)
                     
                     time_range = f"{start_dt.strftime('%I:%M %p')} - {end_dt.strftime('%I:%M %p')}"
+                    start_time_iso = start_dt.isoformat()
+                    end_time_iso = end_dt.isoformat()
                 except Exception:
                     time_range = "Time TBD"
             
@@ -659,7 +753,15 @@ async def get_event_stats(request: Request, authorization: Optional[str] = Heade
             
             # Extract meeting link from description or conferenceData
             meeting_link = ""
-            if event.get("conferenceData"):
+            
+            # Check for Outlook Teams meeting first (has highest priority)
+            if event.get("_provider") == "outlook" and event.get("_onlineMeeting"):
+                online_meeting = event.get("_onlineMeeting")
+                if isinstance(online_meeting, dict):
+                    meeting_link = online_meeting.get("joinUrl", "")
+                    
+            # If no Teams link from Outlook, check Google conferenceData
+            if not meeting_link and event.get("conferenceData"):
                 # Try to get hangout link from conferenceData (Google Meet)
                 entry_points = event.get("conferenceData", {}).get("entryPoints", [])
                 for entry in entry_points:
@@ -686,8 +788,9 @@ async def get_event_stats(request: Request, authorization: Optional[str] = Heade
             
             # For Outlook events, check for Teams meeting
             if event.get("_provider") == "outlook":
-                if event.get("_onlineMeeting"):
-                    provider = "microsoft-teams"
+                if event.get("_onlineMeeting") or meeting_link:
+                    if "teams" in meeting_link.lower():
+                        provider = "microsoft-teams"
                 elif raw_description and "teams" in raw_description.lower():
                     provider = "microsoft-teams"
             # For Google events
@@ -744,6 +847,8 @@ async def get_event_stats(request: Request, authorization: Optional[str] = Heade
                 "id": event.get("id", ""),
                 "title": event.get("summary", "Untitled Event"),
                 "timeRange": time_range,
+                "start": start_time_iso,  # ✅ ISO format with timezone
+                "end": end_time_iso,      # ✅ ISO format with timezone
                 "location": event.get("location", ""),
                 "note": description if description else None,
                 "meetingLink": meeting_link if meeting_link else None,
@@ -772,6 +877,270 @@ async def get_event_stats(request: Request, authorization: Optional[str] = Heade
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error fetching event stats: {str(e)}")
 
+
+
+@router.get("/dashboard/events/list")
+async def get_event_list(
+    request: Request,
+    authorization: Optional[str] = Header(default=None),
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    days: int = 7
+):
+    """Get detailed list of events from both Google Calendar and Outlook for a date range."""
+    try:
+        user = get_user_from_token(authorization)
+        print(f"📅 Dashboard: Fetching event list for user {user['id']} ({user['email']})")
+        
+        calendar_service = None
+        outlook_token = None
+        connected_providers = []
+        
+        # Try to get Google credentials
+        try:
+            creds_row = get_creds(user["id"])
+            if creds_row:
+                credentials = _creds(creds_row)
+                calendar_service = build("calendar", "v3", credentials=credentials)
+                connected_providers.append("Google Calendar")
+        except Exception as e:
+            print(f"⚠️ Dashboard: Could not initialize Google Calendar service: {e}")
+        
+        # Try to get Outlook token
+        outlook_token = _get_outlook_token(request, user["id"])
+        if outlook_token:
+            connected_providers.append("Outlook Calendar")
+        
+        if not calendar_service and not outlook_token:
+            return {
+                "status": "not_connected",
+                "data": {"events": [], "providers": []}
+            }
+            
+        # Determine date range
+        now = datetime.now(timezone.utc)
+        if start_date:
+            try:
+                range_start = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
+            except:
+                range_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        else:
+            range_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            
+        if end_date:
+            try:
+                range_end = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
+            except:
+                range_end = range_start + timedelta(days=days)
+        else:
+            range_end = range_start + timedelta(days=days)
+            
+        all_events = []
+        
+        # FETCH FROM GOOGLE CALENDAR
+        if calendar_service:
+            try:
+                events_res = calendar_service.events().list(
+                    calendarId="primary",
+                    timeMin=range_start.isoformat(),
+                    timeMax=range_end.isoformat(),
+                    singleEvents=True,
+                    orderBy="startTime",
+                    maxResults=250
+                ).execute()
+                
+                google_events = events_res.get("items", [])
+                for event in google_events:
+                    event["_provider"] = "google"
+                    all_events.append(event)
+            except Exception as e:
+                print(f"⚠️ Error fetching Google Calendar events: {e}")
+        
+        # FETCH FROM OUTLOOK CALENDAR
+        if outlook_token:
+            try:
+                headers = {"Authorization": f"Bearer {outlook_token}"}
+                start_iso = range_start.strftime("%Y-%m-%dT%H:%M:%SZ")
+                end_iso = range_end.strftime("%Y-%m-%dT%H:%M:%SZ")
+                
+                outlook_url = (
+                    f"{GRAPH_API_URL}/me/calendar/calendarView?"
+                    f"startDateTime={start_iso}&"
+                    f"endDateTime={end_iso}&"
+                    f"$top=250"
+                )
+                
+                response = requests.get(outlook_url, headers=headers, timeout=10)
+                if response.status_code == 200:
+                    outlook_events = response.json().get("value", [])
+                    for o_event in outlook_events:
+                        # Transform to Google format
+                        transformed_event = {
+                            "id": o_event.get("id", ""),
+                            "summary": o_event.get("subject", "Untitled Event"),
+                            "start": {
+                                "dateTime": o_event.get("start", {}).get("dateTime", ""),
+                                "timeZone": o_event.get("start", {}).get("timeZone", "UTC")
+                            },
+                            "end": {
+                                "dateTime": o_event.get("end", {}).get("dateTime", ""),
+                                "timeZone": o_event.get("end", {}).get("timeZone", "UTC")
+                            },
+                            "location": o_event.get("location", {}).get("displayName", ""),
+                            "description": o_event.get("bodyPreview", ""),
+                            "attendees": [{"email": att.get("emailAddress", {}).get("address", "")} for att in o_event.get("attendees", [])],
+                            "_provider": "outlook",
+                            "_onlineMeeting": o_event.get("onlineMeeting")
+                        }
+                        all_events.append(transformed_event)
+            except Exception as e:
+                print(f"⚠️ Error fetching Outlook events: {e}")
+
+        # Sort and format events (reuse logic from get_event_stats if possible, but duplicated for safety here to avoid breaking existing func)
+        def get_event_start_time(event):
+            start = event.get("start", {})
+            start_time = start.get("dateTime") or start.get("date")
+            if start_time:
+                try:
+                    dt = datetime.fromisoformat(start_time.replace("Z", "+00:00").split('.')[0])
+                    if dt.tzinfo is None:
+                        tz_name = start.get("timeZone", "UTC")
+                        try:
+                            tz_name = convert_windows_to_iana_timezone(tz_name)
+                            dt = dt.replace(tzinfo=ZoneInfo(tz_name))
+                        except:
+                            dt = dt.replace(tzinfo=timezone.utc)
+                    return dt
+                except:
+                    pass
+            return datetime.min.replace(tzinfo=timezone.utc)
+
+        all_events.sort(key=get_event_start_time)
+        
+        formatted_events = []
+        for event in all_events:
+            # Reuse formatting logic similar to get_event_stats
+            start = event.get("start", {})
+            end = event.get("end", {})
+            start_time = start.get("dateTime") or start.get("date")
+            end_time = end.get("dateTime") or end.get("date")
+            
+            # Convert times to proper ISO format with timezone
+            start_time_iso = None
+            end_time_iso = None
+            
+            if start_time:
+                try:
+                    dt = datetime.fromisoformat(start_time.replace("Z", "+00:00").split('.')[0])
+                    if dt.tzinfo is None:
+                        tz_name = start.get("timeZone", "UTC")
+                        try:
+                            tz_name = convert_windows_to_iana_timezone(tz_name)
+                            dt = dt.replace(tzinfo=ZoneInfo(tz_name))
+                        except:
+                            dt = dt.replace(tzinfo=timezone.utc)
+                    start_time_iso = dt.isoformat()
+                except:
+                    start_time_iso = start_time
+            
+            if end_time:
+                try:
+                    dt = datetime.fromisoformat(end_time.replace("Z", "+00:00").split('.')[0])
+                    if dt.tzinfo is None:
+                        tz_name = end.get("timeZone", "UTC")
+                        try:
+                            tz_name = convert_windows_to_iana_timezone(tz_name)
+                            dt = dt.replace(tzinfo=ZoneInfo(tz_name))
+                        except:
+                            dt = dt.replace(tzinfo=timezone.utc)
+                    end_time_iso = dt.isoformat()
+                except:
+                    end_time_iso = end_time
+            
+            # Extract meeting link from description or conferenceData
+            raw_description = event.get("description", "")
+            meeting_link = ""
+            
+            # Check for Outlook Teams meeting first (has highest priority)
+            if event.get("_provider") == "outlook" and event.get("_onlineMeeting"):
+                online_meeting = event.get("_onlineMeeting")
+                if isinstance(online_meeting, dict):
+                    meeting_link = online_meeting.get("joinUrl", "")
+                
+            # If no Teams link from Outlook, check Google conferenceData
+            if not meeting_link and event.get("conferenceData"):
+                # Try to get hangout link from conferenceData (Google Meet)
+                entry_points = event.get("conferenceData", {}).get("entryPoints", [])
+                for entry in entry_points:
+                    if entry.get("entryPointType") == "video":
+                        meeting_link = entry.get("uri", "")
+                        break
+            
+            # If no link from conferenceData, extract from description
+            if not meeting_link and raw_description:
+                # Extract Teams or Meet links
+                teams_match = re.search(r'https://teams\.(?:live|microsoft)\.com/[^\s<>]+', raw_description)
+                meet_match = re.search(r'https://meet\.google\.com/[^\s<>]+', raw_description)
+                zoom_match = re.search(r'https://[\w-]+\.zoom\.us/[^\s<>]+', raw_description)
+                
+                if teams_match:
+                    meeting_link = teams_match.group(0)
+                elif meet_match:
+                    meeting_link = meet_match.group(0)
+                elif zoom_match:
+                    meeting_link = zoom_match.group(0)
+            
+            # Detect meeting provider
+            provider = "other"
+            
+            # For Outlook events, check for Teams meeting
+            if event.get("_provider") == "outlook":
+                if event.get("_onlineMeeting") or meeting_link:
+                    if "teams" in meeting_link.lower():
+                        provider = "microsoft-teams"
+                elif raw_description and "teams" in raw_description.lower():
+                    provider = "microsoft-teams"
+            # For Google events
+            elif event.get("conferenceData"):
+                conference_solution = event.get("conferenceData", {}).get("conferenceSolution", {}).get("name", "").lower()
+                if "meet" in conference_solution:
+                    provider = "google-meet"
+                elif "teams" in conference_solution:
+                    provider = "microsoft-teams"
+            elif raw_description:
+                desc_lower = raw_description.lower()
+                if "teams.microsoft" in desc_lower or "teams.live.com" in desc_lower or "microsoft teams meeting" in desc_lower:
+                    provider = "microsoft-teams"
+                elif "meet.google" in desc_lower or "google meet" in desc_lower:
+                    provider = "google-meet"
+                elif "zoom" in desc_lower:
+                    provider = "zoom"
+            
+            # Simple formatting for list
+            formatted_events.append({
+                "id": event.get("id"),
+                "title": event.get("summary", "Untitled"),
+                "start": start_time_iso,
+                "end": end_time_iso,
+                "location": event.get("location"),
+                "description": event.get("description"),
+                "meetingLink": meeting_link if meeting_link else None,
+                "provider": provider,
+                "calendar_provider": event.get("_provider"),
+                "attendees": event.get("attendees", [])
+            })
+            
+        return {
+            "status": "success",
+            "data": {
+                "events": formatted_events,
+                "providers": connected_providers
+            }
+        }
+
+    except Exception as e:
+        print(f"❌ Error fetching event list: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/dashboard/tasks")
 async def get_task_stats(authorization: Optional[str] = Header(default=None)):
