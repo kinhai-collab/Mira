@@ -151,9 +151,68 @@ def _get_outlook_token(request: Request, user_id: str) -> Optional[str]:
                         print(f"✅ Dashboard: Outlook token from database is valid for user {user_id} ({email})")
                         return access_token
                     else:
-                        print(f"⚠️ Dashboard: Database Outlook token is invalid (status {response.status_code}), trying cookie...")
+                        # Token is invalid (401/403) - try to refresh it
+                        print(f"⚠️ Dashboard: Database Outlook token is invalid (status {response.status_code}), attempting refresh...")
+                        refresh_token = creds.get("refresh_token")
+                        if refresh_token:
+                            try:
+                                # Refresh the token
+                                MICROSOFT_CLIENT_ID = os.getenv("MICROSOFT_CLIENT_ID")
+                                MICROSOFT_CLIENT_SECRET = os.getenv("MICROSOFT_CLIENT_SECRET")
+                                MICROSOFT_SCOPES = ["User.Read", "Calendars.ReadWrite", "Mail.Read"]
+                                MICROSOFT_TOKEN_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
+                                
+                                data = {
+                                    "client_id": MICROSOFT_CLIENT_ID,
+                                    "scope": " ".join(MICROSOFT_SCOPES),
+                                    "refresh_token": refresh_token,
+                                    "grant_type": "refresh_token",
+                                    "client_secret": MICROSOFT_CLIENT_SECRET
+                                }
+                                headers = {"Content-Type": "application/x-www-form-urlencoded"}
+                                refresh_res = requests.post(MICROSOFT_TOKEN_URL, data=data, headers=headers)
+                                new_token_data = refresh_res.json()
+                                
+                                if "access_token" in new_token_data:
+                                    # Update database with new tokens
+                                    expires_in = new_token_data.get("expires_in", 3600)
+                                    new_expiry = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+                                    update_payload = {
+                                        "access_token": new_token_data.get("access_token"),
+                                        "refresh_token": new_token_data.get("refresh_token", refresh_token),
+                                        "expiry": new_expiry.isoformat(),
+                                        "updated_at": datetime.now(timezone.utc).isoformat()
+                                    }
+                                    supabase_db.table("outlook_credentials").update(update_payload).eq("uid", user_id).execute()
+                                    access_token = new_token_data.get("access_token")
+                                    print(f"✅ Dashboard: Outlook token refreshed after validation failure for user {user_id}")
+                                    
+                                    # Validate the new token
+                                    headers = {"Authorization": f"Bearer {access_token}"}
+                                    validate_res = requests.get(f"{GRAPH_API_URL}/me", headers=headers, timeout=5)
+                                    if validate_res.status_code == 200:
+                                        return access_token
+                                    else:
+                                        print(f"⚠️ Dashboard: Refreshed token still invalid (status {validate_res.status_code}), trying cookie...")
+                                else:
+                                    error_desc = new_token_data.get('error_description', 'Unknown error')
+                                    error_code = new_token_data.get('error', 'unknown')
+                                    print(f"⚠️ Dashboard: Failed to refresh Outlook token: {error_code} - {error_desc}")
+                                    print(f"⚠️ Dashboard: User {user_id} needs to re-authenticate Outlook")
+                                    # Don't try cookie if refresh failed - user needs to reconnect
+                                    return None
+                            except Exception as e:
+                                print(f"⚠️ Dashboard: Error refreshing Outlook token after validation failure: {e}")
+                                import traceback
+                                traceback.print_exc()
+                        else:
+                            print(f"⚠️ Dashboard: No refresh token available, user {user_id} needs to re-authenticate")
+                        # Fall through to try cookie as last resort
+                        print(f"⚠️ Dashboard: Trying cookie as fallback...")
                 except Exception as e:
                     print(f"⚠️ Dashboard: Error validating database Outlook token: {e}, trying cookie...")
+                    import traceback
+                    traceback.print_exc()
     except Exception as e:
         print(f"⚠️ Dashboard: Error getting Outlook token from database: {e}, trying cookie...")
     

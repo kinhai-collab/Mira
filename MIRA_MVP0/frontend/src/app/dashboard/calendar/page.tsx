@@ -273,29 +273,33 @@ export default function CalendarPage() {
 	const displayHours = [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 0, 1, 2, 3, 4, 5, 6];
 
 	// Helper function to determine event icon and color based on meeting link
+	// Note: calendar_provider (google/outlook) is NOT used for icon selection
+	// Only meeting links and meeting providers determine the icon
 	const getEventIcon = (event: CalendarEvent) => {
-		const link = event.meetingLink || '';
-		const provider = event.provider || '';
+		const link = (event.meetingLink || '').toLowerCase();
+		const provider = (event.provider || '').toLowerCase();
 		
-		// Check link first (most reliable)
-		if (link.includes('meet.google.com') || link.includes('hangouts.google.com')) {
+		// Check link first (most reliable) - only for actual meeting links
+		if (link.includes('meet.google.com') || link.includes('hangouts.google.com') || link.includes('google.com/meet')) {
 			return { icon: '/Icons/logos_google-meet.svg', color: '#4285F4' };
-		} else if (link.includes('teams.microsoft.com') || link.includes('teams.live.com')) {
+		} else if (link.includes('teams.microsoft.com') || link.includes('teams.live.com') || link.includes('microsoft.com/teams')) {
 			return { icon: '/Icons/logos_microsoft-teams.svg', color: '#6264A7' };
-		} else if (link.includes('zoom.us')) {
+		} else if (link.includes('zoom.us') || link.includes('zoom.com')) {
 			return { icon: '/Icons/fluent_person-16-filled.svg', color: '#2D8CFF' };
 		}
 		
-		// Fallback to provider field if link check didn't match
+		// Fallback to provider field - only for specific meeting provider names
+		// Only check for specific meeting provider names, not generic "google" or "outlook"
 		if (provider === 'google-meet') {
 			return { icon: '/Icons/logos_google-meet.svg', color: '#4285F4' };
-		} else if (provider === 'microsoft-teams') {
+		} else if (provider === 'microsoft-teams' || provider === 'teams') {
 			return { icon: '/Icons/logos_microsoft-teams.svg', color: '#6264A7' };
 		} else if (provider === 'zoom') {
 			return { icon: '/Icons/fluent_person-16-filled.svg', color: '#2D8CFF' };
 		}
 		
-		// Default: no meeting link
+		// Default: no meeting link or provider (personal event)
+		// Always use person icon for events without meeting links
 		return { icon: '/Icons/fluent_person-16-filled.svg', color: '#9CA3AF' };
 	};
 

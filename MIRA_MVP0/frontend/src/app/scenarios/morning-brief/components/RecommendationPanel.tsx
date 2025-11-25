@@ -216,12 +216,13 @@ export default function RecommendationPanel({
 				<div className="space-y-3">
 					{events?.map((ev) => {
 						// Determine icon based on meeting link/provider
+						// Note: calendar_provider (google/outlook) is NOT used for icon selection
+						// Only meeting links and meeting providers determine the icon
 						const getEventIcon = () => {
 							const link = (ev.meetingLink || '').toLowerCase();
 							const provider = (ev.provider || '').toLowerCase();
-							const calendarProvider = (ev.calendar_provider || '').toLowerCase();
 							
-							// Check link first (case-insensitive)
+							// Check link first (case-insensitive) - only for actual meeting links
 							if (link.includes('meet.google.com') || link.includes('hangouts.google.com') || link.includes('google.com/meet')) {
 								return '/Icons/logos_google-meet.svg';
 							} else if (link.includes('teams.microsoft.com') || link.includes('teams.live.com') || link.includes('microsoft.com/teams')) {
@@ -230,21 +231,18 @@ export default function RecommendationPanel({
 								return '/Icons/fluent_person-16-filled.svg';
 							}
 							
-							// Fallback to provider field (case-insensitive)
-							if (provider === 'google-meet' || provider.includes('google')) {
+							// Fallback to provider field (case-insensitive) - only for meeting providers
+							// Only check for specific meeting provider names, not generic "google" or "outlook"
+							if (provider === 'google-meet') {
 								return '/Icons/logos_google-meet.svg';
-							} else if (provider === 'microsoft-teams' || provider.includes('teams') || provider.includes('microsoft')) {
+							} else if (provider === 'microsoft-teams' || provider === 'teams') {
 								return '/Icons/logos_microsoft-teams.svg';
-							} else if (provider === 'zoom' || provider.includes('zoom')) {
+							} else if (provider === 'zoom') {
 								return '/Icons/fluent_person-16-filled.svg';
 							}
 							
-							// Check calendar provider as additional hint (if it's Outlook, might be Teams)
-							if (calendarProvider === 'outlook' && (link.includes('teams') || link.includes('microsoft'))) {
-								return '/Icons/logos_microsoft-teams.svg';
-							}
-							
-							// Default: no meeting link (personal event)
+							// Default: no meeting link or provider (personal event)
+							// Always use person icon for events without meeting links
 							return '/Icons/fluent_person-16-filled.svg';
 						};
 						
