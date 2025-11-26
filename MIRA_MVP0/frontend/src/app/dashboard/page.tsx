@@ -314,17 +314,45 @@ export default function Dashboard() {
 	useEffect(() => {
 		const ipFallback = async () => {
 			try {
-				const res = await fetch("https://ipapi.co/json/");
-				if (!res.ok) return;
-				const data = await res.json();
-				const city =
-					data.city || data.region || data.region_code || data.country_name;
-				if (city) setLocation(city);
-				if (data.latitude && data.longitude) {
-					fetchWeatherForCoords(Number(data.latitude), Number(data.longitude));
+				// Use AbortController for timeout
+				const controller = new AbortController();
+				const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+				
+				try {
+					const res = await fetch("https://ipapi.co/json/", {
+						signal: controller.signal,
+					});
+					clearTimeout(timeoutId);
+					
+					if (!res.ok) {
+						console.warn("IP geolocation API returned non-OK status:", res.status);
+						return;
+					}
+					const data = await res.json();
+					const city =
+						data.city || data.region || data.region_code || data.country_name;
+					if (city) setLocation(city);
+					if (data.latitude && data.longitude) {
+						fetchWeatherForCoords(Number(data.latitude), Number(data.longitude));
+					}
+				} catch (fetchErr: any) {
+					clearTimeout(timeoutId);
+					if (fetchErr.name === "AbortError") {
+						console.warn("IP geolocation request timed out");
+					} else {
+						console.warn("IP geolocation fetch failed:", fetchErr);
+					}
+					// Set default location if all geolocation methods fail
+					if (!location || location === "New York") {
+						setLocation("New York");
+					}
 				}
 			} catch (e) {
-				console.error("Dashboard IP fallback error:", e);
+				console.warn("Dashboard IP fallback error:", e);
+				// Set default location if all geolocation methods fail
+				if (!location || location === "New York") {
+					setLocation("New York");
+				}
 			} finally {
 				setIsLocationLoading(false);
 			}
@@ -339,25 +367,47 @@ export default function Dashboard() {
 			try {
 				const { latitude: lat, longitude: lon } = pos.coords;
 
-				// Use OpenStreetMap Nominatim reverse geocoding (no key required)
-				const res = await fetch(
-					`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}`
-				);
-				if (!res.ok) {
-					// If reverse geocoding fails, fall back to IP-based lookup
-					await ipFallback();
-					return;
-				}
-				const data = await res.json();
-				const city =
-					data?.address?.city ||
-					data?.address?.town ||
-					data?.address?.village ||
-					data?.address?.state ||
-					data?.address?.county;
-				if (city) setLocation(city);
+				// Use AbortController for timeout
+				const controller = new AbortController();
+				const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+				
+				try {
+					// Use OpenStreetMap Nominatim reverse geocoding (no key required)
+					const res = await fetch(
+						`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}`,
+						{
+							headers: {
+								"User-Agent": "Mira-PMA/1.0",
+							},
+							signal: controller.signal,
+						}
+					);
+					clearTimeout(timeoutId);
+					
+					if (!res.ok) {
+						// If reverse geocoding fails, fall back to IP-based lookup
+						await ipFallback();
+						return;
+					}
+					const data = await res.json();
+					const city =
+						data?.address?.city ||
+						data?.address?.town ||
+						data?.address?.village ||
+						data?.address?.state ||
+						data?.address?.county;
+					if (city) setLocation(city);
 
-				fetchWeatherForCoords(lat, lon).catch((e) => console.error(e));
+					fetchWeatherForCoords(lat, lon).catch((e) => console.error(e));
+				} catch (fetchErr: any) {
+					clearTimeout(timeoutId);
+					if (fetchErr.name === "AbortError") {
+						console.warn("Nominatim request timed out, using IP fallback");
+					} else {
+						console.warn("Nominatim fetch failed, using IP fallback:", fetchErr);
+					}
+					await ipFallback();
+				}
 			} catch (err) {
 				console.error("Dashboard reverse geocode error:", err);
 				await ipFallback();
