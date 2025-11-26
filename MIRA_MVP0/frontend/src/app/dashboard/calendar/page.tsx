@@ -51,7 +51,7 @@ function MiniCalendar({ selectedDate, onDateSelect }: { selectedDate: Date, onDa
 	const daysInMonth = new Date(year, month + 1, 0).getDate();
 	const lastDayOfPrevMonth = new Date(year, month, 0).getDate();
 
-	const days = [];
+	const days: { date: Date; isCurrentMonth: boolean }[] = [];
 	// Add previous month's trailing days
 	for (let i = firstDayOfMonth - 1; i >= 0; i--) {
 		days.push({ date: new Date(year, month - 1, lastDayOfPrevMonth - i), isCurrentMonth: false });
