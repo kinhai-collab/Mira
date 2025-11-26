@@ -235,31 +235,43 @@ function SummaryCard({
 
 	// Filter recent emails with improved date parsing
 	const recentEmails = safeEmails.filter((e) => {
-		// If no receivedAt field, try timestamp or just include it
+		// If no receivedAt field, include it (better than hiding them)
 		if (!e.receivedAt) {
-			return true; // Include emails without timestamp (better than hiding them)
+			return true;
 		}
 
+		// Try to parse the date from various formats
 		let receivedAt: Date | null = null;
+		const receivedAtValue = e.receivedAt || e.timestamp || e.receivedDateTime;
 
-		// Handle numeric timestamps or ISO strings safely
-		if (!isNaN(Number(e.receivedAt))) {
-			// If numeric timestamp (milliseconds)
-			receivedAt = new Date(Number(e.receivedAt));
-		} else {
-			// If ISO string or Gmail RFC 2822 format
-			const parsed = Date.parse(e.receivedAt);
-			if (!isNaN(parsed)) receivedAt = new Date(parsed);
+		if (!receivedAtValue) {
+			return true; // Include emails without any date field
 		}
 
+		// Handle numeric timestamps (milliseconds or seconds)
+		if (!isNaN(Number(receivedAtValue))) {
+			const numValue = Number(receivedAtValue);
+			// If it looks like seconds (less than year 2000 in ms), convert to ms
+			receivedAt = new Date(numValue > 946684800000 ? numValue : numValue * 1000);
+		} else if (typeof receivedAtValue === 'string') {
+			// Handle ISO string or other date formats
+			const parsed = Date.parse(receivedAtValue);
+			if (!isNaN(parsed)) {
+				receivedAt = new Date(parsed);
+			}
+		}
+
+		// If we couldn't parse the date, include the email anyway
 		if (!receivedAt || isNaN(receivedAt.getTime())) {
-			return true; // Include emails with invalid dates
+			return true;
 		}
 
+		// Check if email is within the last 7 days
 		return receivedAt > sevenDaysAgo && receivedAt <= now;
 	});
-	// Use only recent emails for display and counts
-	const emailsToShow = recentEmails;
+	
+	// If filtering removed all emails, show all emails as fallback (safety measure)
+	const emailsToShow = recentEmails.length > 0 ? recentEmails : safeEmails;
 
 	// Count Gmail and Outlook from recent emails based on each email's provider field
 	let gmailCount = 0;
