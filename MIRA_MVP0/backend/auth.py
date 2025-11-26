@@ -340,6 +340,7 @@ MICROSOFT_REDIRECT_URI = os.getenv("MICROSOFT_REDIRECT_URI", "http://localhost:8
 MICROSOFT_AUTH_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
 MICROSOFT_TOKEN_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
 MICROSOFT_SCOPES = [
+    "offline_access",  # Required to get refresh_token for long-term access
     "User.Read",
     "Calendars.ReadWrite",
     "Mail.Read"
@@ -525,11 +526,38 @@ def upsert_supabase_user(email: str):
     # Currently no error handling for this request
 
 @router.get("/microsoft/auth")
-def microsoft_oauth_start(purpose: str = Query(None), return_to: str = Query(None)):
+def microsoft_oauth_start(request: Request, purpose: str = Query(None), return_to: str = Query(None), token: Optional[str] = Query(default=None), authorization: Optional[str] = Header(default=None)):
     # Start OAuth flow by redirecting to Microsoft login
-    # Use state parameter to pass purpose and return_to information
+    # Use state parameter to pass purpose, return_to, and user_id information
     # return_to is used to redirect back to onboarding after OAuth completes
+    
+    # Try to get user ID from token query parameter or authorization header (if user is already logged in)
+    user_id = None
+    
+    # Try token query parameter first (from frontend)
+    if token:
+        try:
+            user_resp = supabase.auth.get_user(token)
+            if user_resp and user_resp.user:
+                user_id = user_resp.user.id
+                print(f"✅ Got user ID from token query parameter: {user_id}")
+        except Exception as e:
+            print(f"⚠️ Failed to get user from token query parameter: {e}")
+    
+    # Fallback to authorization header
+    if not user_id and authorization and authorization.lower().startswith("bearer "):
+        try:
+            bearer_token = authorization.split(" ")[1]
+            user_resp = supabase.auth.get_user(bearer_token)
+            if user_resp and user_resp.user:
+                user_id = user_resp.user.id
+                print(f"✅ Got user ID from authorization header: {user_id}")
+        except Exception as e:
+            print(f"⚠️ Failed to get user from authorization header: {e}")
+    
     state_parts = []
+    if user_id:
+        state_parts.append(f"uid={user_id}")
     if purpose:
         state_parts.append(f"purpose={purpose}")
     if return_to:
@@ -575,48 +603,62 @@ def microsoft_oauth_callback(code: str = Query(...), state: str = Query(None), e
         token_data = get_microsoft_access_token(code)  # Now returns full token response
         access_token = token_data.get("access_token")
         email = get_microsoft_user_email(access_token)
-        upsert_supabase_user(email)
         frontend_url = get_frontend_url()
         
-        # ✅ Get user ID from Supabase to save credentials
-        # Try to find user by email
-        try:
-            user_resp = supabase.auth.admin.list_users()
-            uid = None
-            for user in user_resp.users:
-                if user.email == email:
-                    uid = user.id
+        # ✅ Get user ID from state parameter (passed from OAuth start)
+        uid = None
+        if state:
+            for part in state.split("&"):
+                if part.startswith("uid="):
+                    uid = part.split("=", 1)[1]
                     break
-            
-            # If user not found, create one (upsert_supabase_user should have created it)
-            if not uid:
-                # Try to get user from auth.users table
-                admin_headers = {
-                    "apikey": SUPABASE_SERVICE_ROLE_KEY,
-                    "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
-                    "Content-Type": "application/json"
-                }
-                # List users and find by email
-                list_resp = requests.get(
-                    f"{SUPABASE_URL}/auth/v1/admin/users",
-                    headers=admin_headers,
-                    params={"per_page": 1000}
-                )
-                if list_resp.status_code == 200:
-                    users = list_resp.json().get("users", [])
-                    for user in users:
-                        if user.get("email") == email:
-                            uid = user.get("id")
-                            break
-            
-            # Save Outlook credentials to database for persistence
+        
+        # If uid not in state, try to find by email (backward compatibility)
+        if not uid:
+            upsert_supabase_user(email)
+            try:
+                user_resp = supabase.auth.admin.list_users()
+                # Handle both list and object response formats
+                users_list = user_resp if isinstance(user_resp, list) else (user_resp.users if hasattr(user_resp, 'users') else [])
+                for user in users_list:
+                    user_email = user.email if hasattr(user, 'email') else user.get('email')
+                    user_id = user.id if hasattr(user, 'id') else user.get('id')
+                    if user_email == email:
+                        uid = user_id
+                        break
+                
+                # If still not found, try REST API
+                if not uid:
+                    admin_headers = {
+                        "apikey": SUPABASE_SERVICE_ROLE_KEY,
+                        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+                        "Content-Type": "application/json"
+                    }
+                    list_resp = requests.get(
+                        f"{SUPABASE_URL}/auth/v1/admin/users",
+                        headers=admin_headers,
+                        params={"per_page": 1000}
+                    )
+                    if list_resp.status_code == 200:
+                        users = list_resp.json().get("users", [])
+                        for user in users:
+                            if user.get("email") == email:
+                                uid = user.get("id")
+                                break
+            except Exception as e:
+                print(f"⚠️ Error looking up user by email: {e}")
+        
+        # Save Outlook credentials to database for persistence
+        try:
             if uid:
                 upsert_outlook_creds(uid, email, token_data)
-                print(f"✅ Outlook credentials saved to database for user {uid}")
+                print(f"✅ Outlook credentials saved to database for user {uid} (email: {email})")
             else:
-                print(f"⚠️ Could not find user ID for email {email}, credentials saved to cookie only")
+                print(f"⚠️ Could not determine user ID, credentials saved to cookie only (Outlook email: {email})")
         except Exception as e:
             print(f"⚠️ Error saving Outlook credentials to database: {e}")
+            import traceback
+            traceback.print_exc()
             # Continue anyway - cookie will still be set
     except HTTPException as e:
         # Handle HTTP exceptions (like admin consent errors)

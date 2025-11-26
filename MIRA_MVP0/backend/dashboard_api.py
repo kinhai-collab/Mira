@@ -98,7 +98,7 @@ def _get_outlook_token(request: Request, user_id: str) -> Optional[str]:
                                 # Refresh the token
                                 MICROSOFT_CLIENT_ID = os.getenv("MICROSOFT_CLIENT_ID")
                                 MICROSOFT_CLIENT_SECRET = os.getenv("MICROSOFT_CLIENT_SECRET")
-                                MICROSOFT_SCOPES = ["User.Read", "Calendars.ReadWrite", "Mail.Read"]
+                                MICROSOFT_SCOPES = ["offline_access", "User.Read", "Calendars.ReadWrite", "Mail.Read"]
                                 MICROSOFT_TOKEN_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
                                 
                                 data = {
@@ -159,7 +159,7 @@ def _get_outlook_token(request: Request, user_id: str) -> Optional[str]:
                                 # Refresh the token
                                 MICROSOFT_CLIENT_ID = os.getenv("MICROSOFT_CLIENT_ID")
                                 MICROSOFT_CLIENT_SECRET = os.getenv("MICROSOFT_CLIENT_SECRET")
-                                MICROSOFT_SCOPES = ["User.Read", "Calendars.ReadWrite", "Mail.Read"]
+                                MICROSOFT_SCOPES = ["offline_access", "User.Read", "Calendars.ReadWrite", "Mail.Read"]
                                 MICROSOFT_TOKEN_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
                                 
                                 data = {

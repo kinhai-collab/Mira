@@ -1370,8 +1370,13 @@ export default function SettingsPage() {
 										handleOutlookDisconnect();
 									} else {
 										const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
-										// No return_to for settings page - user stays on settings
-										window.location.href = `${apiBase}/microsoft/auth`;
+										const token = localStorage.getItem("access_token") || localStorage.getItem("token");
+										if (!token) {
+											alert("Please log in first to connect Outlook.");
+											return;
+										}
+										// Pass token so backend can identify user and save credentials properly
+										window.location.href = `${apiBase}/microsoft/auth?token=${encodeURIComponent(token)}`;
 									}
 								}}
 								className={`px-4 py-2 rounded-lg text-sm transition-colors ${
@@ -1474,8 +1479,13 @@ export default function SettingsPage() {
 										handleOutlookCalendarDisconnect();
 									} else {
 										const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
-										// No return_to for settings page - user stays on settings
-										window.location.href = `${apiBase}/microsoft/auth?purpose=calendar`;
+										const token = localStorage.getItem("access_token") || localStorage.getItem("token");
+										if (!token) {
+											alert("Please log in first to connect Outlook Calendar.");
+											return;
+										}
+										// Pass token so backend can identify user and save credentials properly
+										window.location.href = `${apiBase}/microsoft/auth?token=${encodeURIComponent(token)}&purpose=calendar`;
 									}
 								}}
 								className={`px-4 py-2 rounded-lg text-sm transition-colors ${

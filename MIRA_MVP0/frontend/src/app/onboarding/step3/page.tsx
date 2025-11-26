@@ -193,8 +193,14 @@ export default function OnboardingStep3() {
 		setConnecting("Outlook");
 		try {
 			const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
-			// Pass return_to so settings page redirects back here after OAuth
-			window.location.href = `${apiBase}/microsoft/auth?return_to=${encodeURIComponent(window.location.href)}`;
+			const token = localStorage.getItem("access_token") || localStorage.getItem("token");
+			if (!token) {
+				alert("Please log in first to connect Outlook.");
+				setConnecting(null);
+				return;
+			}
+			// Pass token and return_to so backend can identify user and redirect back after OAuth
+			window.location.href = `${apiBase}/microsoft/auth?token=${encodeURIComponent(token)}&return_to=${encodeURIComponent(window.location.href)}`;
 		} catch (error) {
 			console.error("Error connecting Outlook:", error);
 			alert("Failed to connect Outlook. Please try again.");
