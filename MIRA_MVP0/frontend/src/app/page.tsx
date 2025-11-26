@@ -563,16 +563,14 @@ export default function Home() {
 							{textMessages.map((msg, idx) => (
 								<div
 									key={idx}
-									className={`flex ${
-										msg.role === "user" ? "justify-end" : "justify-start"
-									}`}
+									className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"
+										}`}
 								>
 									<div
-										className={`max-w-[80%] rounded-2xl px-4 py-3 ${
-											msg.role === "user"
-												? "bg-gradient-to-r from-[#d9b8ff] to-[#bfa3ff] text-gray-900"
-												: "bg-white border border-gray-200 text-gray-800"
-										} shadow-sm`}
+										className={`max-w-[80%] rounded-2xl px-4 py-3 ${msg.role === "user"
+											? "bg-gradient-to-r from-[#d9b8ff] to-[#bfa3ff] text-gray-900"
+											: "bg-white border border-gray-200 text-gray-800"
+											} shadow-sm`}
 									>
 										<p className="text-sm leading-relaxed">{msg.content}</p>
 									</div>
@@ -680,8 +678,8 @@ export default function Home() {
 										temperatureC != null
 											? `${Math.round(temperatureC)}°`
 											: isWeatherLoading
-											? "..."
-											: "—",
+												? "..."
+												: "—",
 								}}
 								showContextChips={false}
 								showControls={false}
@@ -707,11 +705,10 @@ export default function Home() {
 										setMiraMute(false);
 									}
 								}}
-								className={`flex items-center justify-center w-[60px] h-[28px] rounded-full border border-gray-200 transition-all duration-300 ${
-									isListening
-										? "bg-black hover:bg-gray-800"
-										: "bg-white hover:bg-gray-50"
-								}`}
+								className={`flex items-center justify-center w-[60px] h-[28px] rounded-full border border-gray-200 transition-all duration-300 ${isListening
+									? "bg-black hover:bg-gray-800"
+									: "bg-white hover:bg-gray-50"
+									}`}
 							>
 								<Image
 									src={
@@ -722,9 +719,8 @@ export default function Home() {
 									alt={isListening ? "Mic On" : "Mic Off"}
 									width={16}
 									height={16}
-									className={`transition-all duration-300 ${
-										isListening ? "invert" : "brightness-0"
-									}`}
+									className={`transition-all duration-300 ${isListening ? "invert" : "brightness-0"
+										}`}
 								/>
 							</button>
 
@@ -742,20 +738,18 @@ export default function Home() {
 										setMiraMute(false);
 									}
 								}}
-								className={`flex items-center justify-center w-[60px] h-[28px] rounded-full border border-gray-200 transition-all duration-300 ${
-									isTextMode || !isListening
-										? "bg-black hover:bg-gray-800"
-										: "bg-white hover:bg-gray-50"
-								}`}
+								className={`flex items-center justify-center w-[60px] h-[28px] rounded-full border border-gray-200 transition-all duration-300 ${isTextMode || !isListening
+									? "bg-black hover:bg-gray-800"
+									: "bg-white hover:bg-gray-50"
+									}`}
 							>
 								<Image
 									src="/Icons/Property 1=Keyboard.svg"
 									alt="Keyboard Icon"
 									width={16}
 									height={16}
-									className={`transition-all duration-300 ${
-										isTextMode || !isListening ? "invert" : "brightness-0"
-									}`}
+									className={`transition-all duration-300 ${isTextMode || !isListening ? "invert" : "brightness-0"
+										}`}
 								/>
 							</button>
 						</div>
