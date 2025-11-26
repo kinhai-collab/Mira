@@ -13,6 +13,8 @@
     "serverless-python-requirements": "^6.0.0"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.76.1"
+    "@supabase/supabase-js": "^2.76.1",
+    "axios": "^1.13.2",
+    "openai": "^6.9.1"
   }
 }

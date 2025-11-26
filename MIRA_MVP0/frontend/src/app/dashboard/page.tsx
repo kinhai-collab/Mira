@@ -122,14 +122,18 @@ export default function Dashboard() {
 	const [location, setLocation] = useState<string>("New York");
 	const [isLocationLoading, setIsLocationLoading] = useState<boolean>(true);
 	const [temperatureC, setTemperatureC] = useState<number | null>(null);
-	const [weatherDescription, setWeatherDescription] = useState<string | null>(null);
+	const [weatherDescription, setWeatherDescription] = useState<string | null>(
+		null
+	);
 	const [isWeatherLoading, setIsWeatherLoading] = useState<boolean>(false);
 
 	// Dashboard data state
 	const [emailStats, setEmailStats] = useState<EmailStats | null>(null);
 	const [eventStats, setEventStats] = useState<EventStats | null>(null);
 	const [taskStats, setTaskStats] = useState<TaskStats | null>(null);
-	const [reminderStats, setReminderStats] = useState<ReminderStats | null>(null);
+	const [reminderStats, setReminderStats] = useState<ReminderStats | null>(
+		null
+	);
 	const [isLoadingEmails, setIsLoadingEmails] = useState<boolean>(true);
 	const [isLoadingEvents, setIsLoadingEvents] = useState<boolean>(true);
 	const [isLoadingTasks, setIsLoadingTasks] = useState<boolean>(true);
@@ -141,7 +145,7 @@ export default function Dashboard() {
 			// Try to refresh token if expired (for returning users)
 			const { getValidToken } = await import("@/utils/auth");
 			const validToken = await getValidToken();
-			
+
 			if (!validToken) {
 				// No valid token, redirect to login
 				router.push("/login");
@@ -160,7 +164,9 @@ export default function Dashboard() {
 		return () => clearInterval(timer);
 	}, []);
 
-	const displayLocation = isLocationLoading ? "Locating..." : location || "New York";
+	const displayLocation = isLocationLoading
+		? "Locating..."
+		: location || "New York";
 	const displayTemperature =
 		temperatureC != null
 			? `${Math.round(temperatureC)}°C`
@@ -168,7 +174,8 @@ export default function Dashboard() {
 			? "Loading..."
 			: "--";
 	const displayWeatherDescription =
-		weatherDescription ?? (isWeatherLoading ? "Loading..." : "Weather unavailable");
+		weatherDescription ??
+		(isWeatherLoading ? "Loading..." : "Weather unavailable");
 
 	// Handle OAuth callback token extraction (no greeting call to prevent double voice)
 	useEffect(() => {
@@ -235,86 +242,102 @@ export default function Dashboard() {
 	}, []);
 
 	// Fetch weather using Open-Meteo API directly
-	const fetchWeatherForCoords = useCallback(async (lat: number, lon: number) => {
-		// Helper: map Open-Meteo weathercode to simple description
-		const openMeteoCodeToDesc = (code: number) => {
-			// Simplified mapping for common values
-			switch (code) {
-				case 0:
-					return 'Clear';
-				case 1:
-				case 2:
-				case 3:
-					return 'Partly cloudy';
-				case 45:
-				case 48:
-					return 'Fog';
-				case 51:
-				case 53:
-				case 55:
-					return 'Drizzle';
-				case 61:
-				case 63:
-				case 65:
-					return 'Rain';
-				case 71:
-				case 73:
-				case 75:
-					return 'Snow';
-				case 80:
-				case 81:
-				case 82:
-					return 'Showers';
-				case 95:
-				case 96:
-				case 99:
-					return 'Thunderstorm';
-				default:
-					return 'Unknown';
+	const fetchWeatherForCoords = useCallback(
+		async (lat: number, lon: number) => {
+			// Helper: map Open-Meteo weathercode to simple description
+			const openMeteoCodeToDesc = (code: number) => {
+				// Simplified mapping for common values
+				switch (code) {
+					case 0:
+						return "Clear";
+					case 1:
+					case 2:
+					case 3:
+						return "Partly cloudy";
+					case 45:
+					case 48:
+						return "Fog";
+					case 51:
+					case 53:
+					case 55:
+						return "Drizzle";
+					case 61:
+					case 63:
+					case 65:
+						return "Rain";
+					case 71:
+					case 73:
+					case 75:
+						return "Snow";
+					case 80:
+					case 81:
+					case 82:
+						return "Showers";
+					case 95:
+					case 96:
+					case 99:
+						return "Thunderstorm";
+					default:
+						return "Unknown";
+				}
+			};
+			try {
+				setIsWeatherLoading(true);
+				console.log("Dashboard: fetching weather for coords:", lat, lon);
+				const data = await getWeather(lat, lon);
+				const temp = data?.temperatureC;
+				let desc: string | null = null;
+				// Map weathercode from Open-Meteo payload
+				if (data?.raw?.current_weather?.weathercode !== undefined) {
+					desc = openMeteoCodeToDesc(
+						Number(data.raw.current_weather.weathercode)
+					);
+				}
+				if (typeof temp === "number") setTemperatureC(temp);
+				if (desc) setWeatherDescription(desc);
+				if (!desc && temp == null)
+					console.warn(
+						"Dashboard: weather response had no usable fields",
+						data
+					);
+			} catch (err) {
+				console.error("Dashboard: Error fetching weather:", err);
+			} finally {
+				setIsWeatherLoading(false);
 			}
-		};
-		try {
-			setIsWeatherLoading(true);
-			console.log('Dashboard: fetching weather for coords:', lat, lon);
-			const data = await getWeather(lat, lon);
-			const temp = data?.temperatureC;
-			let desc: string | null = null;
-			// Map weathercode from Open-Meteo payload
-			if (data?.raw?.current_weather?.weathercode !== undefined) {
-				desc = openMeteoCodeToDesc(Number(data.raw.current_weather.weathercode));
-			}
-			if (typeof temp === 'number') setTemperatureC(temp);
-			if (desc) setWeatherDescription(desc);
-			if (!desc && temp == null) console.warn('Dashboard: weather response had no usable fields', data);
-		} catch (err) {
-			console.error('Dashboard: Error fetching weather:', err);
-		} finally {
-			setIsWeatherLoading(false);
-		}
-	}, []);
+		},
+		[]
+	);
 
 	// Get coords either via geolocation or IP fallback, then fetch weather
 	useEffect(() => {
 		const ipFallback = async () => {
 			try {
-				const res = await fetch('https://ipapi.co/json/');
+				const res = await fetch("https://ipapi.co/json/");
 				if (!res.ok) return;
 				const data = await res.json();
-				const city = data.city || data.region || data.region_code || data.country_name;
+				const city =
+					data.city || data.region || data.region_code || data.country_name;
 				if (city) setLocation(city);
 				if (data.latitude && data.longitude) {
 					fetchWeatherForCoords(Number(data.latitude), Number(data.longitude));
 				}
-			} catch (e) { console.error('Dashboard IP fallback error:', e); }
-			finally { setIsLocationLoading(false); }
+			} catch (e) {
+				console.error("Dashboard IP fallback error:", e);
+			} finally {
+				setIsLocationLoading(false);
+			}
 		};
 
-		if (!('geolocation' in navigator)) { ipFallback(); return; }
+		if (!("geolocation" in navigator)) {
+			ipFallback();
+			return;
+		}
 
 		const success = async (pos: GeolocationPosition) => {
 			try {
 				const { latitude: lat, longitude: lon } = pos.coords;
-				
+
 				// Use OpenStreetMap Nominatim reverse geocoding (no key required)
 				const res = await fetch(
 					`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}`
@@ -332,19 +355,24 @@ export default function Dashboard() {
 					data?.address?.state ||
 					data?.address?.county;
 				if (city) setLocation(city);
-				
+
 				fetchWeatherForCoords(lat, lon).catch((e) => console.error(e));
 			} catch (err) {
-				console.error('Dashboard reverse geocode error:', err);
+				console.error("Dashboard reverse geocode error:", err);
 				await ipFallback();
 			} finally {
 				setIsLocationLoading(false);
 			}
 		};
 
-		const failure = async (err: GeolocationPositionError) => { console.warn('Dashboard geolocation failed:', err); await ipFallback(); };
+		const failure = async (err: GeolocationPositionError) => {
+			console.warn("Dashboard geolocation failed:", err);
+			await ipFallback();
+		};
 
-		navigator.geolocation.getCurrentPosition(success, failure, { timeout: 10000 });
+		navigator.geolocation.getCurrentPosition(success, failure, {
+			timeout: 10000,
+		});
 	}, [fetchWeatherForCoords]);
 
 	// Fetch email stats
@@ -417,6 +445,7 @@ export default function Dashboard() {
 
 	return (
 		<div className="flex flex-col md:flex-row h-screen bg-[#F8F8FB] text-gray-800">
+			{/* SCALE WRAPPER */}
 			{/* Main Content */}
 			<main className="flex-1 px-4 sm:px-8 md:px-12 py-8 md:py-10 overflow-y-auto">
 				{/* Header Section - Styled like Figma */}
@@ -555,9 +584,12 @@ export default function Dashboard() {
 											)}
 										</div>
 										<div>
-											<p className="text-[15px] leading-tight">{eventStats.next_event.summary}</p>
+											<p className="text-[15px] leading-tight">
+												{eventStats.next_event.summary}
+											</p>
 											<p className="text-gray-500 text-[13.5px]">
-												{formatEventTime(eventStats.next_event.start)} | {formatDuration(eventStats.next_event.duration)}
+												{formatEventTime(eventStats.next_event.start)} |{" "}
+												{formatDuration(eventStats.next_event.duration)}
 											</p>
 										</div>
 									</div>
@@ -615,8 +647,10 @@ export default function Dashboard() {
 								<>
 									{/* Important Emails */}
 									<p className="text-[17px] text-gray-900 mb-0.5 leading-tight">
-										<span className="font-semibold text-[19px]">{emailStats.total_important}</span> Important
-										Emails
+										<span className="font-semibold text-[19px]">
+											{emailStats.total_important}
+										</span>{" "}
+										Important Emails
 									</p>
 
 									{/* Clock icon line */}
@@ -640,7 +674,10 @@ export default function Dashboard() {
 										{emailStats.priority_distribution.high > 0 && (
 											<span
 												className="text-white text-[13.5px] px-[8px] py-[2px] rounded-full font-normal"
-												style={{ background: "#F16A6A", borderRadius: "99px" }}
+												style={{
+													background: "#8C2B4A",
+													borderRadius: "99px",
+												}}
 											>
 												High: {emailStats.priority_distribution.high}
 											</span>
@@ -650,7 +687,10 @@ export default function Dashboard() {
 										{emailStats.priority_distribution.medium > 0 && (
 											<span
 												className="text-white text-[13.5px] px-[8px] py-[2px] rounded-full font-normal"
-												style={{ background: "#FABA2E", borderRadius: "99px" }}
+												style={{
+													background: "#AD819A",
+													borderRadius: "99px",
+												}}
 											>
 												Medium: {emailStats.priority_distribution.medium}
 											</span>
@@ -660,20 +700,23 @@ export default function Dashboard() {
 										{emailStats.priority_distribution.low > 0 && (
 											<span
 												className="text-white text-[13.5px] px-[8px] py-[2px] rounded-full font-normal"
-												style={{ background: "#95D6A4", borderRadius: "99px" }}
+												style={{
+													background: "#44548D",
+													borderRadius: "99px",
+												}}
 											>
 												Low: {emailStats.priority_distribution.low}
 											</span>
 										)}
 
 										{/* Show message if no emails */}
-										{emailStats.priority_distribution.high === 0 && 
-										 emailStats.priority_distribution.medium === 0 && 
-										 emailStats.priority_distribution.low === 0 && (
-											<span className="text-gray-500 text-[13.5px]">
-												No emails in the last 24 hours
-											</span>
-										)}
+										{emailStats.priority_distribution.high === 0 &&
+											emailStats.priority_distribution.medium === 0 &&
+											emailStats.priority_distribution.low === 0 && (
+												<span className="text-gray-500 text-[13.5px]">
+													No emails in the last 24 hours
+												</span>
+											)}
 									</div>
 
 									{/* Divider */}
@@ -729,7 +772,9 @@ export default function Dashboard() {
 							) : (
 								<div className="text-center py-8 text-gray-500">
 									<p>Gmail not connected</p>
-									<p className="text-sm mt-2">Connect your Gmail to see email stats</p>
+									<p className="text-sm mt-2">
+										Connect your Gmail to see email stats
+									</p>
 								</div>
 							)}
 						</div>
@@ -765,11 +810,13 @@ export default function Dashboard() {
 								</h3>
 
 								{/* RSVP Badge */}
-								{!isLoadingEvents && eventStats && eventStats.rsvp_pending > 0 && (
-									<span className="text-[13px] px-[10px] py-[3px] bg-gray-50 border border-gray-300 rounded-full text-gray-700 font-medium">
-										{eventStats.rsvp_pending} RSVPs
-									</span>
-								)}
+								{!isLoadingEvents &&
+									eventStats &&
+									eventStats.rsvp_pending > 0 && (
+										<span className="text-[13px] px-[10px] py-[3px] bg-gray-50 border border-gray-300 rounded-full text-gray-700 font-medium">
+											{eventStats.rsvp_pending} RSVPs
+										</span>
+									)}
 							</div>
 
 							{isLoadingEvents ? (
@@ -783,7 +830,12 @@ export default function Dashboard() {
 										<div
 											className="px-[12px] py-[8px] mb-4"
 											style={{
-												background: eventStats.busy_level === "busy" ? "#FDF0EF" : eventStats.busy_level === "moderate" ? "#FFF9E6" : "#F0F9FF",
+												background:
+													eventStats.busy_level === "busy"
+														? "#FDF0EF"
+														: eventStats.busy_level === "moderate"
+														? "#FFF9E6"
+														: "#F0F9FF",
 												border: "0.5px solid #C4C7CC",
 												borderRadius: "8px",
 											}}
@@ -795,7 +847,13 @@ export default function Dashboard() {
 													height="16"
 													viewBox="0 0 24 24"
 													fill="none"
-													stroke={eventStats.busy_level === "busy" ? "#F16A6A" : eventStats.busy_level === "moderate" ? "#FABA2E" : "#95D6A4"}
+													stroke={
+														eventStats.busy_level === "busy"
+															? "#F16A6A"
+															: eventStats.busy_level === "moderate"
+															? "#FABA2E"
+															: "#95D6A4"
+													}
 													strokeWidth="2"
 													strokeLinecap="round"
 													strokeLinejoin="round"
@@ -805,11 +863,17 @@ export default function Dashboard() {
 													<polyline points="12 6 12 12 16 14" />
 												</svg>
 												<span className="text-[15px] font-semibold text-[#000000]">
-													{eventStats.busy_level === "busy" ? "Busy Day" : eventStats.busy_level === "moderate" ? "Moderate Day" : "Light Day"}
+													{eventStats.busy_level === "busy"
+														? "Busy Day"
+														: eventStats.busy_level === "moderate"
+														? "Moderate Day"
+														: "Light Day"}
 												</span>
 											</div>
 											<p className="text-[14px] text-[#000000] leading-[1.2] ml-[22px]">
-												{eventStats.total_hours}h across {eventStats.total_events} event{eventStats.total_events !== 1 ? 's' : ''}
+												{eventStats.total_hours}h across{" "}
+												{eventStats.total_events} event
+												{eventStats.total_events !== 1 ? "s" : ""}
 											</p>
 										</div>
 									)}
@@ -834,7 +898,11 @@ export default function Dashboard() {
 																		? "/Icons/Email/skill-icons_gmail-light.png"
 																		: "/Icons/Email/vscode-icons_file-type-outlook.png"
 																}
-																alt={eventStats.next_event.provider === "google" ? "Google Calendar" : "Outlook Calendar"}
+																alt={
+																	eventStats.next_event.provider === "google"
+																		? "Google Calendar"
+																		: "Outlook Calendar"
+																}
 																width={16}
 																height={16}
 																className="opacity-80"
@@ -851,11 +919,13 @@ export default function Dashboard() {
 														width={14}
 														height={14}
 													/>
-													{formatEventTime(eventStats.next_event.start)} | {formatDuration(eventStats.next_event.duration)}
+													{formatEventTime(eventStats.next_event.start)} |{" "}
+													{formatDuration(eventStats.next_event.duration)}
 												</div>
 
 												{/* Location/Conference */}
-												{(eventStats.next_event.conference_data || eventStats.next_event.location) && (
+												{(eventStats.next_event.conference_data ||
+													eventStats.next_event.location) && (
 													<div className="flex items-center gap-2 text-[14px] text-gray-600 mb-1">
 														<Image
 															src="/Icons/qlementine-icons_camera-16.svg"
@@ -863,7 +933,9 @@ export default function Dashboard() {
 															width={14}
 															height={14}
 														/>
-														{eventStats.next_event.conference_data ? "Video call" : eventStats.next_event.location}
+														{eventStats.next_event.conference_data
+															? "Video call"
+															: eventStats.next_event.location}
 													</div>
 												)}
 
@@ -876,7 +948,10 @@ export default function Dashboard() {
 															width={14}
 															height={14}
 														/>
-														{eventStats.next_event.attendees_count} attendee{eventStats.next_event.attendees_count !== 1 ? 's' : ''}
+														{eventStats.next_event.attendees_count} attendee
+														{eventStats.next_event.attendees_count !== 1
+															? "s"
+															: ""}
 													</div>
 												)}
 											</div>
@@ -899,7 +974,8 @@ export default function Dashboard() {
 													borderRadius: "99px",
 												}}
 											>
-												{eventStats.deep_work_blocks} deep work block{eventStats.deep_work_blocks !== 1 ? 's' : ''}
+												{eventStats.deep_work_blocks} deep work block
+												{eventStats.deep_work_blocks !== 1 ? "s" : ""}
 											</span>
 										)}
 
@@ -911,21 +987,26 @@ export default function Dashboard() {
 													borderRadius: "99px",
 												}}
 											>
-												{eventStats.at_risk_tasks} at risk task{eventStats.at_risk_tasks !== 1 ? 's' : ''}
+												{eventStats.at_risk_tasks} at risk task
+												{eventStats.at_risk_tasks !== 1 ? "s" : ""}
 											</span>
 										)}
 
-										{eventStats.deep_work_blocks === 0 && eventStats.at_risk_tasks === 0 && eventStats.total_events === 0 && (
-											<span className="text-gray-500 text-[13px]">
-												No events scheduled
-											</span>
-										)}
+										{eventStats.deep_work_blocks === 0 &&
+											eventStats.at_risk_tasks === 0 &&
+											eventStats.total_events === 0 && (
+												<span className="text-gray-500 text-[13px]">
+													No events scheduled
+												</span>
+											)}
 									</div>
 								</>
 							) : (
 								<div className="text-center py-8 text-gray-500">
 									<p>Calendar not connected</p>
-									<p className="text-sm mt-2">Connect Google Calendar to see events</p>
+									<p className="text-sm mt-2">
+										Connect Google Calendar to see events
+									</p>
 								</div>
 							)}
 						</div>
@@ -960,55 +1041,59 @@ export default function Dashboard() {
 									Tasks
 								</h3>
 
-							{/* Task Count Badge */}
-							{isLoadingTasks ? (
-								<span className="text-[13px] bg-gray-200 text-gray-600 font-semibold px-[9px] py-[3px] rounded-full shadow-sm animate-pulse">
-									...
-								</span>
-							) : (
-								<span className="text-[13px] bg-[#F7D76C] text-[#000000] font-semibold px-[9px] py-[3px] rounded-full shadow-sm">
-									{taskStats?.total_tasks || 0}
-								</span>
-							)}
-						</div>
-
-						{/* Task List */}
-						{isLoadingTasks ? (
-							<div className="text-center py-8 text-gray-500">
-								<p>Loading tasks...</p>
+								{/* Task Count Badge */}
+								{isLoadingTasks ? (
+									<span className="text-[13px] bg-gray-200 text-gray-600 font-semibold px-[9px] py-[3px] rounded-full shadow-sm animate-pulse">
+										...
+									</span>
+								) : (
+									<span className="text-[13px] bg-[#44548D] text-[#fff] font-semibold px-[9px] py-[3px] rounded-full shadow-sm">
+										{taskStats?.total_tasks || 0}
+									</span>
+								)}
 							</div>
-						) : taskStats && taskStats.next_tasks.length > 0 ? (
-							taskStats.next_tasks.map((task) => (
-								<div
-									key={task.id}
-									className="bg-[#F8F9FB] border border-gray-200 rounded-xl px-4 py-2.5 mb-3"
-								>
-									<div className="flex items-start justify-between gap-2 mb-1">
-										<p className="text-[15px] text-gray-900 font-medium leading-tight flex-1">
-											{task.title}
+
+							{/* Task List */}
+							{isLoadingTasks ? (
+								<div className="text-center py-8 text-gray-500">
+									<p>Loading tasks...</p>
+								</div>
+							) : taskStats && taskStats.next_tasks.length > 0 ? (
+								taskStats.next_tasks.map((task) => (
+									<div
+										key={task.id}
+										className="bg-[#F8F9FB] border border-gray-200 rounded-xl px-4 py-2.5 mb-3"
+									>
+										<div className="flex items-start justify-between gap-2 mb-1">
+											<p className="text-[15px] text-gray-900 font-medium leading-tight flex-1">
+												{task.title}
+											</p>
+											{task.source && (
+												<span
+													className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
+														task.source === "google"
+															? "bg-blue-100 text-blue-700"
+															: "bg-purple-100 text-purple-700"
+													}`}
+												>
+													{task.source === "google" ? "Google" : "MIRA"}
+												</span>
+											)}
+										</div>
+										<p className="text-[13px] text-gray-500 flex items-center gap-1">
+											<span className="text-[18px] leading-none">•</span> Due:{" "}
+											{formatTaskDueDate(task.due_date)}
 										</p>
-										{task.source && (
-											<span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
-												task.source === "google" 
-													? "bg-blue-100 text-blue-700" 
-													: "bg-purple-100 text-purple-700"
-											}`}>
-												{task.source === "google" ? "Google" : "MIRA"}
-											</span>
-										)}
 									</div>
-									<p className="text-[13px] text-gray-500 flex items-center gap-1">
-										<span className="text-[18px] leading-none">•</span> Due:{" "}
-										{formatTaskDueDate(task.due_date)}
+								))
+							) : (
+								<div className="text-center py-8 text-gray-500">
+									<p>No active tasks</p>
+									<p className="text-sm mt-2">
+										Create your first task to get started
 									</p>
 								</div>
-							))
-						) : (
-							<div className="text-center py-8 text-gray-500">
-								<p>No active tasks</p>
-								<p className="text-sm mt-2">Create your first task to get started</p>
-							</div>
-						)}
+							)}
 						</div>
 
 						{/* Button */}
@@ -1040,43 +1125,46 @@ export default function Dashboard() {
 									Reminders
 								</h3>
 
-							{/* Count Badge */}
-							{isLoadingReminders ? (
-								<span className="text-[13px] bg-gray-200 text-gray-600 font-semibold px-[9px] py-[3px] rounded-full shadow-sm animate-pulse">
-									...
-								</span>
-							) : (
-								<span className="text-[13px] bg-[#F7D76C] text-[#000000] font-semibold px-[9px] py-[3px] rounded-full shadow-sm">
-									{reminderStats?.total_reminders || 0}
-								</span>
-							)}
-						</div>
-
-						{/* Reminder List */}
-						{isLoadingReminders ? (
-							<div className="text-center py-8 text-gray-500">
-								<p>Loading reminders...</p>
+								{/* Count Badge */}
+								{isLoadingReminders ? (
+									<span className="text-[13px] bg-gray-200 text-gray-600 font-semibold px-[9px] py-[3px] rounded-full shadow-sm animate-pulse">
+										...
+									</span>
+								) : (
+									<span className="text-[13px] bg-[#44548D] text-[#fff] font-semibold px-[9px] py-[3px] rounded-full shadow-sm">
+										{reminderStats?.total_reminders || 0}
+									</span>
+								)}
 							</div>
-						) : reminderStats && reminderStats.next_reminders.length > 0 ? (
-							reminderStats.next_reminders.map((reminder) => (
-								<div
-									key={reminder.id}
-									className="bg-[#F8F9FB] border border-gray-200 rounded-xl px-4 py-2.5 mb-3"
-								>
-									<p className="text-[15px] text-gray-900 font-medium mb-[2px] leading-tight">
-										{reminder.title}
-									</p>
-									<p className="text-[13px] text-gray-500 flex items-center gap-1">
-										<span className="text-[18px] leading-none">•</span> {formatReminderTime(reminder.reminder_time)}
+
+							{/* Reminder List */}
+							{isLoadingReminders ? (
+								<div className="text-center py-8 text-gray-500">
+									<p>Loading reminders...</p>
+								</div>
+							) : reminderStats && reminderStats.next_reminders.length > 0 ? (
+								reminderStats.next_reminders.map((reminder) => (
+									<div
+										key={reminder.id}
+										className="bg-[#F8F9FB] border border-gray-200 rounded-xl px-4 py-2.5 mb-3"
+									>
+										<p className="text-[15px] text-gray-900 font-medium mb-[2px] leading-tight">
+											{reminder.title}
+										</p>
+										<p className="text-[13px] text-gray-500 flex items-center gap-1">
+											<span className="text-[18px] leading-none">•</span>{" "}
+											{formatReminderTime(reminder.reminder_time)}
+										</p>
+									</div>
+								))
+							) : (
+								<div className="text-center py-8 text-gray-500">
+									<p>No active reminders</p>
+									<p className="text-sm mt-2">
+										Create your first reminder to get started
 									</p>
 								</div>
-							))
-						) : (
-							<div className="text-center py-8 text-gray-500">
-								<p>No active reminders</p>
-								<p className="text-sm mt-2">Create your first reminder to get started</p>
-							</div>
-						)}
+							)}
 						</div>
 
 						{/* Button */}
