@@ -63,7 +63,6 @@ export default function MorningBrief() {
 	const [latitude, setLatitude] = useState<number | null>(null);
 	const [longitude, setLongitude] = useState<number | null>(null);
 	const [temperatureC, setTemperatureC] = useState<number | null>(null);
-	const [weatherCondition, setWeatherCondition] = useState<string | null>(null);
 	const [isLocationLoading, setIsLocationLoading] = useState<boolean>(true);
 	const [isWeatherLoading, setIsWeatherLoading] = useState<boolean>(false);
 
@@ -76,12 +75,9 @@ export default function MorningBrief() {
 			setIsWeatherLoading(true);
 			const data = await getWeather(lat, lon);
 
-			if (typeof data?.temperatureC === "number") {
-				setTemperatureC(Math.round(data.temperatureC));
-			}
-			if (data?.condition) {
-				setWeatherCondition(data.condition);
-			}
+		if (typeof data?.temperatureC === "number") {
+			setTemperatureC(Math.round(data.temperatureC));
+		}
 		} catch (err) {
 			console.error("Error fetching weather:", err);
 		} finally {
