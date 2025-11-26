@@ -229,13 +229,16 @@ function SummaryCard({
 	// Use provided value or fallback
 	const currentProvider = provider || "gmail";
 
-	// Calculate 24-hour window
+	// Calculate 7-day window (extended from 24 hours to show more emails)
 	const now = new Date();
-	const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+	const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-	// Filter only recent emails
+	// Filter recent emails with improved date parsing
 	const recentEmails = safeEmails.filter((e) => {
-		if (!e.receivedAt) return false;
+		// If no receivedAt field, try timestamp or just include it
+		if (!e.receivedAt) {
+			return true; // Include emails without timestamp (better than hiding them)
+		}
 
 		let receivedAt: Date | null = null;
 
@@ -249,7 +252,11 @@ function SummaryCard({
 			if (!isNaN(parsed)) receivedAt = new Date(parsed);
 		}
 
-		return receivedAt && receivedAt > twentyFourHoursAgo && receivedAt <= now;
+		if (!receivedAt || isNaN(receivedAt.getTime())) {
+			return true; // Include emails with invalid dates
+		}
+
+		return receivedAt > sevenDaysAgo && receivedAt <= now;
 	});
 	// Use only recent emails for display and counts
 	const emailsToShow = recentEmails;
@@ -308,10 +315,10 @@ function SummaryCard({
 	).length;
 
 	const nextEvent = safeCalendarEvents[0];
-	// Email visibility controls
+	// Email visibility controls - use filtered emails (emailsToShow) instead of all emails
 	const [visibleCount, setVisibleCount] = React.useState(6);
-	const isAllVisible = visibleCount >= safeEmails.length;
-	const displayedEmails = safeEmails.slice(0, visibleCount);
+	const isAllVisible = visibleCount >= emailsToShow.length;
+	const displayedEmails = emailsToShow.slice(0, visibleCount);
 
 	return (
 		<div className="w-full rounded-[24px] border border-[#e6e9f0] bg-white/85 p-6 text-left shadow-[0_8px_24px_rgba(39,40,41,0.08)] backdrop-blur">
@@ -330,7 +337,7 @@ function SummaryCard({
 							</div>
 							<div className="flex items-center gap-1">
 								<span className="font-['Outfit',sans-serif] text-[14px] font-light text-[#454547]">
-									24 hours
+									Last 7 days
 								</span>
 								<Icon
 									name="ChevronRight"
