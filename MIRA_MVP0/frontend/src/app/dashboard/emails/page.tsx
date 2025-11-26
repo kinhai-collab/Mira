@@ -158,9 +158,9 @@ export default function EmailsPage() {
 	}, []);
 
 	const colorMap = {
-		high: { bar: "#F16A6A", bg: "#FDE7E7", text: "#D94C4C" },
-		medium: { bar: "#FABA2E", bg: "#FFF4DB", text: "#E5A100" },
-		low: { bar: "#95D6A4", bg: "#E7F8EB", text: "#49A15A" },
+		high: { bar: "#8C2B4A", bg: "#FDE7E7", text: "#8C2B4A" },
+		medium: { bar: "#AD819A", bg: "#FFF4DB", text: "#AD819A" },
+		low: { bar: "#44548D", bg: "#E7F8EB", text: "#44548D" },
 	};
 
 	// Filter emails based on active tab
@@ -287,13 +287,13 @@ export default function EmailsPage() {
 						</p>
 						{!isLoading && (
 							<div className="flex items-center gap-2">
-								<span className="text-[13px] bg-[#F16A6A] text-white px-3 py-[3px] rounded-full font-normal">
+								<span className="text-[13px] bg-[#8C2B4A] text-white px-3 py-[3px] rounded-full font-normal">
 									High: {emails.filter((e) => e.priority === "high").length}
 								</span>
-								<span className="text-[13px] bg-[#FABA2E] text-white px-3 py-[3px] rounded-full font-normal">
+								<span className="text-[13px] bg-[#AD819A] text-white px-3 py-[3px] rounded-full font-normal">
 									Medium: {emails.filter((e) => e.priority === "medium").length}
 								</span>
-								<span className="text-[13px] bg-[#95D6A4] text-white px-3 py-[3px] rounded-full font-normal">
+								<span className="text-[13px] bg-[#44548D] text-white px-3 py-[3px] rounded-full font-normal">
 									Low: {emails.filter((e) => e.priority === "low").length}
 								</span>
 							</div>
