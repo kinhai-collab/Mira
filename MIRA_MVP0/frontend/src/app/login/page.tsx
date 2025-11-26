@@ -197,8 +197,9 @@ export default function LoginPage() {
 					alert(`Google login failed: ${errorMsg}`);
 				}
 			}
-		} catch (err: any) {
-			alert(`Something went wrong with Google login: ${err.message || 'Unknown error'}`);
+		} catch (err: unknown) {
+			const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+			alert(`Something went wrong with Google login: ${errorMessage}`);
 		}
 	};
 

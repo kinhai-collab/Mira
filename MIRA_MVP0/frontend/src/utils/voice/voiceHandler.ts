@@ -355,7 +355,7 @@ async function recordOnce(): Promise<void> {
 					).replace(/\/+$/, "");
 
 					// Retrieve a valid token (refresh if needed) and include as Authorization header
-					let headers: Record<string, string> = {};
+					const headers: Record<string, string> = {};
 					try {
 						const token = await getValidToken();
 						if (token) headers.Authorization = `Bearer ${token}`;

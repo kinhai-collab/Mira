@@ -88,8 +88,9 @@ export default function SignupPage() {
 					alert(`Google signup failed: ${errorMsg}`);
 				}
 			}
-		} catch (err: any) {
-			alert(`Something went wrong with Google signup: ${err.message || 'Unknown error'}`);
+		} catch (err: unknown) {
+			const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+			alert(`Something went wrong with Google signup: ${errorMessage}`);
 		}
 	};
 

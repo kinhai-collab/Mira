@@ -252,7 +252,14 @@ export default function CalendarPage() {
         setIsModalOpen(true);
     };
 
-    const handleCreateEvent = async (eventData: any) => {
+    const handleCreateEvent = async (eventData: {
+        summary: string;
+        start: string;
+        end: string;
+        description?: string;
+        location?: string;
+        attendees?: string[];
+    }) => {
         try {
             console.log("Creating event with data:", eventData);
             await createEvent(eventData);
@@ -434,7 +441,7 @@ export default function CalendarPage() {
                 <div className="flex-1 overflow-y-auto px-4 py-2.5">
                     <div className="mb-2">
                         <div className="flex items-center gap-2 mb-2.5">
-                            <span className="text-[16px] font-medium text-[#333333]">Today's Events</span>
+                            <span className="text-[16px] font-medium text-[#333333]">Today&apos;s Events</span>
                             {isLoading && <span className="text-[12px] text-gray-400">Loading...</span>}
                         </div>
 

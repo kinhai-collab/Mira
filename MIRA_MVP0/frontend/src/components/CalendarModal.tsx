@@ -4,7 +4,14 @@ import { Icon } from "./Icon";
 interface CalendarModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (eventData: any) => void;
+  onSave: (eventData: {
+    summary: string;
+    start: string;
+    end: string;
+    description?: string;
+    location?: string;
+    attendees?: string[];
+  }) => void;
   initialDate?: Date;
 }
 
@@ -96,7 +103,7 @@ export function CalendarModal({ isOpen, onClose, onSave, initialDate }: Calendar
           {["Meeting", "Team", "Personal"].map((t) => (
             <button
               key={t}
-              onClick={() => setType(t.toLowerCase() as any)}
+              onClick={() => setType(t.toLowerCase() as "meeting" | "team" | "personal")}
               className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
                 type === t.toLowerCase()
                   ? "bg-black text-white"
