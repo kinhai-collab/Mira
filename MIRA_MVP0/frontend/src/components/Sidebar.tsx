@@ -37,10 +37,10 @@ function MobileProfileMenu() {
 			loadUserData();
 		};
 
-		window.addEventListener('userDataUpdated', handleUserDataUpdate);
-		
+		window.addEventListener("userDataUpdated", handleUserDataUpdate);
+
 		return () => {
-			window.removeEventListener('userDataUpdated', handleUserDataUpdate);
+			window.removeEventListener("userDataUpdated", handleUserDataUpdate);
 		};
 	}, []);
 
@@ -64,16 +64,16 @@ function MobileProfileMenu() {
 					open ? "bg-gray-100" : "hover:shadow-md"
 				}`}
 			>
-                {userData?.picture ? (
-                    <Image
-                        src={userData.picture}
-                        alt="Profile"
-                        width={32}
-                        height={32}
-                        className="w-8 h-8 rounded-full object-cover"
-                        unoptimized
-                    />
-                ) : (
+				{userData?.picture ? (
+					<Image
+						src={userData.picture}
+						alt="Profile"
+						width={32}
+						height={32}
+						className="w-8 h-8 rounded-full object-cover"
+						unoptimized
+					/>
+				) : (
 					<Icon name="Profile" size={22} />
 				)}
 			</button>
@@ -86,16 +86,16 @@ function MobileProfileMenu() {
 					<div className="px-4 pb-2 border-b border-gray-200">
 						<div className="flex flex-col gap-0.5 text-gray-700 text-sm">
 							<div className="flex items-center gap-2">
-                                {userData?.picture ? (
-                                    <Image
-                                        src={userData.picture}
-                                        alt="User"
-                                        width={16}
-                                        height={16}
-                                        className="w-4 h-4 rounded-full object-cover"
-                                        unoptimized
-                                    />
-                                ) : (
+								{userData?.picture ? (
+									<Image
+										src={userData.picture}
+										alt="User"
+										width={16}
+										height={16}
+										className="w-4 h-4 rounded-full object-cover"
+										unoptimized
+									/>
+								) : (
 									<div className="w-4 h-4 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white font-medium text-xs">
 										{userData?.fullName?.charAt(0) ||
 											userData?.email?.charAt(0) ||
@@ -137,42 +137,46 @@ export default function Sidebar() {
 	const router = useRouter();
 
 	return (
-		<div className="fixed left-0 top-0 flex flex-col items-center justify-between h-screen bg-[#F0ECF8] py-6 border-r border-gray-200 w-20 z-10">
-			{/* Top Section */}
-			<div className="flex flex-col items-center space-y-6">
-				{/* Mira orb */}
-				<div
-					onClick={() => router.push("/")}
-					className="w-8 h-8 rounded-full bg-gradient-to-br from-pink-300 to-purple-400 shadow-md cursor-pointer hover:scale-110 hover:shadow-[0_0_15px_4px_rgba(200,150,255,0.4)] transition-transform"
-					title="Go Home"
-				/>
-				{/* Navigation icons */}
-				<div className="flex flex-col items-center gap-5 mt-4">
-					{["Dashboard", "Settings", "Reminder"].map((name, i) => (
-						<div
-							key={i}
-							onClick={() => {
-								if (name === "Dashboard") router.push("/dashboard");
-								else router.push(`/dashboard/${name.toLowerCase()}`);
-							}}
-							className={`p-3 w-11 h-11 flex items-center justify-center rounded-lg border border-gray-100 shadow-sm transition-all cursor-pointer bg-white hover:shadow-md hover:bg-gray-100`}
-						>
-							<Icon
-								name={name}
-								size={22}
-								className="opacity-80 hover:opacity-100 transition"
-							/>
-						</div>
-					))}
+		<>
+			{/* DESKTOP SIDEBAR */}
+			<div className="hidden md:flex fixed left-0 top-0 flex-col items-center justify-between h-screen bg-[#F0ECF8] py-6 border-r border-gray-200 w-20 z-10">
+				{/* Top Section */}
+				<div className="flex flex-col items-center space-y-6">
+					{/* Mira orb */}
+					<div
+						onClick={() => router.push("/")}
+						className="w-8 h-8 rounded-full bg-gradient-to-br from-pink-300 to-purple-400 shadow-md cursor-pointer hover:scale-110 hover:shadow-[0_0_15px_4px_rgba(200,150,255,0.4)] transition-transform"
+						title="Go Home"
+					/>
+
+					{/* Navigation icons */}
+					<div className="flex flex-col items-center gap-5 mt-4">
+						{["Dashboard", "Settings", "Reminder"].map((name, i) => (
+							<div
+								key={i}
+								onClick={() => {
+									if (name === "Dashboard") router.push("/dashboard");
+									else router.push(`/dashboard/${name.toLowerCase()}`);
+								}}
+								className="p-3 w-11 h-11 flex items-center justify-center rounded-lg border border-gray-100 shadow-sm transition-all cursor-pointer bg-white hover:shadow-md hover:bg-gray-100"
+							>
+								<Icon
+									name={name}
+									size={22}
+									className="opacity-80 hover:opacity-100 transition"
+								/>
+							</div>
+						))}
+					</div>
+				</div>
+
+				{/* Bottom Profile */}
+				<div className="pt-4">
+					<ProfileMenu />
 				</div>
 			</div>
 
-			{/* Bottom Profile */}
-			<div className="pt-4">
-				<ProfileMenu />
-			</div>
-
-			{/* Bottom Nav (Mobile only) */}
+			{/* MOBILE BOTTOM NAV */}
 			<div className="md:hidden fixed bottom-0 left-0 right-0 bg-[#F0ECF8] border-t border-gray-200 flex justify-around items-center py-3 z-[999] shadow-lg">
 				{["Dashboard", "Settings", "Reminder"].map((name, i) => (
 					<button
@@ -187,9 +191,8 @@ export default function Sidebar() {
 					</button>
 				))}
 
-				{/* ✅ Profile icon with same style */}
 				<MobileProfileMenu />
 			</div>
-		</div>
+		</>
 	);
 }

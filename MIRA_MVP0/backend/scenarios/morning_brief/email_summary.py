@@ -115,6 +115,118 @@ def get_email_summary(user_id: str) -> str:
         traceback.print_exc()
         return ""
 
+def get_outlook_email_summary(user_id: str) -> str:
+    """
+    Fetch unread Outlook email summary using Microsoft Graph.
+    Returns a conversational summary for Outlook inbox only.
+    """
+    print(f"📧 Fetching Outlook email summary for user: {user_id}")
+
+    try:
+        from supabase import create_client
+        import os
+
+        SUPABASE_URL = os.getenv("SUPABASE_URL")
+        SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        GRAPH_API_URL = "https://graph.microsoft.com/v1.0"
+
+        if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+            print("Missing Supabase config")
+            return ""
+
+        supabase = create_client(SUPABASE_URL.rstrip('/'), SUPABASE_SERVICE_ROLE_KEY)
+
+        # Fetch stored tokens
+        res = supabase.table("outlook_credentials").select("*").eq("uid", user_id).execute()
+        if not res.data:
+            print("⚠ No Outlook credentials found")
+            return ""
+
+        creds = res.data[0]
+        access_token = creds.get("access_token")
+        refresh_token = creds.get("refresh_token")
+        expiry_str = creds.get("expiry")
+
+        # Handle expiration
+        if expiry_str:
+            expiry = datetime.fromisoformat(expiry_str.replace("Z", "+00:00"))
+            now = datetime.now(timezone.utc)
+
+            if expiry <= (now + timedelta(minutes=5)):
+                print("🔁 Outlook token expired, refreshing...")
+                MICROSOFT_CLIENT_ID = os.getenv("MICROSOFT_CLIENT_ID")
+                MICROSOFT_CLIENT_SECRET = os.getenv("MICROSOFT_CLIENT_SECRET")
+                TOKEN_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
+
+                refresh_data = {
+                    "client_id": MICROSOFT_CLIENT_ID,
+                    "client_secret": MICROSOFT_CLIENT_SECRET,
+                    "refresh_token": refresh_token,
+                    "grant_type": "refresh_token",
+                    "scope": "User.Read Mail.Read"
+                }
+
+                refresh_resp = requests.post(TOKEN_URL, data=refresh_data).json()
+
+                if "access_token" in refresh_resp:
+                    access_token = refresh_resp["access_token"]
+                    new_expiry = now + timedelta(seconds=refresh_resp.get("expires_in", 3600))
+
+                    supabase.table("outlook_credentials").update({
+                        "access_token": refresh_resp["access_token"],
+                        "refresh_token": refresh_resp.get("refresh_token", refresh_token),
+                        "expiry": new_expiry.isoformat(),
+                    }).eq("uid", user_id).execute()
+
+        if not access_token:
+            print("⚠ No Outlook access token available")
+            return ""
+
+        headers = {"Authorization": f"Bearer {access_token}"}
+
+        # unread count
+        unread_url = f"{GRAPH_API_URL}/me/mailFolders/Inbox/messages?$filter=isRead eq false&$count=true&$top=1"
+        unread_resp = requests.get(unread_url, headers=headers).json()
+        unread_count = unread_resp.get("@odata.count", 0)
+
+        # important unread
+        important_url = f"{GRAPH_API_URL}/me/messages?$filter=isRead eq false and importance eq 'high'&$count=true&$top=1"
+        important_resp = requests.get(important_url, headers=headers).json()
+        important_count = important_resp.get("@odata.count", 0)
+
+        # recent unread (24 hours)
+        yesterday = (datetime.utcnow() - timedelta(days=1)).isoformat() + "Z"
+        recent_url = f"{GRAPH_API_URL}/me/messages?$filter=isRead eq false and receivedDateTime ge {yesterday}&$top=10"
+        recent_resp = requests.get(recent_url, headers=headers).json()
+        recent_msgs = recent_resp.get("value", [])
+
+        # summary text
+        summary = []
+
+        if unread_count == 0:
+            summary.append("You have no unread Outlook emails.")
+        else:
+            summary.append(f"You have {unread_count} unread Outlook emails.")
+
+            if important_count > 0:
+                summary.append(f"{important_count} are marked as important.")
+
+        # sender summary
+        senders = {}
+        for m in recent_msgs[:5]:
+            sender = m.get("from", {}).get("emailAddress", {}).get("name")
+            if sender:
+                senders[sender] = senders.get(sender, 0) + 1
+
+        if senders:
+            top_sender = max(senders.items(), key=lambda x: x[1])
+            summary.append(f"Most unread messages are from {top_sender[0]}.")
+
+        return " ".join(summary)
+
+    except Exception as e:
+        print("⚠ Outlook summary error:", e)
+        return ""
 
 def get_email_counts(user_id: str) -> Dict[str, int]:
     """

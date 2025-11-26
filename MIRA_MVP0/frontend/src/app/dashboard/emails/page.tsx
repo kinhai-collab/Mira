@@ -8,6 +8,7 @@ import { useState, useEffect } from "react";
 import { fetchEmailList, type Email } from "@/utils/dashboardApi";
 import { fetchEmailSummary } from "@/utils/dashboardApi";
 import { getWeather } from "@/utils/weather";
+import Sidebar from "@/components/Sidebar";
 
 // Helper: Generate days for a given month
 const generateCalendarDays = (year: number, month: number) => {
@@ -583,10 +584,10 @@ export default function EmailsPage() {
 												: "#E7F8EB",
 										color:
 											selectedEmail.priority === "high"
-												? "#D94C4C"
+												? "#8C2B4A"
 												: selectedEmail.priority === "medium"
-												? "#E5A100"
-												: "#49A15A",
+												? "#AD819A"
+												: "#44548D",
 									}}
 								>
 									{selectedEmail.sender_name
@@ -607,10 +608,10 @@ export default function EmailsPage() {
 								<span
 									className={`ml-3 text-[13px] px-3 py-[3px] rounded-full whitespace-nowrap ${
 										selectedEmail.priority === "high"
-											? "bg-[#F16A6A] text-white"
+											? "bg-[#8C2B4A] text-white"
 											: selectedEmail.priority === "medium"
-											? "bg-[#FABA2E] text-white"
-											: "bg-[#95D6A4] text-white"
+											? "bg-[#AD819A] text-white"
+											: "bg-[#44548D] text-white"
 									}`}
 								>
 									{selectedEmail.priority.charAt(0).toUpperCase() +
@@ -684,6 +685,7 @@ export default function EmailsPage() {
 					</div>
 				</div>
 			)}
+			<Sidebar />
 		</div>
 	);
 }

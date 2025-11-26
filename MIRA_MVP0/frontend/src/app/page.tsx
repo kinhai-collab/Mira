@@ -19,6 +19,7 @@ import {
 } from "@/utils/voice/voiceHandler";
 import { getWeather } from "@/utils/weather";
 import HeaderBar from "@/components/HeaderBar";
+import Sidebar from "@/components/Sidebar";
 
 const DEFAULT_SUMMARY_STEPS = [
 	{ id: "emails", label: "Checking your inbox for priority emails..." },
@@ -75,7 +76,6 @@ export default function Home() {
 	const [timezone, setTimezone] = useState<string>(
 		() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
 	);
-
 
 	// Weather state: store coords and current temperature. We'll call Open-Meteo (no API key)
 	const [latitude, setLatitude] = useState<number | null>(null);
@@ -320,9 +320,8 @@ export default function Home() {
 
 			// The backend now provides both Gmail + Outlook emails and Google + Outlook Calendar events
 			// in the detail.calendarEvents array, so we can use it directly
-			const normalizedCalendarEvents: VoiceSummaryCalendarEvent[] = Array.isArray(detail.calendarEvents)
-				? detail.calendarEvents
-				: [];
+			const normalizedCalendarEvents: VoiceSummaryCalendarEvent[] =
+				Array.isArray(detail.calendarEvents) ? detail.calendarEvents : [];
 
 			setSummarySteps(prepareVoiceSteps(rawSteps));
 			setSummaryEmails(detail.emails ?? []);
@@ -532,7 +531,7 @@ export default function Home() {
 	};
 
 	return (
-		<div className="flex flex-col min-h-screen bg-[#F8F8FB] text-gray-800 overflow-hidden">
+		<div className="flex flex-col min-h-screen bg-[#F8F8FB] text-gray-800">
 			{/* Global Header Bar */}
 			<div className="absolute top-6 left-0 w-full pl-[70px] md:pl-[90px]">
 				<HeaderBar
@@ -547,12 +546,11 @@ export default function Home() {
 					isWeatherLoading={isWeatherLoading}
 				/>
 			</div>
-
-			<main className="flex-1 flex flex-col items-center px-4 sm:px-6 md:px-8 pt-20 relative overflow-y-auto pb-20 md:pb-0">
+			<main className="flex-1 flex flex-col items-center px-2 sm:px-4 md:px-6 pt-20 pb-20">
 				{/* SCALE CONTAINER */}
-				<div className="scale-[0.85] flex flex-col items-center w-full max-w-[900px] mx-auto px-4">
+				<div className="scale-[0.9] flex flex-col items-center w-full max-w-[900px] mx-auto px-4">
 					{/* Orb + Greeting */}
-					<div className="relative flex flex-col items-center mt-16 sm:mt-20">
+					<div className="relative flex flex-col items-center mt-9 sm:mt-20">
 						<div className="w-32 h-32 sm:w-44 sm:h-44 rounded-full bg-gradient-to-br from-[#C4A0FF] via-[#E1B5FF] to-[#F5C5E5] shadow-[0_0_80px_15px_rgba(210,180,255,0.45)] animate-pulse"></div>
 						<p className="w-full max-w-[368px] h-[50px] opacity-100 text-[rgba(70,70,71,1)] font-['Outfit'] font-medium text-lg sm:text-2xl md:text-3xl lg:text-[40px] leading-[100%] tracking-[0.5%] mt-6 sm:mt-8 text-center whitespace-nowrap flex items-center justify-center">
 							{greeting}
@@ -763,6 +761,7 @@ export default function Home() {
 						</div>
 					</div>
 				</div>
+				<Sidebar />
 			</main>
 		</div>
 	);
