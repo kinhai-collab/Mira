@@ -136,8 +136,14 @@ export default function OnboardingStep4() {
 		setConnecting("Outlook Calendar");
 		try {
 			const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
-			// Pass purpose and return_to so settings page redirects back here after OAuth
-			window.location.href = `${apiBase}/microsoft/auth?purpose=calendar&return_to=${encodeURIComponent(window.location.href)}`;
+			const token = localStorage.getItem("access_token") || localStorage.getItem("token");
+			if (!token) {
+				alert("Please log in first to connect Outlook Calendar.");
+				setConnecting(null);
+				return;
+			}
+			// Pass token, purpose and return_to so backend can identify user and redirect back after OAuth
+			window.location.href = `${apiBase}/microsoft/auth?token=${encodeURIComponent(token)}&purpose=calendar&return_to=${encodeURIComponent(window.location.href)}`;
 		} catch (error) {
 			console.error("Error connecting Outlook Calendar:", error);
 			alert("Failed to connect Outlook Calendar. Please try again.");

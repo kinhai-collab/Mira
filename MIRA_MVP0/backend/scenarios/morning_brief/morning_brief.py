@@ -4,8 +4,7 @@ from .mood_check import get_user_mood, adjust_voice_tone
 from .event_reader import get_today_events, read_events
 from .daily_summary import get_weather_and_commute
 from .emotional_closure import get_closing_phrase
-from .email_summary import get_email_summary
-from voice.voice_generation import generate_voice
+from .email_summary import get_email_summary, get_email_counts
 
 from openai import OpenAI
 import os
@@ -64,4 +63,14 @@ def run_morning_brief(user_id: str, user_name: str, tz: str):
     # 10️⃣ Generate audio
     audio_base64, filename = generate_voice(brief)
 
-    return {"text": brief, "audio_base64": audio_base64, "audio_filename": filename}
+    # 11️⃣ Get email counts for UI
+    email_counts = get_email_counts(user_id)
+
+    return {
+            "text": brief, 
+            "audio_base64": audio_base64, 
+            "audio_filename": filename,
+            "events": events,
+            "total_events": len(events),
+            "email_counts": email_counts
+        }

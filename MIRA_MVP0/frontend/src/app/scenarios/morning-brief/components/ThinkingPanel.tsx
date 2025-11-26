@@ -4,88 +4,88 @@
 import Image from "next/image";
 
 export default function ThinkingPanel() {
-	const tasks = [
-		"Analyzing your calendar for today…",
-		"Prioritizing 3 urgent emails…",
-		"Suggesting optimal meeting time…",
-		"Processing daily brief…",
-	];
-
 	return (
 		<div
 			className="
-				relative bg-white rounded-2xl border border-gray-100 
-				shadow-[0_4px_40px_#BAB2DA]/30 
-				p-4 sm:p-6 md:p-8 
-				w-full max-w-[95%] sm:max-w-[720px] md:max-w-[840px] lg:max-w-[960px] 
-				mx-auto 
-				transition-all duration-700 ease-in-out
+				bg-white 
+				rounded-[24px] 
+				border border-[#E5E5E5] 
+				shadow-[0_4px_12px_rgba(0,0,0,0.04)]
+				p-6 
+				pt-5
+				pb-6
+				w-full 
+				max-w-[760px]
+				mx-auto
 			"
 		>
-			{/* Status Row */}
-			<div
-				className="
-					flex items-center gap-2 
-					text-[#6245A7] 
-					text-xs sm:text-sm md:text-base 
-					font-normal mb-3 sm:mb-4
-				"
-			>
-				<span
-					className="
-						w-2 h-2 sm:w-2.5 sm:h-2.5 
-						rounded-full bg-[#6245A7] 
-						shadow-[0_0_8px_#7C5BEF]
-					"
-				/>
-				<span>Thinking…</span>
+			{/* Header */}
+			<div className="flex items-center gap-3 mb-2">
+				<span className="w-3 h-3 rounded-full bg-[#6245A7] shadow-[0_0_6px_rgba(98,68,158,0.45)]" />
+				<p className="text-[#1F1F1F] text-[17px] font-medium">Thinking…</p>
 			</div>
 
 			{/* Title */}
-			<p
-				className="
-					text-[#2F2F2F] font-normal 
-					mb-3 sm:mb-4 
-					text-[13px] sm:text-[15px] md:text-[16px]
-				"
-			>
+			<p className="text-[#1F1F1F] font-semibold text-[19px] mb-4">
 				Preparing your morning brief…
 			</p>
 
-			{/* Task List with Left Guide Line */}
-			<div
-				className="
-					relative pl-4 sm:pl-5 
-					border-l-[1.5px] sm:border-l-2 border-[#6245A7]/40 
-					space-y-1.5 sm:space-y-2
-				"
-			>
-				{tasks.map((task, i) => (
-					<div
-						key={i}
-						className={`flex items-center gap-2 ${
-							i === tasks.length - 1 ? "opacity-60" : ""
-						}`}
-					>
-						<Image
-							src="/Icons/Property 1=Done.svg"
-							alt="Done"
-							width={13}
-							height={13}
-							className={`sm:w-[15px] sm:h-[15px] ${
-								i === tasks.length - 1 ? "opacity-50" : ""
-							}`}
-						/>
-						<span
-							className="
-								text-[12px] sm:text-[14px] md:text-[15px] 
-								text-gray-700
-							"
-						>
-							{task}
-						</span>
-					</div>
-				))}
+			{/* Task List */}
+			<div className="pl-5 border-l-[3px] border-[#C9BDFC] space-y-3">
+				{/* Task 1 */}
+				<div className="flex items-center gap-3">
+					<Image
+						src="/Icons/Property 1=Done in circle.svg"
+						alt="done"
+						width={18}
+						height={18}
+						className="opacity-90"
+					/>
+					<p className="text-[#303030] text-[16px] leading-tight">
+						Analyzing your calendar for today…
+					</p>
+				</div>
+
+				{/* Task 2 */}
+				<div className="flex items-center gap-3">
+					<Image
+						src="/Icons/Property 1=Done in circle.svg"
+						alt="done"
+						width={18}
+						height={18}
+						className="opacity-90"
+					/>
+					<p className="text-[#303030] text-[16px] leading-tight">
+						Prioritizing 3 urgent emails…
+					</p>
+				</div>
+
+				{/* Task 3 */}
+				<div className="flex items-center gap-3">
+					<Image
+						src="/Icons/Property 1=Done in circle.svg"
+						alt="done"
+						width={18}
+						height={18}
+						className="opacity-90"
+					/>
+					<p className="text-[#303030] text-[16px] leading-tight">
+						Suggesting optimal meeting time…
+					</p>
+				</div>
+
+				{/* Task 4 (faded) */}
+				<div className="flex items-center gap-3 opacity-40">
+					<Image
+						src="/Icons/Property 1=Done in circle.svg"
+						alt="pending"
+						width={18}
+						height={18}
+					/>
+					<p className="text-[#6B6B6B] text-[16px] leading-tight">
+						Processing daily brief…
+					</p>
+				</div>
 			</div>
 		</div>
 	);

@@ -6,7 +6,9 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import { fetchEmailList, type Email } from "@/utils/dashboardApi";
+import { fetchEmailSummary } from "@/utils/dashboardApi";
 import { getWeather } from "@/utils/weather";
+import Sidebar from "@/components/Sidebar";
 
 // Helper: Generate days for a given month
 const generateCalendarDays = (year: number, month: number) => {
@@ -28,6 +30,8 @@ export default function EmailsPage() {
 	const [showEmailPopup, setShowEmailPopup] = useState(false);
 	const [emails, setEmails] = useState<Email[]>([]);
 	const [isLoading, setIsLoading] = useState(true);
+	const [summary, setSummary] = useState<string | null>(null);
+	const [summaryLoading, setSummaryLoading] = useState(false);
 
 	// Weather & location state
 	const [location, setLocation] = useState<string>("New York");
@@ -51,17 +55,39 @@ export default function EmailsPage() {
 
 		loadEmails();
 	}, []);
+	useEffect(() => {
+		if (!selectedEmail?.id) {
+			setSummary(null);
+			return;
+		}
+
+		const getSummary = async () => {
+			setSummaryLoading(true);
+			try {
+				const result = await fetchEmailSummary(selectedEmail.id);
+				if (result?.status === "success") setSummary(result.summary);
+				else setSummary(null);
+			} catch (error) {
+				console.error(error);
+				setSummary(null);
+			} finally {
+				setSummaryLoading(false);
+			}
+		};
+
+		getSummary();
+	}, [selectedEmail]);
 
 	// Fetch weather using Open-Meteo API directly
 	const fetchWeatherForCoords = async (lat: number, lon: number) => {
 		try {
 			setIsWeatherLoading(true);
-			console.log('Emails page: fetching weather for coords:', lat, lon);
+			console.log("Emails page: fetching weather for coords:", lat, lon);
 			const data = await getWeather(lat, lon);
 			const temp = data?.temperatureC;
-			if (typeof temp === 'number') setTemperatureC(temp);
+			if (typeof temp === "number") setTemperatureC(temp);
 		} catch (err) {
-			console.error('Emails page: Error fetching weather:', err);
+			console.error("Emails page: Error fetching weather:", err);
 		} finally {
 			setIsWeatherLoading(false);
 		}
@@ -71,22 +97,23 @@ export default function EmailsPage() {
 	useEffect(() => {
 		const ipFallback = async () => {
 			try {
-				const res = await fetch('https://ipapi.co/json/');
+				const res = await fetch("https://ipapi.co/json/");
 				if (!res.ok) return;
 				const data = await res.json();
-				const city = data.city || data.region || data.region_code || data.country_name;
+				const city =
+					data.city || data.region || data.region_code || data.country_name;
 				if (city) setLocation(city);
 				if (data.latitude && data.longitude) {
 					fetchWeatherForCoords(Number(data.latitude), Number(data.longitude));
 				}
 			} catch (e) {
-				console.error('Emails page IP fallback error:', e);
+				console.error("Emails page IP fallback error:", e);
 			} finally {
 				setIsLocationLoading(false);
 			}
 		};
 
-		if (!('geolocation' in navigator)) {
+		if (!("geolocation" in navigator)) {
 			ipFallback();
 			return;
 		}
@@ -94,7 +121,7 @@ export default function EmailsPage() {
 		const success = async (pos: GeolocationPosition) => {
 			try {
 				const { latitude: lat, longitude: lon } = pos.coords;
-				
+
 				// Use OpenStreetMap Nominatim reverse geocoding
 				const res = await fetch(
 					`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}`
@@ -111,10 +138,10 @@ export default function EmailsPage() {
 					data?.address?.state ||
 					data?.address?.county;
 				if (city) setLocation(city);
-				
+
 				fetchWeatherForCoords(lat, lon).catch((e) => console.error(e));
 			} catch (err) {
-				console.error('Emails page reverse geocode error:', err);
+				console.error("Emails page reverse geocode error:", err);
 				await ipFallback();
 			} finally {
 				setIsLocationLoading(false);
@@ -122,32 +149,52 @@ export default function EmailsPage() {
 		};
 
 		const failure = async (err: GeolocationPositionError) => {
-			console.warn('Emails page geolocation failed:', err);
+			console.warn("Emails page geolocation failed:", err);
 			await ipFallback();
 		};
 
-		navigator.geolocation.getCurrentPosition(success, failure, { timeout: 10000 });
+		navigator.geolocation.getCurrentPosition(success, failure, {
+			timeout: 10000,
+		});
 	}, []);
 
 	const colorMap = {
-		high: { bar: "#F16A6A", bg: "#FDE7E7", text: "#D94C4C" },
-		medium: { bar: "#FABA2E", bg: "#FFF4DB", text: "#E5A100" },
-		low: { bar: "#95D6A4", bg: "#E7F8EB", text: "#49A15A" },
+		high: { bar: "#8C2B4A", bg: "#FDE7E7", text: "#8C2B4A" },
+		medium: { bar: "#AD819A", bg: "#FFF4DB", text: "#AD819A" },
+		low: { bar: "#44548D", bg: "#E7F8EB", text: "#44548D" },
 	};
 
-	const filteredEmails =
-		activeTab === "All"
-			? emails
-			: emails.filter((e) => e.priority === activeTab.toLowerCase());
-	
+	// Filter emails based on active tab
+	let filteredEmails = emails;
+
+	// Priority tabs
+	if (["High", "Medium", "Low"].includes(activeTab)) {
+		filteredEmails = emails.filter(
+			(e) => e.priority === activeTab.toLowerCase()
+		);
+	}
+	// Provider tabs
+	else if (activeTab === "Gmail") {
+		filteredEmails = emails.filter((e) => e.provider === "gmail");
+	} else if (activeTab === "Outlook") {
+		filteredEmails = emails.filter((e) => e.provider === "outlook");
+	}
+	// All tab shows everything
+
 	const totalImportantCount = filteredEmails.length;
+
+	// Count emails by provider
+	const gmailCount = emails.filter((e) => e.provider === "gmail").length;
+	const outlookCount = emails.filter((e) => e.provider === "outlook").length;
 
 	const today = new Date();
 	const year = selectedDate.getFullYear();
 	const month = selectedDate.getMonth();
 	const days = generateCalendarDays(year, month);
 
-	const displayLocation = isLocationLoading ? "Locating..." : location || "New York";
+	const displayLocation = isLocationLoading
+		? "Locating..."
+		: location || "New York";
 	const displayTemperature =
 		temperatureC != null
 			? `${Math.round(temperatureC)}°C`
@@ -233,17 +280,21 @@ export default function EmailsPage() {
 				<div className="flex justify-between items-center px-6 py-5 border-b border-[#E7E7E7] bg-[#F8F9FB]">
 					<div className="flex items-center gap-4">
 						<p className="text-[16px] text-gray-800 font-normal">
-							{isLoading ? "Loading..." : `${totalImportantCount} ${totalImportantCount === 1 ? "Email" : "Emails"}`}
+							{isLoading
+								? "Loading..."
+								: `${totalImportantCount} ${
+										totalImportantCount === 1 ? "Email" : "Emails"
+								  }`}
 						</p>
 						{!isLoading && (
 							<div className="flex items-center gap-2">
-								<span className="text-[13px] bg-[#F16A6A] text-white px-3 py-[3px] rounded-full font-normal">
+								<span className="text-[13px] bg-[#8C2B4A] text-white px-3 py-[3px] rounded-full font-normal">
 									High: {emails.filter((e) => e.priority === "high").length}
 								</span>
-								<span className="text-[13px] bg-[#FABA2E] text-white px-3 py-[3px] rounded-full font-normal">
+								<span className="text-[13px] bg-[#AD819A] text-white px-3 py-[3px] rounded-full font-normal">
 									Medium: {emails.filter((e) => e.priority === "medium").length}
 								</span>
-								<span className="text-[13px] bg-[#95D6A4] text-white px-3 py-[3px] rounded-full font-normal">
+								<span className="text-[13px] bg-[#44548D] text-white px-3 py-[3px] rounded-full font-normal">
 									Low: {emails.filter((e) => e.priority === "low").length}
 								</span>
 							</div>
@@ -330,12 +381,67 @@ export default function EmailsPage() {
 				</div>
 
 				{/* Tabs */}
-				<div className="flex border-b border-[#E7E7E7] text-[15px] text-gray-500">
-					{["All", "High", "Medium", "Low"].map((tab, i) => (
+				<div className="flex border-b border-[#E7E7E7] text-[15px] text-gray-500 overflow-x-auto">
+					{/* All Tab */}
+					<div
+						onClick={() => setActiveTab("All")}
+						className={`px-8 py-4 cursor-pointer text-center transition-all whitespace-nowrap ${
+							activeTab === "All"
+								? "text-[#62445E] border-b-[2px] border-[#62445E] bg-white"
+								: "hover:bg-[#F9F9FC]"
+						}`}
+					>
+						All
+					</div>
+
+					{/* Gmail Tab (only show if there are Gmail emails) */}
+					{gmailCount > 0 && (
+						<div
+							onClick={() => setActiveTab("Gmail")}
+							className={`px-8 py-4 cursor-pointer text-center transition-all whitespace-nowrap flex items-center gap-2 ${
+								activeTab === "Gmail"
+									? "text-[#62445E] border-b-[2px] border-[#62445E] bg-white"
+									: "hover:bg-[#F9F9FC]"
+							}`}
+						>
+							<Image
+								src="/Icons/Email/skill-icons_gmail-light.png"
+								alt="Gmail"
+								width={18}
+								height={18}
+								className="opacity-90"
+							/>
+							Gmail ({gmailCount})
+						</div>
+					)}
+
+					{/* Outlook Tab (only show if there are Outlook emails) */}
+					{outlookCount > 0 && (
+						<div
+							onClick={() => setActiveTab("Outlook")}
+							className={`px-8 py-4 cursor-pointer text-center transition-all whitespace-nowrap flex items-center gap-2 ${
+								activeTab === "Outlook"
+									? "text-[#62445E] border-b-[2px] border-[#62445E] bg-white"
+									: "hover:bg-[#F9F9FC]"
+							}`}
+						>
+							<Image
+								src="/Icons/Email/vscode-icons_file-type-outlook.png"
+								alt="Outlook"
+								width={18}
+								height={18}
+								className="opacity-90"
+							/>
+							Outlook ({outlookCount})
+						</div>
+					)}
+
+					{/* Priority Tabs */}
+					{["High", "Medium", "Low"].map((tab, i) => (
 						<div
 							key={i}
 							onClick={() => setActiveTab(tab)}
-							className={`px-12 py-4 cursor-pointer text-center transition-all ${
+							className={`px-8 py-4 cursor-pointer text-center transition-all whitespace-nowrap ${
 								activeTab === tab
 									? "text-[#62445E] border-b-[2px] border-[#62445E] bg-white"
 									: "hover:bg-[#F9F9FC]"
@@ -356,7 +462,9 @@ export default function EmailsPage() {
 						</div>
 					) : filteredEmails.length === 0 ? (
 						<p className="text-center py-6 text-gray-400 text-[14px]">
-							{emails.length === 0 ? "No emails found. Connect your Gmail to see emails." : "No emails found for this category."}
+							{emails.length === 0
+								? "No emails found. Connect your Gmail to see emails."
+								: "No emails found for this category."}
 						</p>
 					) : (
 						filteredEmails.map((email, index) => {
@@ -387,6 +495,18 @@ export default function EmailsPage() {
 												{email.sender_name}
 												{email.is_unread && (
 													<span className="inline-block w-2 h-2 bg-blue-500 rounded-full"></span>
+												)}
+												{/* Show provider badge only in "All" tab */}
+												{activeTab === "All" && (
+													<span
+														className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${
+															email.provider === "gmail"
+																? "bg-blue-100 text-blue-700"
+																: "bg-purple-100 text-purple-700"
+														}`}
+													>
+														{email.provider === "gmail" ? "Gmail" : "Outlook"}
+													</span>
 												)}
 											</p>
 											<p className="text-gray-600 text-[14px] truncate">
@@ -432,8 +552,23 @@ export default function EmailsPage() {
 			</div>
 			{/* Email Popup */}
 			{showEmailPopup && selectedEmail && (
-				<div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
-					<div className="relative bg-[#FFFFFF] w-[80%] max-w-[800px] h-[70vh] rounded-[12px] shadow-lg flex flex-col overflow-hidden animate-fadeUp">
+				<div
+					className="fixed inset-0 
+        bg-black/55
+        backdrop-blur-[2px]
+        flex items-center justify-center
+        z-50 transition-all"
+				>
+					<div
+						className="relative bg-white 
+    w-[85%] max-w-[850px] 
+    max-h-[80vh] 
+    rounded-lg
+    shadow-[0_8px_40px_rgba(0,0,0,0.10)]
+    overflow-y-auto 
+    p-0 
+    animate-fadeUp"
+					>
 						{/* PopUp Header */}
 						<div className="flex justify-between items-center p-5 border-b border-gray-200 bg-[#FAFAFA]">
 							<div className="flex items-center gap-3">
@@ -449,10 +584,10 @@ export default function EmailsPage() {
 												: "#E7F8EB",
 										color:
 											selectedEmail.priority === "high"
-												? "#D94C4C"
+												? "#8C2B4A"
 												: selectedEmail.priority === "medium"
-												? "#E5A100"
-												: "#49A15A",
+												? "#AD819A"
+												: "#44548D",
 									}}
 								>
 									{selectedEmail.sender_name
@@ -473,10 +608,10 @@ export default function EmailsPage() {
 								<span
 									className={`ml-3 text-[13px] px-3 py-[3px] rounded-full whitespace-nowrap ${
 										selectedEmail.priority === "high"
-											? "bg-[#F16A6A] text-white"
+											? "bg-[#8C2B4A] text-white"
 											: selectedEmail.priority === "medium"
-											? "bg-[#FABA2E] text-white"
-											: "bg-[#95D6A4] text-white"
+											? "bg-[#AD819A] text-white"
+											: "bg-[#44548D] text-white"
 									}`}
 								>
 									{selectedEmail.priority.charAt(0).toUpperCase() +
@@ -522,11 +657,15 @@ export default function EmailsPage() {
 
 						{/* Content */}
 						<div className="flex-1 overflow-y-auto p-5">
-							{selectedEmail.body ? (
+							{summaryLoading ? (
+								<div className="text-center text-gray-400 text-[16px] py-12">
+									Loading summary...
+								</div>
+							) : summary ? (
 								<div
 									className="text-gray-700 text-[14px] leading-relaxed whitespace-pre-wrap"
 									dangerouslySetInnerHTML={{
-										__html: selectedEmail.body.replace(/\n/g, "<br />"),
+										__html: summary.replace(/\n/g, "<br />"),
 									}}
 								/>
 							) : (
@@ -546,6 +685,7 @@ export default function EmailsPage() {
 					</div>
 				</div>
 			)}
+			<Sidebar />
 		</div>
 	);
 }

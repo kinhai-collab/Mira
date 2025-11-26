@@ -54,7 +54,7 @@ export default function ConfirmationPanel({
 				<ul className="text-gray-700 text-xs sm:text-sm md:text-base space-y-1.5">
 					<li className="flex items-center gap-2">
 						<Image
-							src="/Icons/Property 1=Done.svg"
+							src="/Icons/Property 1=Done in circle.svg"
 							alt="Done"
 							width={14}
 							height={14}
@@ -63,7 +63,7 @@ export default function ConfirmationPanel({
 					</li>
 					<li className="flex items-center gap-2">
 						<Image
-							src="/Icons/Property 1=Done.svg"
+							src="/Icons/Property 1=Done in circle.svg"
 							alt="Done"
 							width={14}
 							height={14}

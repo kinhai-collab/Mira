@@ -1,11 +1,11 @@
-from fastapi import APIRouter, Form, HTTPException, Body, Header, Query
+from fastapi import APIRouter, Form, HTTPException, Body, Header, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 import requests
 import os
 from dotenv import load_dotenv
 from urllib.parse import urlencode
-from fastapi import Header
 from typing import Optional
+from datetime import datetime, timedelta, timezone
 from supabase import create_client, Client
 
 # Load environment variables
@@ -15,7 +15,8 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+# Normalize URL to remove trailing slash to prevent double-slash issues
+supabase: Client = create_client(SUPABASE_URL.rstrip('/') if SUPABASE_URL else "", SUPABASE_SERVICE_ROLE_KEY)
 
 # Dynamic redirect URI based on environment
 def get_redirect_uri():
@@ -276,8 +277,7 @@ async def save_gmail_credentials(
         
         return JSONResponse(content={
             "status": "success",
-            "message": "Gmail credentials saved successfully",
-            "debug": {"uid": uid, "has_refresh_token": bool(gmail_refresh_token)}
+            "message": "Gmail credentials saved successfully"
         })
     except HTTPException:
         raise
@@ -339,14 +339,18 @@ MICROSOFT_REDIRECT_URI = os.getenv("MICROSOFT_REDIRECT_URI", "http://localhost:8
 MICROSOFT_AUTH_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
 MICROSOFT_TOKEN_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
 MICROSOFT_SCOPES = [
+    "offline_access",  # Required to get refresh_token for long-term access
     "User.Read",
     "Calendars.ReadWrite",
     "Mail.Read"
 ]
 
 # --- Helpers ---
-def get_microsoft_access_token(code: str) -> str:
-    # Exchange authorization code for access token
+def get_microsoft_access_token(code: str) -> dict:
+    """
+    Exchange authorization code for access token and refresh token.
+    Returns full token response including refresh_token for persistence.
+    """
     data = {
         "client_id": MICROSOFT_CLIENT_ID,
         "scope": " ".join(MICROSOFT_SCOPES),
@@ -357,17 +361,157 @@ def get_microsoft_access_token(code: str) -> str:
     }
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
     res = requests.post(MICROSOFT_TOKEN_URL, data=data, headers=headers)
-    token = res.json().get("access_token")
-    print("Microsoft_access_token: ", token)
+    response_data = res.json()
+    token = response_data.get("access_token")
+    
     if not token:
-        raise HTTPException(status_code=400, detail="Failed to get access token")
-    return token
+        error = response_data.get("error", "unknown_error")
+        error_description = response_data.get("error_description", "Unknown error occurred")
+        
+        # Handle specific error cases
+        if "AADSTS700016" in error_description or "was not found in the directory" in error_description:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "This application requires admin approval in your organization. "
+                    "Please contact your IT administrator to approve the MIRA application "
+                    "for your organization, or try using a personal Microsoft account instead."
+                )
+            )
+        elif "AADSTS65005" in error_description or "consent" in error_description.lower():
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "Admin consent is required for this application in your organization. "
+                    "Please contact your IT administrator to grant consent for MIRA."
+                )
+            )
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Failed to get access token: {error_description}"
+            )
+    
+    print(f"✅ Microsoft token exchange successful (access_token length: {len(token)})")
+    # Return full token response including refresh_token
+    return response_data
 
 def get_microsoft_user_email(access_token: str) -> str:
     # Fetch user's email from Microsoft Graph API
     headers = {"Authorization": f"Bearer {access_token}"}
     profile = requests.get("https://graph.microsoft.com/v1.0/me", headers=headers).json()
     return profile.get("mail") or profile.get("userPrincipalName")
+
+# ---------- Outlook credentials database helpers ----------
+def upsert_outlook_creds(uid: str, email: str, token_data: dict):
+    """
+    Save or update Outlook credentials in database for persistence.
+    Similar to Google Calendar credentials storage.
+    """
+    from datetime import datetime, timedelta, timezone
+    
+    access_token = token_data.get("access_token")
+    refresh_token = token_data.get("refresh_token", "")
+    expires_in = token_data.get("expires_in", 3600)  # Default 1 hour
+    scope = token_data.get("scope", " ".join(MICROSOFT_SCOPES))
+    token_type = token_data.get("token_type", "Bearer")
+    
+    # Calculate expiry time
+    expiry = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+    
+    payload = {
+        "uid": uid,
+        "email": email,
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "expiry": expiry.isoformat(),
+        "scope": scope,
+        "token_type": token_type,
+        "updated_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    try:
+        res = supabase.table("outlook_credentials").upsert(payload).execute()
+        print(f"✅ Outlook credentials saved to database for user {uid} ({email})")
+        return res
+    except Exception as e:
+        print(f"❌ Error saving Outlook credentials: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to save Outlook credentials: {str(e)}")
+
+def get_outlook_creds(uid: str) -> Optional[dict]:
+    """Get Outlook credentials from database for a user."""
+    try:
+        res = supabase.table("outlook_credentials").select("*").eq("uid", uid).execute()
+        if res.data and len(res.data) > 0:
+            return res.data[0]
+        return None
+    except Exception as e:
+        print(f"⚠️ Error fetching Outlook credentials: {e}")
+        return None
+
+def refresh_outlook_token(refresh_token: str) -> dict:
+    """
+    Refresh an expired Outlook access token using refresh token.
+    Returns new token data including access_token and refresh_token.
+    """
+    data = {
+        "client_id": MICROSOFT_CLIENT_ID,
+        "scope": " ".join(MICROSOFT_SCOPES),
+        "refresh_token": refresh_token,
+        "grant_type": "refresh_token",
+        "client_secret": MICROSOFT_CLIENT_SECRET
+    }
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    res = requests.post(MICROSOFT_TOKEN_URL, data=data, headers=headers)
+    response_data = res.json()
+    
+    if "access_token" not in response_data:
+        error = response_data.get("error", "unknown_error")
+        error_description = response_data.get("error_description", "Unknown error occurred")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to refresh Outlook token: {error_description}"
+        )
+    
+    print("✅ Outlook token refreshed successfully")
+    return response_data
+
+def get_valid_outlook_token(uid: str) -> Optional[str]:
+    """
+    Get a valid Outlook access token for a user.
+    Checks database first, refreshes if expired, falls back to None if no credentials.
+    """
+    creds = get_outlook_creds(uid)
+    if not creds:
+        return None
+    
+    from datetime import datetime, timezone
+    
+    # Check if token is expired (with 5 minute buffer)
+    expiry_str = creds.get("expiry")
+    if expiry_str:
+        try:
+            expiry = datetime.fromisoformat(expiry_str.replace("Z", "+00:00"))
+            now = datetime.now(timezone.utc)
+            # Refresh if expires within 5 minutes
+            if expiry <= (now + timedelta(minutes=5)):
+                print(f"🔄 Outlook token expired, refreshing for user {uid}")
+                refresh_token = creds.get("refresh_token")
+                if refresh_token:
+                    try:
+                        new_token_data = refresh_outlook_token(refresh_token)
+                        # Update database with new tokens
+                        email = creds.get("email")
+                        upsert_outlook_creds(uid, email, new_token_data)
+                        return new_token_data.get("access_token")
+                    except Exception as e:
+                        print(f"❌ Failed to refresh Outlook token: {e}")
+                        return None
+        except Exception as e:
+            print(f"⚠️ Error parsing expiry date: {e}")
+    
+    # Token is still valid
+    return creds.get("access_token")
 
 def upsert_supabase_user(email: str):
     # Add or update user in Supabase
@@ -381,11 +525,38 @@ def upsert_supabase_user(email: str):
     # Currently no error handling for this request
 
 @router.get("/microsoft/auth")
-def microsoft_oauth_start(purpose: str = Query(None), return_to: str = Query(None)):
+def microsoft_oauth_start(request: Request, purpose: str = Query(None), return_to: str = Query(None), token: Optional[str] = Query(default=None), authorization: Optional[str] = Header(default=None)):
     # Start OAuth flow by redirecting to Microsoft login
-    # Use state parameter to pass purpose and return_to information
+    # Use state parameter to pass purpose, return_to, and user_id information
     # return_to is used to redirect back to onboarding after OAuth completes
+    
+    # Try to get user ID from token query parameter or authorization header (if user is already logged in)
+    user_id = None
+    
+    # Try token query parameter first (from frontend)
+    if token:
+        try:
+            user_resp = supabase.auth.get_user(token)
+            if user_resp and user_resp.user:
+                user_id = user_resp.user.id
+                print(f"✅ Got user ID from token query parameter: {user_id}")
+        except Exception as e:
+            print(f"⚠️ Failed to get user from token query parameter: {e}")
+    
+    # Fallback to authorization header
+    if not user_id and authorization and authorization.lower().startswith("bearer "):
+        try:
+            bearer_token = authorization.split(" ")[1]
+            user_resp = supabase.auth.get_user(bearer_token)
+            if user_resp and user_resp.user:
+                user_id = user_resp.user.id
+                print(f"✅ Got user ID from authorization header: {user_id}")
+        except Exception as e:
+            print(f"⚠️ Failed to get user from authorization header: {e}")
+    
     state_parts = []
+    if user_id:
+        state_parts.append(f"uid={user_id}")
     if purpose:
         state_parts.append(f"purpose={purpose}")
     if return_to:
@@ -398,7 +569,7 @@ def microsoft_oauth_start(purpose: str = Query(None), return_to: str = Query(Non
         "redirect_uri": MICROSOFT_REDIRECT_URI,
         "response_mode": "query",
         "scope": " ".join(MICROSOFT_SCOPES),
-        "prompt": "select_account consent"
+        "prompt": "select_account"  # Let user select account; consent will be requested if needed
     }
     if state:
         params["state"] = state
@@ -406,12 +577,105 @@ def microsoft_oauth_start(purpose: str = Query(None), return_to: str = Query(Non
     return RedirectResponse(url=url)
 
 @router.get("/microsoft/auth/callback")
-def microsoft_oauth_callback(code: str = Query(...), state: str = Query(None)):
+def microsoft_oauth_callback(code: str = Query(...), state: str = Query(None), error: str = Query(None), error_description: str = Query(None)):
     # Handle callback from Microsoft OAuth
-    access_token = get_microsoft_access_token(code)
-    email = get_microsoft_user_email(access_token)
-    upsert_supabase_user(email)
-    frontend_url = get_frontend_url()
+    # Check for OAuth errors first
+    if error:
+        frontend_url = get_frontend_url()
+        error_msg = error_description or error
+        
+        # Parse state to get return_to for error redirect
+        return_to = None
+        if state:
+            for part in state.split("&"):
+                if part.startswith("return_to="):
+                    return_to = part.split("=", 1)[1]
+        
+        # Redirect to settings with error message
+        error_url = f"{frontend_url}/dashboard/settings?ms_error={error}&error_msg={error_msg}"
+        if return_to:
+            error_url += f"&return_to={return_to}"
+        
+        return RedirectResponse(url=error_url)
+    
+    try:
+        token_data = get_microsoft_access_token(code)  # Now returns full token response
+        access_token = token_data.get("access_token")
+        email = get_microsoft_user_email(access_token)
+        frontend_url = get_frontend_url()
+        
+        # ✅ Get user ID from state parameter (passed from OAuth start)
+        uid = None
+        if state:
+            for part in state.split("&"):
+                if part.startswith("uid="):
+                    uid = part.split("=", 1)[1]
+                    break
+        
+        # If uid not in state, try to find by email (backward compatibility)
+        if not uid:
+            upsert_supabase_user(email)
+            try:
+                user_resp = supabase.auth.admin.list_users()
+                # Handle both list and object response formats
+                users_list = user_resp if isinstance(user_resp, list) else (user_resp.users if hasattr(user_resp, 'users') else [])
+                for user in users_list:
+                    user_email = user.email if hasattr(user, 'email') else user.get('email')
+                    user_id = user.id if hasattr(user, 'id') else user.get('id')
+                    if user_email == email:
+                        uid = user_id
+                        break
+                
+                # If still not found, try REST API
+                if not uid:
+                    admin_headers = {
+                        "apikey": SUPABASE_SERVICE_ROLE_KEY,
+                        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+                        "Content-Type": "application/json"
+                    }
+                    list_resp = requests.get(
+                        f"{SUPABASE_URL}/auth/v1/admin/users",
+                        headers=admin_headers,
+                        params={"per_page": 1000}
+                    )
+                    if list_resp.status_code == 200:
+                        users = list_resp.json().get("users", [])
+                        for user in users:
+                            if user.get("email") == email:
+                                uid = user.get("id")
+                                break
+            except Exception as e:
+                print(f"⚠️ Error looking up user by email: {e}")
+        
+        # Save Outlook credentials to database for persistence
+        try:
+            if uid:
+                upsert_outlook_creds(uid, email, token_data)
+                print(f"✅ Outlook credentials saved to database for user {uid} (email: {email})")
+            else:
+                print(f"⚠️ Could not determine user ID, credentials saved to cookie only (Outlook email: {email})")
+        except Exception as e:
+            print(f"⚠️ Error saving Outlook credentials to database: {e}")
+            import traceback
+            traceback.print_exc()
+            # Continue anyway - cookie will still be set
+    except HTTPException as e:
+        # Handle HTTP exceptions (like admin consent errors)
+        frontend_url = get_frontend_url()
+        
+        # Parse state to get return_to for error redirect
+        return_to = None
+        if state:
+            for part in state.split("&"):
+                if part.startswith("return_to="):
+                    return_to = part.split("=", 1)[1]
+        
+        # Redirect to settings with error message
+        error_url = f"{frontend_url}/dashboard/settings?ms_error=consent_required&error_msg={e.detail}"
+        if return_to:
+            error_url += f"&return_to={return_to}"
+        
+        return RedirectResponse(url=error_url)
     
     # Parse state parameter to get purpose and return_to
     purpose = None
@@ -648,17 +912,12 @@ def profile_update(
                 error_msg = r.text or f"HTTP {r.status_code}: {r.reason}"
                 error_code = None
             
-            print(f"Supabase admin API error: {r.status_code} - {error_msg}")
-            print(f"Request URL: {SUPABASE_URL.rstrip('/')}/auth/v1/admin/users/{user_id}")
-            print(f"Service role key present: {bool(SUPABASE_SERVICE_ROLE_KEY)}")
-            
             raise HTTPException(
                 status_code=r.status_code, 
                 detail={
                     "message": error_msg, 
                     "status": "error", 
                     "error_code": error_code,
-                    "debug": f"Failed to update user {user_id}",
                     "hint": "Check if SUPABASE_SERVICE_ROLE_KEY is correctly set in environment variables"
                 }
             )
@@ -680,19 +939,6 @@ def profile_update(
 @router.get("/test")
 def test():
     return {"status": "ok", "message": "Server is running"}
-
-# Debug endpoint to check environment variables
-@router.get("/debug/env")
-def debug_env():
-    return {
-        "CLIENT_ID": CLIENT_ID,
-        "CLIENT_SECRET_SET": bool(CLIENT_SECRET),
-        "REDIRECT_URI": REDIRECT_URI,
-        "SUPABASE_URL": SUPABASE_URL,
-        "SUPABASE_KEY_SET": bool(SUPABASE_KEY),
-        "TOKEN_URL": TOKEN_URL,
-        "AUTH_URL": AUTH_URL
-    }
 
 # Handle CORS preflight for profile_update
 @router.options("/profile_update")

@@ -44,9 +44,6 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 			if (lastVisitRaw) {
 				const lastVisit = Number(lastVisitRaw);
 				if (!Number.isNaN(lastVisit) && now - lastVisit > inactivityTimeoutMs) {
-					if (process.env.NODE_ENV !== "production") {
-						console.debug("AuthGate detected long inactivity. Clearing session.");
-					}
 					clearAuthTokens();
 					localStorage.removeItem("mira_first_visit");
 				}
@@ -64,10 +61,6 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 		// quick synchronous check first (fast UI response)
 		const quick = isAuthenticated();
 
-		// DEV: log quick check
-		if (process.env.NODE_ENV !== "production") {
-			console.debug("AuthGate quick check", { pathname, quick });
-		}
 		if (quick) {
 			setAuthed(true);
 			setReady(true);
@@ -77,12 +70,6 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 		(async () => {
 			try {
 				const token = await getValidToken();
-				if (process.env.NODE_ENV !== "production") {
-					console.debug("AuthGate getValidToken result", {
-						hasToken: !!token,
-						storedTokenPresent: !!getStoredToken(),
-					});
-				}
 				if (token) {
 					setAuthed(true);
 				} else {
@@ -91,9 +78,6 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 					setAuthed(!!stored ? true : false);
 				}
 			} catch (e) {
-				if (process.env.NODE_ENV !== "production") {
-					console.debug("AuthGate getValidToken threw", e);
-				}
 				setAuthed(false);
 			} finally {
 				setReady(true);

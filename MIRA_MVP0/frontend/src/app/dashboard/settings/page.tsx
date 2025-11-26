@@ -7,11 +7,24 @@ import Image from "next/image";
 import { getStoredUserData, UserData, getValidToken } from "@/utils/auth";
 import { ChevronDown, Sun, MapPin, Bell, Check } from "lucide-react";
 import { getWeather } from "@/utils/weather";
+import Sidebar from "@/components/Sidebar";
 
 // Custom Checkbox Component (Square for Notifications)
-const CustomCheckbox = ({ checked, onChange, className = "" }: { checked: boolean; onChange: (checked: boolean) => void; className?: string }) => (
+const CustomCheckbox = ({
+	checked,
+	onChange,
+	className = "",
+}: {
+	checked: boolean;
+	onChange: (checked: boolean) => void;
+	className?: string;
+}) => (
 	<div className={`relative w-5 h-5 ${className}`}>
-		<div className={`absolute inset-0 border-2 border-gray-400 rounded ${checked ? 'bg-gray-400 border-gray-400' : 'bg-transparent'}`} />
+		<div
+			className={`absolute inset-0 border-2 border-gray-400 rounded ${
+				checked ? "bg-gray-400 border-gray-400" : "bg-transparent"
+			}`}
+		/>
 		{checked && (
 			<div className="absolute inset-0 flex items-center justify-center">
 				<Check className="w-3 h-3 text-white" strokeWidth={3} />
@@ -27,9 +40,21 @@ const CustomCheckbox = ({ checked, onChange, className = "" }: { checked: boolea
 );
 
 // Custom Circular Checkbox Component (for Privacy Settings)
-const CustomCircularCheckbox = ({ checked, onChange, className = "" }: { checked: boolean; onChange: (checked: boolean) => void; className?: string }) => (
+const CustomCircularCheckbox = ({
+	checked,
+	onChange,
+	className = "",
+}: {
+	checked: boolean;
+	onChange: (checked: boolean) => void;
+	className?: string;
+}) => (
 	<div className={`relative w-5 h-5 ${className}`}>
-		<div className={`absolute inset-0 border-2 border-gray-400 rounded-full ${checked ? 'bg-gray-400 border-gray-400' : 'bg-transparent'}`} />
+		<div
+			className={`absolute inset-0 border-2 border-gray-400 rounded-full ${
+				checked ? "bg-gray-400 border-gray-400" : "bg-transparent"
+			}`}
+		/>
 		{checked && (
 			<div className="absolute inset-0 flex items-center justify-center">
 				<Check className="w-3 h-3 text-white" strokeWidth={3} />
@@ -45,9 +70,25 @@ const CustomCircularCheckbox = ({ checked, onChange, className = "" }: { checked
 );
 
 // Custom Radio Button Component (for Subscription Plans)
-const CustomRadioButton = ({ checked, onChange, name, value, className = "" }: { checked: boolean; onChange: (value: string) => void; name: string; value: string; className?: string }) => (
+const CustomRadioButton = ({
+	checked,
+	onChange,
+	name,
+	value,
+	className = "",
+}: {
+	checked: boolean;
+	onChange: (value: string) => void;
+	name: string;
+	value: string;
+	className?: string;
+}) => (
 	<div className={`relative w-5 h-5 ${className}`}>
-		<div className={`absolute inset-0 border-2 border-gray-400 rounded-full ${checked ? 'bg-gray-400 border-gray-400' : 'bg-transparent'}`} />
+		<div
+			className={`absolute inset-0 border-2 border-gray-400 rounded-full ${
+				checked ? "bg-gray-400 border-gray-400" : "bg-transparent"
+			}`}
+		/>
 		{checked && (
 			<div className="absolute inset-0 flex items-center justify-center">
 				<div className="w-2 h-2 bg-white rounded-full"></div>
@@ -64,44 +105,51 @@ const CustomRadioButton = ({ checked, onChange, name, value, className = "" }: {
 	</div>
 );
 
-type TabType = 'profile' | 'preferences' | 'notifications' | 'privacy' | 'subscription';
+type TabType =
+	| "profile"
+	| "preferences"
+	| "notifications"
+	| "privacy"
+	| "subscription";
 
 interface OnboardingData {
-    step1?: Record<string, unknown>;
-    step2?: { firstName?: string; middleName?: string; lastName?: string };
-    step3?: { connectedEmails?: string[] };
-    step4?: { connectedCalendars?: string[] };
-    step5?: { permissions?: Record<string, unknown> };
+	step1?: Record<string, unknown>;
+	step2?: { firstName?: string; middleName?: string; lastName?: string };
+	step3?: { connectedEmails?: string[] };
+	step4?: { connectedCalendars?: string[] };
+	step5?: { permissions?: Record<string, unknown> };
 }
 
 export default function SettingsPage() {
 	const router = useRouter();
-	const [activeTab, setActiveTab] = useState<TabType>('profile');
+	const [activeTab, setActiveTab] = useState<TabType>("profile");
 	const [userData, setUserData] = useState<UserData | null>(null);
 	const [formData, setFormData] = useState({
-		email: '',
-		firstName: '',
-		middleName: '',
-		lastName: '',
-		language: 'English',
-		timeZone: 'UTC-5 (Eastern Time)',
-		voice: 'Default',
+		email: "",
+		firstName: "",
+		middleName: "",
+		lastName: "",
+		language: "English",
+		timeZone: "UTC-5 (Eastern Time)",
+		voice: "Default",
 		pushNotifications: true,
 		microphoneAccess: false,
 		wakeWordDetection: false,
 		emailAccess: true,
 		calendarAccess: true,
-		selectedPlan: 'basic',
-		cardName: '',
-		cardNumber: '',
-		expDate: '',
-		cvv: '',
-		address: '',
-		city: '',
-		state: '',
-		postalCode: ''
+		selectedPlan: "basic",
+		cardName: "",
+		cardNumber: "",
+		expDate: "",
+		cvv: "",
+		address: "",
+		city: "",
+		state: "",
+		postalCode: "",
 	});
-    const [onboardingData, setOnboardingData] = useState<OnboardingData | null>(null);
+	const [onboardingData, setOnboardingData] = useState<OnboardingData | null>(
+		null
+	);
 	const [connectedEmails, setConnectedEmails] = useState<string[]>([]);
 	const [connectedCalendars, setConnectedCalendars] = useState<string[]>([]);
 
@@ -117,38 +165,38 @@ export default function SettingsPage() {
 
 	// Weather state for settings page
 	const [latitude, setLatitude] = useState<number | null>(null);
-		const [longitude, setLongitude] = useState<number | null>(null);
-		const [temperatureC, setTemperatureC] = useState<number | null>(null);
-		const [isWeatherLoading, setIsWeatherLoading] = useState<boolean>(false);
+	const [longitude, setLongitude] = useState<number | null>(null);
+	const [temperatureC, setTemperatureC] = useState<number | null>(null);
+	const [isWeatherLoading, setIsWeatherLoading] = useState<boolean>(false);
 
 	// Check authentication on mount and load user data
-    useEffect(() => {
+	useEffect(() => {
 		const loadAllData = async () => {
 			// Try to refresh token if expired (for returning users)
 			const validToken = await getValidToken();
 			if (!validToken) {
-				router.push('/login');
+				router.push("/login");
 				return;
 			}
 			loadUserData();
 			await loadOnboardingData();
 			await loadUserSettings();
 		};
-        loadAllData();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [router]);
+		loadAllData();
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [router]);
 
 	// Load user data from localStorage
 	const loadUserData = () => {
 		const storedUserData = getStoredUserData();
 		setUserData(storedUserData);
 		if (storedUserData) {
-			const nameParts = storedUserData.fullName?.split(' ') || [];
-			setFormData(prev => ({
+			const nameParts = storedUserData.fullName?.split(" ") || [];
+			setFormData((prev) => ({
 				...prev,
-				email: storedUserData.email || '',
-				firstName: nameParts[0] || '',
-				lastName: nameParts.slice(1).join(' ') || ''
+				email: storedUserData.email || "",
+				firstName: nameParts[0] || "",
+				lastName: nameParts.slice(1).join(" ") || "",
 			}));
 		}
 	};
@@ -159,29 +207,37 @@ export default function SettingsPage() {
 			const token = await getValidToken();
 			if (!token) return;
 
-			const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+			const apiBase = (
+				process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+			).replace(/\/+$/, "");
 			const email = userData?.email || localStorage.getItem("mira_email") || "";
-			
+
 			if (!email) return;
 
-			let response = await fetch(`${apiBase}/onboarding_data?email=${encodeURIComponent(email)}`, {
-				headers: {
-					'Authorization': `Bearer ${token}`,
-					'Content-Type': 'application/json'
+			let response = await fetch(
+				`${apiBase}/onboarding_data?email=${encodeURIComponent(email)}`,
+				{
+					headers: {
+						Authorization: `Bearer ${token}`,
+						"Content-Type": "application/json",
+					},
 				}
-			});
+			);
 
 			// If 401, try refreshing token once more
 			if (response.status === 401) {
 				const refreshedToken = await getValidToken();
 				if (refreshedToken && refreshedToken !== token) {
 					// Retry with new token
-					response = await fetch(`${apiBase}/onboarding_data?email=${encodeURIComponent(email)}`, {
-						headers: {
-							'Authorization': `Bearer ${refreshedToken}`,
-							'Content-Type': 'application/json'
+					response = await fetch(
+						`${apiBase}/onboarding_data?email=${encodeURIComponent(email)}`,
+						{
+							headers: {
+								Authorization: `Bearer ${refreshedToken}`,
+								"Content-Type": "application/json",
+							},
 						}
-					});
+					);
 				}
 			}
 
@@ -189,25 +245,29 @@ export default function SettingsPage() {
 				const data = await response.json();
 				if (data.onboarded && data.data) {
 					setOnboardingData(data.data);
-					
+
 					// Don't update connected services from onboarding data
 					// They should only come from user_profile table via loadUserSettings
 					// This prevents onboarding data from overwriting user's saved disconnections
-					
+
 					// Update permissions (only if not already set from user_settings)
 					// We prioritize user_settings over onboarding data
-					if (!formData.pushNotifications && !formData.microphoneAccess && !formData.wakeWordDetection) {
-						setFormData(prev => ({
+					if (
+						!formData.pushNotifications &&
+						!formData.microphoneAccess &&
+						!formData.wakeWordDetection
+					) {
+						setFormData((prev) => ({
 							...prev,
 							pushNotifications: data.data.pushNotifications ?? true,
 							microphoneAccess: data.data.microphoneAccess ?? false,
-							wakeWordDetection: data.data.wakeWordDetection ?? false
+							wakeWordDetection: data.data.wakeWordDetection ?? false,
 						}));
 					}
 				}
 			}
 		} catch (error) {
-			console.error('Failed to load onboarding data:', error);
+			console.error("Failed to load onboarding data:", error);
 		}
 	};
 
@@ -217,14 +277,16 @@ export default function SettingsPage() {
 			const token = await getValidToken();
 			if (!token) return;
 
-			const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
-			
+			const apiBase = (
+				process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+			).replace(/\/+$/, "");
+
 			let response = await fetch(`${apiBase}/user_settings`, {
 				headers: {
-					'Authorization': `Bearer ${token}`,
-					'Content-Type': 'application/json'
+					Authorization: `Bearer ${token}`,
+					"Content-Type": "application/json",
 				},
-				credentials: 'include' // Include cookies (needed for ms_access_token cookie)
+				credentials: "include", // Include cookies (needed for ms_access_token cookie)
 			});
 
 			// If 401, try refreshing token once more
@@ -234,70 +296,89 @@ export default function SettingsPage() {
 					// Retry with new token
 					response = await fetch(`${apiBase}/user_settings`, {
 						headers: {
-							'Authorization': `Bearer ${refreshedToken}`,
-							'Content-Type': 'application/json'
+							Authorization: `Bearer ${refreshedToken}`,
+							"Content-Type": "application/json",
 						},
-						credentials: 'include'
+						credentials: "include",
 					});
 				}
 			}
 
 			if (response.ok) {
 				const result = await response.json();
-				if (result.status === 'success' && result.data) {
+				if (result.status === "success" && result.data) {
 					const settings = result.data;
-					
+
 					// Restore Gmail credentials from backend to localStorage if they exist
 					// This ensures connections persist after logout/login or browser restart
 					if (settings.gmail_access_token) {
-						localStorage.setItem("gmail_access_token", settings.gmail_access_token);
+						localStorage.setItem(
+							"gmail_access_token",
+							settings.gmail_access_token
+						);
 						if (settings.gmail_refresh_token) {
-							localStorage.setItem("gmail_refresh_token", settings.gmail_refresh_token);
+							localStorage.setItem(
+								"gmail_refresh_token",
+								settings.gmail_refresh_token
+							);
 						}
 						if (settings.gmail_email) {
 							localStorage.setItem("gmail_email", settings.gmail_email);
 						}
 						console.log("Gmail credentials restored from backend");
 					}
-					
+
 					// Update connected emails and calendars from backend (source of truth)
-					if (settings.connectedEmails && Array.isArray(settings.connectedEmails)) {
+					if (
+						settings.connectedEmails &&
+						Array.isArray(settings.connectedEmails)
+					) {
 						setConnectedEmails(settings.connectedEmails);
 					}
-					if (settings.connectedCalendars && Array.isArray(settings.connectedCalendars)) {
+					if (
+						settings.connectedCalendars &&
+						Array.isArray(settings.connectedCalendars)
+					) {
 						setConnectedCalendars(settings.connectedCalendars);
 					}
-					
+
 					// Update profile fields first (so they take priority over localStorage data)
 					if (settings.firstName || settings.lastName || settings.middleName) {
-						setFormData(prev => ({
+						setFormData((prev) => ({
 							...prev,
 							firstName: settings.firstName || prev.firstName,
 							middleName: settings.middleName || prev.middleName,
-							lastName: settings.lastName || prev.lastName
+							lastName: settings.lastName || prev.lastName,
 						}));
 					}
-					
+
 					// Update preferences
 					if (settings.language || settings.time_zone || settings.voice) {
-						setFormData(prev => ({
+						setFormData((prev) => ({
 							...prev,
 							language: settings.language || prev.language,
 							timeZone: settings.time_zone || prev.timeZone,
-							voice: settings.voice || prev.voice
+							voice: settings.voice || prev.voice,
 						}));
 					}
-					
+
 					// Update notifications
-					if (settings.pushNotifications !== undefined || settings.microphoneAccess !== undefined || settings.wakeWordDetection !== undefined) {
-						setFormData(prev => ({
+					if (
+						settings.pushNotifications !== undefined ||
+						settings.microphoneAccess !== undefined ||
+						settings.wakeWordDetection !== undefined
+					) {
+						setFormData((prev) => ({
 							...prev,
-							pushNotifications: settings.pushNotifications ?? prev.pushNotifications,
-							microphoneAccess: settings.microphoneAccess ?? prev.microphoneAccess,
-							wakeWordDetection: settings.wakeWordDetection ?? prev.wakeWordDetection
+							pushNotifications:
+								settings.pushNotifications ?? prev.pushNotifications,
+							microphoneAccess:
+								settings.microphoneAccess ?? prev.microphoneAccess,
+							wakeWordDetection:
+								settings.wakeWordDetection ?? prev.wakeWordDetection,
 						}));
 					}
-					
+
 					// Update connected services
 					if (settings.connectedEmails) {
 						setConnectedEmails(settings.connectedEmails);
@@ -305,10 +386,14 @@ export default function SettingsPage() {
 					if (settings.connectedCalendars) {
 						setConnectedCalendars(settings.connectedCalendars);
 					}
-					
+
 					// Update subscription
-					if (settings.subscriptionPlan || settings.cardName || settings.cardNumber) {
-						setFormData(prev => ({
+					if (
+						settings.subscriptionPlan ||
+						settings.cardName ||
+						settings.cardNumber
+					) {
+						setFormData((prev) => ({
 							...prev,
 							selectedPlan: settings.subscriptionPlan || prev.selectedPlan,
 							cardName: settings.cardName || prev.cardName,
@@ -318,29 +403,30 @@ export default function SettingsPage() {
 							address: settings.address || prev.address,
 							city: settings.city || prev.city,
 							state: settings.state || prev.state,
-							postalCode: settings.postalCode || prev.postalCode
+							postalCode: settings.postalCode || prev.postalCode,
 						}));
 					}
 				}
 			}
 		} catch (error) {
-			console.error('Failed to load user settings:', error);
+			console.error("Failed to load user settings:", error);
 		}
 	};
 
 	// Listen for user data updates (from Google OAuth or manual signup/login)
-    useEffect(() => {
+	useEffect(() => {
 		const handleUserDataUpdate = async () => {
-			console.log('User data updated, reloading...');
+			console.log("User data updated, reloading...");
 			loadUserData();
 			await loadOnboardingData();
 			await loadUserSettings();
 		};
 
-        window.addEventListener('userDataUpdated', handleUserDataUpdate);
-        return () => window.removeEventListener('userDataUpdated', handleUserDataUpdate);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+		window.addEventListener("userDataUpdated", handleUserDataUpdate);
+		return () =>
+			window.removeEventListener("userDataUpdated", handleUserDataUpdate);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []);
 
 	// Added: get system/geolocation and reverse-geocode to a readable place name
 	useEffect(() => {
@@ -350,7 +436,8 @@ export default function SettingsPage() {
 				const res = await fetch("https://ipapi.co/json/");
 				if (!res.ok) return;
 				const data = await res.json();
-				const city = data.city || data.region || data.region_code || data.country_name;
+				const city =
+					data.city || data.region || data.region_code || data.country_name;
 				// ipapi returns a `timezone` field like 'America/New_York'
 				if (data.timezone) setTimezone(data.timezone);
 				if (city) setLocation(city);
@@ -393,13 +480,13 @@ export default function SettingsPage() {
 					data?.address?.county;
 				if (city) setLocation(city);
 
-					// Keep browser timezone as primary frontend-only source. If you
-					// need timezone-from-coordinates, use a server-side timezone API.
-					setTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
+				// Keep browser timezone as primary frontend-only source. If you
+				// need timezone-from-coordinates, use a server-side timezone API.
+				setTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
 
-					// Save coordinates for weather lookup
-					setLatitude(latitude);
-					setLongitude(longitude);
+				// Save coordinates for weather lookup
+				setLatitude(latitude);
+				setLongitude(longitude);
 			} catch (err) {
 				console.error("reverse geocode error:", err);
 				await ipFallback();
@@ -414,7 +501,9 @@ export default function SettingsPage() {
 			await ipFallback();
 		};
 
-		navigator.geolocation.getCurrentPosition(success, error, { timeout: 10000 });
+		navigator.geolocation.getCurrentPosition(success, error, {
+			timeout: 10000,
+		});
 	}, []);
 
 	// Handle Gmail disconnection
@@ -427,6 +516,8 @@ export default function SettingsPage() {
 			const gmailEmail = urlParams.get("email");
 			const msConnected = urlParams.get("ms_connected");
 			const msEmail = urlParams.get("email");
+			const msError = urlParams.get("ms_error");
+			const errorMsg = urlParams.get("error_msg");
 			const calendarConnected = urlParams.get("calendar");
 			const calendarStatus = urlParams.get("status");
 			const returnTo = urlParams.get("return_to");
@@ -434,7 +525,7 @@ export default function SettingsPage() {
 			// Handle Google Calendar callback FIRST (check this before Microsoft to avoid conflicts)
 			if (calendarConnected === "google" && calendarStatus === "connected") {
 				// Update local state immediately
-				setConnectedCalendars(prev => {
+				setConnectedCalendars((prev) => {
 					if (!prev.includes("Google Calendar")) {
 						return [...prev, "Google Calendar"];
 					}
@@ -445,45 +536,58 @@ export default function SettingsPage() {
 				await loadUserSettings();
 
 				// Clear URL parameters before redirect
-				window.history.replaceState({}, document.title, window.location.pathname);
-				
+				window.history.replaceState(
+					{},
+					document.title,
+					window.location.pathname
+				);
+
 				// If coming from onboarding, redirect back
 				if (returnTo) {
 					window.location.href = decodeURIComponent(returnTo);
 					return;
 				}
-				
-				alert(`Google Calendar connected successfully! Don't forget to click Save to persist this connection.`);
+
+				alert(
+					`Google Calendar connected successfully! Don't forget to click Save to persist this connection.`
+				);
 				return;
 			}
-			
+
 			// Handle Gmail callback
 			if (gmailConnected === "true" && gmailAccessToken && gmailEmail) {
 				localStorage.setItem("gmail_access_token", gmailAccessToken);
 				localStorage.setItem("gmail_email", gmailEmail);
 				// Also save refresh token if available (for persistence)
-				const gmailRefreshToken = urlParams.get("gmail_refresh_token") || urlParams.get("refresh_token");
+				const gmailRefreshToken =
+					urlParams.get("gmail_refresh_token") ||
+					urlParams.get("refresh_token");
 				if (gmailRefreshToken) {
 					localStorage.setItem("gmail_refresh_token", gmailRefreshToken);
 				}
-				
+
 				// ✨ AUTO-SAVE Gmail credentials to backend immediately
 				try {
-					const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+					const apiBase = (
+						process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+					).replace(/\/+$/, "");
 					const token = await getValidToken();
 					if (token) {
-						const saveGmailRes = await fetch(`${apiBase}/gmail/credentials/save`, {
-							method: "POST",
-							headers: {
-								'Authorization': `Bearer ${token}`,
-								'Content-Type': 'application/json'
-							},
-							body: JSON.stringify({
-								gmail_access_token: gmailAccessToken,
-								gmail_refresh_token: gmailRefreshToken || ''
-							})
-						});
-						
+						const saveGmailRes = await fetch(
+							`${apiBase}/gmail/credentials/save`,
+							{
+								method: "POST",
+								headers: {
+									Authorization: `Bearer ${token}`,
+									"Content-Type": "application/json",
+								},
+								body: JSON.stringify({
+									gmail_access_token: gmailAccessToken,
+									gmail_refresh_token: gmailRefreshToken || "",
+								}),
+							}
+						);
+
 						if (saveGmailRes.ok) {
 							console.log("Gmail credentials auto-saved to backend");
 						} else {
@@ -494,9 +598,9 @@ export default function SettingsPage() {
 					console.error("Error auto-saving Gmail credentials:", error);
 					// Continue anyway - user can still use Gmail from localStorage
 				}
-				
+
 				// Update local state immediately
-				setConnectedEmails(prev => {
+				setConnectedEmails((prev) => {
 					if (!prev.includes("Gmail")) {
 						return [...prev, "Gmail"];
 					}
@@ -504,30 +608,38 @@ export default function SettingsPage() {
 				});
 
 				// Check if calendar scopes were also granted during Gmail OAuth
-				const calendarScopeGranted = urlParams.get("calendar_scope_granted") === "true";
+				const calendarScopeGranted =
+					urlParams.get("calendar_scope_granted") === "true";
 				if (calendarScopeGranted) {
 					// If calendar scopes were granted, also save calendar credentials
 					try {
-						const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+						const apiBase = (
+							process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+						).replace(/\/+$/, "");
 						const token = await getValidToken();
 						if (token) {
 							// Call backend to save calendar credentials from Gmail token
-							const gmailRefreshToken = urlParams.get("gmail_refresh_token") || urlParams.get("refresh_token");
-							const saveCalendarRes = await fetch(`${apiBase}/gmail/calendar/save-from-gmail`, {
-								method: "POST",
-								headers: {
-									'Authorization': `Bearer ${token}`,
-									'Content-Type': 'application/json'
-								},
-								body: JSON.stringify({
-									gmail_access_token: gmailAccessToken,
-									gmail_refresh_token: gmailRefreshToken
-								})
-							});
-							
+							const gmailRefreshToken =
+								urlParams.get("gmail_refresh_token") ||
+								urlParams.get("refresh_token");
+							const saveCalendarRes = await fetch(
+								`${apiBase}/gmail/calendar/save-from-gmail`,
+								{
+									method: "POST",
+									headers: {
+										Authorization: `Bearer ${token}`,
+										"Content-Type": "application/json",
+									},
+									body: JSON.stringify({
+										gmail_access_token: gmailAccessToken,
+										gmail_refresh_token: gmailRefreshToken,
+									}),
+								}
+							);
+
 							if (saveCalendarRes.ok) {
 								// Mark Google Calendar as connected
-								setConnectedCalendars(prev => {
+								setConnectedCalendars((prev) => {
 									if (!prev.includes("Google Calendar")) {
 										return [...prev, "Google Calendar"];
 									}
@@ -537,7 +649,10 @@ export default function SettingsPage() {
 							}
 						}
 					} catch (error) {
-						console.error("Error saving calendar credentials from Gmail:", error);
+						console.error(
+							"Error saving calendar credentials from Gmail:",
+							error
+						);
 						// Continue anyway - user can connect calendar separately
 					}
 				}
@@ -546,29 +661,61 @@ export default function SettingsPage() {
 				await loadUserSettings();
 
 				// Clear URL parameters before redirect
-				window.history.replaceState({}, document.title, window.location.pathname);
-				
+				window.history.replaceState(
+					{},
+					document.title,
+					window.location.pathname
+				);
+
 				// If coming from onboarding, redirect back
 				if (returnTo) {
 					window.location.href = decodeURIComponent(returnTo);
 					return;
 				}
-				
+
 				if (calendarScopeGranted) {
-					alert(`Gmail and Google Calendar connected successfully! Email: ${gmailEmail}`);
+					alert(
+						`Gmail and Google Calendar connected successfully! Email: ${gmailEmail}`
+					);
 				} else {
 					alert(`Gmail connected successfully! Email: ${gmailEmail}`);
 				}
 				return;
 			}
-			
+
+			// Handle Microsoft/Outlook error callback
+			if (msError) {
+				const decodedErrorMsg = errorMsg
+					? decodeURIComponent(errorMsg)
+					: "An error occurred during Microsoft authentication.";
+
+				// Clear URL parameters
+				window.history.replaceState(
+					{},
+					document.title,
+					window.location.pathname
+				);
+
+				// Show user-friendly error message
+				alert(
+					`⚠️ Outlook Connection Error\n\n${decodedErrorMsg}\n\nIf you're using a university or work email, you may need to:\n1. Contact your IT administrator to approve the MIRA application\n2. Or try using a personal Microsoft account instead`
+				);
+
+				// If coming from onboarding, redirect back
+				if (returnTo) {
+					window.location.href = decodeURIComponent(returnTo);
+					return;
+				}
+				return;
+			}
+
 			// Handle Microsoft/Outlook callback (only if not already handled above)
 			if (msConnected === "true" && msEmail) {
 				const purpose = urlParams.get("purpose");
-				
+
 				if (purpose === "calendar") {
 					// Update calendar connections
-					setConnectedCalendars(prev => {
+					setConnectedCalendars((prev) => {
 						if (!prev.includes("Outlook Calendar")) {
 							return [...prev, "Outlook Calendar"];
 						}
@@ -576,7 +723,7 @@ export default function SettingsPage() {
 					});
 				} else {
 					// Update email connections
-					setConnectedEmails(prev => {
+					setConnectedEmails((prev) => {
 						if (!prev.includes("Outlook")) {
 							return [...prev, "Outlook"];
 						}
@@ -588,18 +735,26 @@ export default function SettingsPage() {
 				await loadUserSettings();
 
 				// Clear URL parameters before redirect
-				window.history.replaceState({}, document.title, window.location.pathname);
-				
+				window.history.replaceState(
+					{},
+					document.title,
+					window.location.pathname
+				);
+
 				// If coming from onboarding, redirect back
 				if (returnTo) {
 					window.location.href = decodeURIComponent(returnTo);
 					return;
 				}
-				
+
 				if (purpose === "calendar") {
-					alert(`Outlook Calendar connected successfully! Email: ${msEmail}. Don't forget to click Save to persist this connection.`);
+					alert(
+						`Outlook Calendar connected successfully! Email: ${msEmail}. Don't forget to click Save to persist this connection.`
+					);
 				} else {
-					alert(`Outlook connected successfully! Email: ${msEmail}. Don't forget to click Save to persist this connection.`);
+					alert(
+						`Outlook connected successfully! Email: ${msEmail}. Don't forget to click Save to persist this connection.`
+					);
 				}
 				return;
 			}
@@ -614,14 +769,16 @@ export default function SettingsPage() {
 			// Remove Gmail access token from localStorage
 			localStorage.removeItem("gmail_access_token");
 			localStorage.removeItem("gmail_email");
-			
+
 			// Update connected emails state only - user must click Save to persist
-			setConnectedEmails(prev => prev.filter(email => email !== "Gmail"));
-			
-			alert("Gmail disconnected. Don't forget to click Save to persist this change.");
+			setConnectedEmails((prev) => prev.filter((email) => email !== "Gmail"));
+
+			alert(
+				"Gmail disconnected. Don't forget to click Save to persist this change."
+			);
 		} catch (error) {
-			console.error('Failed to disconnect Gmail:', error);
-			alert('Failed to disconnect Gmail');
+			console.error("Failed to disconnect Gmail:", error);
+			alert("Failed to disconnect Gmail");
 		}
 	};
 
@@ -631,12 +788,14 @@ export default function SettingsPage() {
 			// Note: Microsoft token is in HttpOnly cookie, we can't remove it from frontend
 			// The backend would need an endpoint to revoke it
 			// For now, just update local state
-			setConnectedEmails(prev => prev.filter(email => email !== "Outlook"));
-			
-			alert("Outlook disconnected. Don't forget to click Save to persist this change.");
+			setConnectedEmails((prev) => prev.filter((email) => email !== "Outlook"));
+
+			alert(
+				"Outlook disconnected. Don't forget to click Save to persist this change."
+			);
 		} catch (error) {
-			console.error('Failed to disconnect Outlook:', error);
-			alert('Failed to disconnect Outlook');
+			console.error("Failed to disconnect Outlook:", error);
+			alert("Failed to disconnect Outlook");
 		}
 	};
 
@@ -646,12 +805,16 @@ export default function SettingsPage() {
 			// Note: Google Calendar credentials are stored in backend database
 			// We can't remove them from frontend directly
 			// For now, just update local state - user must click Save to persist
-			setConnectedCalendars(prev => prev.filter(cal => cal !== "Google Calendar"));
-			
-			alert("Google Calendar disconnected. Don't forget to click Save to persist this change.");
+			setConnectedCalendars((prev) =>
+				prev.filter((cal) => cal !== "Google Calendar")
+			);
+
+			alert(
+				"Google Calendar disconnected. Don't forget to click Save to persist this change."
+			);
 		} catch (error) {
-			console.error('Failed to disconnect Google Calendar:', error);
-			alert('Failed to disconnect Google Calendar');
+			console.error("Failed to disconnect Google Calendar:", error);
+			alert("Failed to disconnect Google Calendar");
 		}
 	};
 
@@ -661,142 +824,162 @@ export default function SettingsPage() {
 			// Note: Microsoft token is in HttpOnly cookie, we can't remove it from frontend
 			// The backend would need an endpoint to revoke it
 			// For now, just update local state
-			setConnectedCalendars(prev => prev.filter(cal => cal !== "Outlook Calendar"));
-			
-			alert("Outlook Calendar disconnected. Don't forget to click Save to persist this change.");
+			setConnectedCalendars((prev) =>
+				prev.filter((cal) => cal !== "Outlook Calendar")
+			);
+
+			alert(
+				"Outlook Calendar disconnected. Don't forget to click Save to persist this change."
+			);
 		} catch (error) {
-			console.error('Failed to disconnect Outlook Calendar:', error);
-			alert('Failed to disconnect Outlook Calendar');
+			console.error("Failed to disconnect Outlook Calendar:", error);
+			alert("Failed to disconnect Outlook Calendar");
 		}
 	};
 
 	const tabs = [
-		{ id: 'profile' as TabType, label: 'Profile' },
-		{ id: 'preferences' as TabType, label: 'Preferences' },
-		{ id: 'notifications' as TabType, label: 'Notifications' },
-		{ id: 'privacy' as TabType, label: 'Privacy settings' },
-		{ id: 'subscription' as TabType, label: 'Manage subscription' }
+		{ id: "profile" as TabType, label: "Profile" },
+		{ id: "preferences" as TabType, label: "Preferences" },
+		{ id: "notifications" as TabType, label: "Notifications" },
+		{ id: "privacy" as TabType, label: "Privacy settings" },
+		{ id: "subscription" as TabType, label: "Manage subscription" },
 	];
 
 	const handleInputChange = (field: string, value: string | boolean) => {
-		setFormData(prev => ({ ...prev, [field]: value }));
+		setFormData((prev) => ({ ...prev, [field]: value }));
 	};
 
 	const handleSave = async () => {
 		try {
 			const token = await getValidToken();
 			if (!token) {
-				alert('Your session has expired. Please log in again.');
-				router.push('/login');
+				alert("Your session has expired. Please log in again.");
+				router.push("/login");
 				return;
 			}
 
-			const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
-			
+			const apiBase = (
+				process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+			).replace(/\/+$/, "");
+
 			// Handle different save operations based on active tab
-			if (activeTab === 'profile') {
+			if (activeTab === "profile") {
 				const payload = {
 					firstName: formData.firstName?.trim() || undefined,
 					middleName: formData.middleName?.trim() || undefined,
 					lastName: formData.lastName?.trim() || undefined,
-					fullName: [formData.firstName?.trim(), formData.lastName?.trim()].filter(Boolean).join(' ') || undefined,
+					fullName:
+						[formData.firstName?.trim(), formData.lastName?.trim()]
+							.filter(Boolean)
+							.join(" ") || undefined,
 				};
 
 				// Update auth.users user_metadata (for auth tokens)
 				let res = await fetch(`${apiBase}/profile_update`, {
-					method: 'POST',
+					method: "POST",
 					headers: {
-						'Authorization': `Bearer ${token}`,
-						'Content-Type': 'application/json'
+						Authorization: `Bearer ${token}`,
+						"Content-Type": "application/json",
 					},
-					body: JSON.stringify(payload)
+					body: JSON.stringify(payload),
 				});
 
 				// If we get a 401 or token expired error, try refreshing the token and retry once
 				if (res.status === 401) {
 					try {
 						const errorData = await res.json().catch(() => ({}));
-						if (errorData?.detail?.error_code === 'token_expired' || errorData?.detail?.message?.includes('expired')) {
-							console.log('Token expired, attempting to refresh...');
+						if (
+							errorData?.detail?.error_code === "token_expired" ||
+							errorData?.detail?.message?.includes("expired")
+						) {
+							console.log("Token expired, attempting to refresh...");
 							const newToken = await getValidToken();
 							if (newToken) {
 								// Retry the request with the new token
 								res = await fetch(`${apiBase}/profile_update`, {
-									method: 'POST',
+									method: "POST",
 									headers: {
-										'Authorization': `Bearer ${newToken}`,
-										'Content-Type': 'application/json'
+										Authorization: `Bearer ${newToken}`,
+										"Content-Type": "application/json",
 									},
-									body: JSON.stringify(payload)
+									body: JSON.stringify(payload),
 								});
 							}
 						}
 					} catch (refreshError) {
-						console.error('Error refreshing token:', refreshError);
+						console.error("Error refreshing token:", refreshError);
 					}
 				}
 
 				if (!res.ok) {
-					let errorMessage = 'Failed to save profile';
+					let errorMessage = "Failed to save profile";
 					try {
 						const errorData = await res.json();
-						errorMessage = errorData?.detail?.message || errorData?.message || errorData?.detail || JSON.stringify(errorData) || errorMessage;
-                    } catch {
+						errorMessage =
+							errorData?.detail?.message ||
+							errorData?.message ||
+							errorData?.detail ||
+							JSON.stringify(errorData) ||
+							errorMessage;
+					} catch {
 						errorMessage = `Failed to save profile (${res.status}: ${res.statusText})`;
 					}
-					console.error('Profile update error:', errorMessage);
-					
+					console.error("Profile update error:", errorMessage);
+
 					// If it's still an auth error after refresh attempt, redirect to login
 					if (res.status === 401) {
-						alert('Your session has expired. Please log in again.');
-						router.push('/login');
+						alert("Your session has expired. Please log in again.");
+						router.push("/login");
 						return;
 					}
-					
+
 					alert(errorMessage);
 					return;
 				}
 
 				const data = await res.json().catch(() => ({}));
-				
+
 				// Also update user_profile table
-				const email = userData?.email || localStorage.getItem("mira_email") || "";
+				const email =
+					userData?.email || localStorage.getItem("mira_email") || "";
 				if (email) {
 					const userProfilePayload = {
 						email: email,
-						firstName: formData.firstName?.trim() || 'User',
-						middleName: formData.middleName?.trim() || '',
-						lastName: formData.lastName?.trim() || ''
+						firstName: formData.firstName?.trim() || "User",
+						middleName: formData.middleName?.trim() || "",
+						lastName: formData.lastName?.trim() || "",
 					};
-					
+
 					// Save to user_profile table (don't wait for this)
 					fetch(`${apiBase}/user_profile_save`, {
-						method: 'POST',
+						method: "POST",
 						headers: {
-							'Authorization': `Bearer ${token}`,
-							'Content-Type': 'application/json'
+							Authorization: `Bearer ${token}`,
+							"Content-Type": "application/json",
 						},
-						body: JSON.stringify(userProfilePayload)
-					}).catch(err => console.error('Failed to update user_profile table:', err));
+						body: JSON.stringify(userProfilePayload),
+					}).catch((err) =>
+						console.error("Failed to update user_profile table:", err)
+					);
 				}
-				
+
 				try {
 					// Update localStorage with new profile data
-					const fullName = payload.fullName || '';
+					const fullName = payload.fullName || "";
 					if (fullName) {
-						localStorage.setItem('mira_full_name', fullName);
+						localStorage.setItem("mira_full_name", fullName);
 					}
-					
+
 					// Extract user metadata from response
 					const returned = data?.user || {};
 					const meta = returned?.user_metadata || {};
 					if (meta.full_name) {
-						localStorage.setItem('mira_full_name', meta.full_name);
+						localStorage.setItem("mira_full_name", meta.full_name);
 					}
 					if (meta.avatar_url) {
-						localStorage.setItem('mira_profile_picture', meta.avatar_url);
+						localStorage.setItem("mira_profile_picture", meta.avatar_url);
 					}
-					
+
 					// Also update the onboarding data if available
 					if (email && onboardingData) {
 						// Update onboarding step2 with new name data
@@ -804,50 +987,61 @@ export default function SettingsPage() {
 							email,
 							step1: onboardingData?.step1 || {},
 							step2: {
-								firstName: formData.firstName?.trim() || onboardingData?.step2?.firstName || '',
-								middleName: formData.middleName?.trim() || onboardingData?.step2?.middleName || '',
-								lastName: formData.lastName?.trim() || onboardingData?.step2?.lastName || '',
+								firstName:
+									formData.firstName?.trim() ||
+									onboardingData?.step2?.firstName ||
+									"",
+								middleName:
+									formData.middleName?.trim() ||
+									onboardingData?.step2?.middleName ||
+									"",
+								lastName:
+									formData.lastName?.trim() ||
+									onboardingData?.step2?.lastName ||
+									"",
 							},
 							step3: { connectedEmails },
 							step4: { connectedCalendars },
 							step5: onboardingData?.step5 || { permissions: {} },
 						};
-						
+
 						// Save onboarding data in background (don't wait for it)
 						fetch(`${apiBase}/onboarding_save`, {
-							method: 'POST',
+							method: "POST",
 							headers: {
-								'Content-Type': 'application/json'
+								"Content-Type": "application/json",
 							},
-							body: JSON.stringify(onboardingPayload)
-						}).catch(err => console.error('Failed to update onboarding data:', err));
+							body: JSON.stringify(onboardingPayload),
+						}).catch((err) =>
+							console.error("Failed to update onboarding data:", err)
+						);
 					}
-					
+
 					// Dispatch event to notify other components
-					window.dispatchEvent(new CustomEvent('userDataUpdated'));
-					
+					window.dispatchEvent(new CustomEvent("userDataUpdated"));
+
 					// Reload user data
 					loadUserData();
 				} catch (err) {
-					console.error('Error updating local storage:', err);
+					console.error("Error updating local storage:", err);
 				}
 
-				alert('Profile saved successfully!');
-			} else if (activeTab === 'preferences') {
+				alert("Profile saved successfully!");
+			} else if (activeTab === "preferences") {
 				// Save preferences (language, timeZone, voice) to user_profile table
 				const payload = {
 					language: formData.language,
 					timeZone: formData.timeZone,
-					voice: formData.voice
+					voice: formData.voice,
 				};
 
 				let res = await fetch(`${apiBase}/user_preferences_save`, {
-					method: 'POST',
+					method: "POST",
 					headers: {
-						'Authorization': `Bearer ${token}`,
-						'Content-Type': 'application/json'
+						Authorization: `Bearer ${token}`,
+						"Content-Type": "application/json",
 					},
-					body: JSON.stringify(payload)
+					body: JSON.stringify(payload),
 				});
 
 				// Handle token expiration
@@ -855,23 +1049,26 @@ export default function SettingsPage() {
 					const newToken = await getValidToken();
 					if (newToken) {
 						res = await fetch(`${apiBase}/user_preferences_save`, {
-							method: 'POST',
+							method: "POST",
 							headers: {
-								'Authorization': `Bearer ${newToken}`,
-								'Content-Type': 'application/json'
+								Authorization: `Bearer ${newToken}`,
+								"Content-Type": "application/json",
 							},
-							body: JSON.stringify(payload)
+							body: JSON.stringify(payload),
 						});
 					}
 				}
 
 				const data = await res.json().catch(() => ({}));
 				if (!res.ok) {
-					const message = data?.detail?.message || data?.message || 'Failed to save preferences';
-					console.error('Preferences save error:', message);
+					const message =
+						data?.detail?.message ||
+						data?.message ||
+						"Failed to save preferences";
+					console.error("Preferences save error:", message);
 					if (res.status === 401) {
-						alert('Your session has expired. Please log in again.');
-						router.push('/login');
+						alert("Your session has expired. Please log in again.");
+						router.push("/login");
 						return;
 					}
 					alert(message);
@@ -880,22 +1077,22 @@ export default function SettingsPage() {
 
 				// Update local state
 				loadUserSettings();
-				alert('Preferences saved successfully!');
-			} else if (activeTab === 'notifications') {
+				alert("Preferences saved successfully!");
+			} else if (activeTab === "notifications") {
 				// Save notification settings to user_profile table
 				const payload = {
 					pushNotifications: formData.pushNotifications,
 					microphoneAccess: formData.microphoneAccess,
-					wakeWordDetection: formData.wakeWordDetection
+					wakeWordDetection: formData.wakeWordDetection,
 				};
 
 				let res = await fetch(`${apiBase}/user_notifications_save`, {
-					method: 'POST',
+					method: "POST",
 					headers: {
-						'Authorization': `Bearer ${token}`,
-						'Content-Type': 'application/json'
+						Authorization: `Bearer ${token}`,
+						"Content-Type": "application/json",
 					},
-					body: JSON.stringify(payload)
+					body: JSON.stringify(payload),
 				});
 
 				// Handle token expiration
@@ -903,23 +1100,26 @@ export default function SettingsPage() {
 					const newToken = await getValidToken();
 					if (newToken) {
 						res = await fetch(`${apiBase}/user_notifications_save`, {
-							method: 'POST',
+							method: "POST",
 							headers: {
-								'Authorization': `Bearer ${newToken}`,
-								'Content-Type': 'application/json'
+								Authorization: `Bearer ${newToken}`,
+								"Content-Type": "application/json",
 							},
-							body: JSON.stringify(payload)
+							body: JSON.stringify(payload),
 						});
 					}
 				}
 
 				const data = await res.json().catch(() => ({}));
 				if (!res.ok) {
-					const message = data?.detail?.message || data?.message || 'Failed to save notification settings';
-					console.error('Notifications save error:', message);
+					const message =
+						data?.detail?.message ||
+						data?.message ||
+						"Failed to save notification settings";
+					console.error("Notifications save error:", message);
 					if (res.status === 401) {
-						alert('Your session has expired. Please log in again.');
-						router.push('/login');
+						alert("Your session has expired. Please log in again.");
+						router.push("/login");
 						return;
 					}
 					alert(message);
@@ -928,12 +1128,12 @@ export default function SettingsPage() {
 
 				// Update local state
 				loadUserSettings();
-				alert('Notification settings saved successfully!');
-			} else if (activeTab === 'privacy') {
+				alert("Notification settings saved successfully!");
+			} else if (activeTab === "privacy") {
 				// Save privacy settings to user_profile table
 				const payload = {
 					connectedEmails: connectedEmails,
-					connectedCalendars: connectedCalendars
+					connectedCalendars: connectedCalendars,
 				};
 
 				// If Gmail is connected, also save Gmail credentials to backend for persistence
@@ -944,15 +1144,15 @@ export default function SettingsPage() {
 						try {
 							// Save Gmail credentials to backend so connection persists
 							await fetch(`${apiBase}/gmail/credentials/save`, {
-								method: 'POST',
+								method: "POST",
 								headers: {
-									'Authorization': `Bearer ${token}`,
-									'Content-Type': 'application/json'
+									Authorization: `Bearer ${token}`,
+									"Content-Type": "application/json",
 								},
 								body: JSON.stringify({
 									gmail_access_token: gmailAccessToken,
-									gmail_refresh_token: gmailRefreshToken || null
-								})
+									gmail_refresh_token: gmailRefreshToken || null,
+								}),
 							});
 						} catch (error) {
 							console.error("Error saving Gmail credentials:", error);
@@ -962,12 +1162,12 @@ export default function SettingsPage() {
 				}
 
 				let res = await fetch(`${apiBase}/user_privacy_save`, {
-					method: 'POST',
+					method: "POST",
 					headers: {
-						'Authorization': `Bearer ${token}`,
-						'Content-Type': 'application/json'
+						Authorization: `Bearer ${token}`,
+						"Content-Type": "application/json",
 					},
-					body: JSON.stringify(payload)
+					body: JSON.stringify(payload),
 				});
 
 				// Handle token expiration
@@ -975,23 +1175,26 @@ export default function SettingsPage() {
 					const newToken = await getValidToken();
 					if (newToken) {
 						res = await fetch(`${apiBase}/user_privacy_save`, {
-							method: 'POST',
+							method: "POST",
 							headers: {
-								'Authorization': `Bearer ${newToken}`,
-								'Content-Type': 'application/json'
+								Authorization: `Bearer ${newToken}`,
+								"Content-Type": "application/json",
 							},
-							body: JSON.stringify(payload)
+							body: JSON.stringify(payload),
 						});
 					}
 				}
 
 				const data = await res.json().catch(() => ({}));
 				if (!res.ok) {
-					const message = data?.detail?.message || data?.message || 'Failed to save privacy settings';
-					console.error('Privacy save error:', message);
+					const message =
+						data?.detail?.message ||
+						data?.message ||
+						"Failed to save privacy settings";
+					console.error("Privacy save error:", message);
 					if (res.status === 401) {
-						alert('Your session has expired. Please log in again.');
-						router.push('/login');
+						alert("Your session has expired. Please log in again.");
+						router.push("/login");
 						return;
 					}
 					alert(message);
@@ -1000,28 +1203,28 @@ export default function SettingsPage() {
 
 				// Update local state
 				loadUserSettings();
-				alert('Privacy settings saved successfully!');
-			} else if (activeTab === 'subscription') {
+				alert("Privacy settings saved successfully!");
+			} else if (activeTab === "subscription") {
 				// Save subscription settings to user_profile table
 				const payload = {
 					selectedPlan: formData.selectedPlan,
-					cardName: formData.cardName?.trim() || '',
-					cardNumber: formData.cardNumber?.trim() || '',
-					expDate: formData.expDate?.trim() || '',
-					cvv: formData.cvv?.trim() || '',
-					address: formData.address?.trim() || '',
-					city: formData.city?.trim() || '',
-					state: formData.state?.trim() || '',
-					postalCode: formData.postalCode?.trim() || ''
+					cardName: formData.cardName?.trim() || "",
+					cardNumber: formData.cardNumber?.trim() || "",
+					expDate: formData.expDate?.trim() || "",
+					cvv: formData.cvv?.trim() || "",
+					address: formData.address?.trim() || "",
+					city: formData.city?.trim() || "",
+					state: formData.state?.trim() || "",
+					postalCode: formData.postalCode?.trim() || "",
 				};
 
 				let res = await fetch(`${apiBase}/user_subscription_save`, {
-					method: 'POST',
+					method: "POST",
 					headers: {
-						'Authorization': `Bearer ${token}`,
-						'Content-Type': 'application/json'
+						Authorization: `Bearer ${token}`,
+						"Content-Type": "application/json",
 					},
-					body: JSON.stringify(payload)
+					body: JSON.stringify(payload),
 				});
 
 				// Handle token expiration
@@ -1029,23 +1232,26 @@ export default function SettingsPage() {
 					const newToken = await getValidToken();
 					if (newToken) {
 						res = await fetch(`${apiBase}/user_subscription_save`, {
-							method: 'POST',
+							method: "POST",
 							headers: {
-								'Authorization': `Bearer ${newToken}`,
-								'Content-Type': 'application/json'
+								Authorization: `Bearer ${newToken}`,
+								"Content-Type": "application/json",
 							},
-							body: JSON.stringify(payload)
+							body: JSON.stringify(payload),
 						});
 					}
 				}
 
 				const data = await res.json().catch(() => ({}));
 				if (!res.ok) {
-					const message = data?.detail?.message || data?.message || 'Failed to save subscription';
-					console.error('Subscription save error:', message);
+					const message =
+						data?.detail?.message ||
+						data?.message ||
+						"Failed to save subscription";
+					console.error("Subscription save error:", message);
 					if (res.status === 401) {
-						alert('Your session has expired. Please log in again.');
-						router.push('/login');
+						alert("Your session has expired. Please log in again.");
+						router.push("/login");
 						return;
 					}
 					alert(message);
@@ -1054,22 +1260,23 @@ export default function SettingsPage() {
 
 				// Update local state
 				loadUserSettings();
-				alert('Subscription details saved successfully!');
+				alert("Subscription details saved successfully!");
 			} else {
-				alert('Settings saved');
+				alert("Settings saved");
 			}
 		} catch (e) {
-			console.error('Failed to save:', e);
-			alert('Something went wrong while saving.');
+			console.error("Failed to save:", e);
+			alert("Something went wrong while saving.");
 		}
 	};
 
 	const renderProfileTab = () => (
 		<div className="space-y-5">
 			<p className="text-xl text-gray-800 leading-6">
-				Update your personal information, profile photo, and account details to keep your profile up to date.
+				Update your personal information, profile photo, and account details to
+				keep your profile up to date.
 			</p>
-			
+
 			<div className="space-y-8">
 				{/* Profile Picture */}
 				<div className="space-y-3">
@@ -1086,7 +1293,9 @@ export default function SettingsPage() {
 								/>
 							) : (
 								<span className="text-6xl text-black font-bold">
-									{userData?.fullName?.charAt(0) || userData?.email?.charAt(0) || 'J'}
+									{userData?.fullName?.charAt(0) ||
+										userData?.email?.charAt(0) ||
+										"J"}
 								</span>
 							)}
 						</div>
@@ -1103,40 +1312,46 @@ export default function SettingsPage() {
 						<input
 							type="email"
 							value={formData.email}
-							onChange={(e) => handleInputChange('email', e.target.value)}
+							onChange={(e) => handleInputChange("email", e.target.value)}
 							className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-gray-900 placeholder-gray-500"
 							placeholder="Enter your email"
 						/>
 					</div>
 
 					<div>
-						<label className="block text-lg text-gray-700 mb-3">First name<span className="text-red-500">*</span></label>
+						<label className="block text-lg text-gray-700 mb-3">
+							First name<span className="text-red-500">*</span>
+						</label>
 						<input
 							type="text"
 							value={formData.firstName}
-							onChange={(e) => handleInputChange('firstName', e.target.value)}
+							onChange={(e) => handleInputChange("firstName", e.target.value)}
 							className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-gray-900 placeholder-gray-500"
 							placeholder="Enter your first name"
 						/>
 					</div>
 
 					<div>
-						<label className="block text-lg text-gray-700 mb-3">Middle name</label>
+						<label className="block text-lg text-gray-700 mb-3">
+							Middle name
+						</label>
 						<input
 							type="text"
 							value={formData.middleName}
-							onChange={(e) => handleInputChange('middleName', e.target.value)}
+							onChange={(e) => handleInputChange("middleName", e.target.value)}
 							className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-gray-900 placeholder-gray-500"
 							placeholder="Enter your middle name"
 						/>
 					</div>
 
 					<div>
-						<label className="block text-lg text-gray-700 mb-3">Last name<span className="text-red-500">*</span></label>
+						<label className="block text-lg text-gray-700 mb-3">
+							Last name<span className="text-red-500">*</span>
+						</label>
 						<input
 							type="text"
 							value={formData.lastName}
-							onChange={(e) => handleInputChange('lastName', e.target.value)}
+							onChange={(e) => handleInputChange("lastName", e.target.value)}
 							className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-gray-900 placeholder-gray-500"
 							placeholder="Enter your last name"
 						/>
@@ -1156,16 +1371,17 @@ export default function SettingsPage() {
 	const renderPreferencesTab = () => (
 		<div className="space-y-5">
 			<p className="text-xl text-gray-800 leading-6">
-				Customize your experience by adjusting language, region, and voice options to suit your needs.
+				Customize your experience by adjusting language, region, and voice
+				options to suit your needs.
 			</p>
-			
+
 			<div className="space-y-5 w-80">
 				<div>
 					<label className="block text-lg text-gray-700 mb-3">Language</label>
 					<div className="relative">
 						<select
 							value={formData.language}
-							onChange={(e) => handleInputChange('language', e.target.value)}
+							onChange={(e) => handleInputChange("language", e.target.value)}
 							className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 appearance-none text-gray-900"
 						>
 							<option value="English">Select Language</option>
@@ -1182,12 +1398,14 @@ export default function SettingsPage() {
 					<div className="relative">
 						<select
 							value={formData.timeZone}
-							onChange={(e) => handleInputChange('timeZone', e.target.value)}
+							onChange={(e) => handleInputChange("timeZone", e.target.value)}
 							className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 appearance-none text-gray-900"
 						>
 							<option value="UTC-5 (Eastern Time)">Select Time Zone</option>
 							<option value="UTC-6 (Central Time)">UTC-6 (Central Time)</option>
-							<option value="UTC-7 (Mountain Time)">UTC-7 (Mountain Time)</option>
+							<option value="UTC-7 (Mountain Time)">
+								UTC-7 (Mountain Time)
+							</option>
 							<option value="UTC-8 (Pacific Time)">UTC-8 (Pacific Time)</option>
 						</select>
 						<ChevronDown className="absolute right-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -1199,7 +1417,7 @@ export default function SettingsPage() {
 					<div className="relative">
 						<select
 							value={formData.voice}
-							onChange={(e) => handleInputChange('voice', e.target.value)}
+							onChange={(e) => handleInputChange("voice", e.target.value)}
 							className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 appearance-none text-gray-900"
 						>
 							<option value="Default">Select Voice</option>
@@ -1224,24 +1442,36 @@ export default function SettingsPage() {
 	const renderNotificationsTab = () => (
 		<div className="space-y-5">
 			<p className="text-xl text-gray-800 leading-6">
-				Choose how and when you&apos;d like to receive updates, alerts, and promotional messages.
+				Choose how and when you&apos;d like to receive updates, alerts, and
+				promotional messages.
 			</p>
-			
+
 			<div className="space-y-5">
 				{/* Push Notifications */}
 				<div className="flex items-center justify-between px-6 py-4 bg-white rounded-lg border border-gray-400">
 					<div className="flex items-center gap-2">
 						<div className="w-10 h-10 bg-gray-50 rounded-full flex items-center justify-center p-2">
-							<Image src="/Icons/image 9.png" alt="Push Notification" width={24} height={24} />
+							<Image
+								src="/Icons/image 9.png"
+								alt="Push Notification"
+								width={24}
+								height={24}
+							/>
 						</div>
 						<div className="ml-2">
-							<h4 className="text-lg text-gray-700 font-normal">Push Notification</h4>
-							<p className="text-sm text-gray-500">Get notified about important emails and reminders</p>
+							<h4 className="text-lg text-gray-700 font-normal">
+								Push Notification
+							</h4>
+							<p className="text-sm text-gray-500">
+								Get notified about important emails and reminders
+							</p>
 						</div>
 					</div>
-					<CustomCheckbox 
+					<CustomCheckbox
 						checked={formData.pushNotifications}
-						onChange={(checked) => handleInputChange('pushNotifications', checked)}
+						onChange={(checked) =>
+							handleInputChange("pushNotifications", checked)
+						}
 					/>
 				</div>
 
@@ -1249,16 +1479,27 @@ export default function SettingsPage() {
 				<div className="flex items-center justify-between px-6 py-4 bg-white rounded-lg border border-gray-400">
 					<div className="flex items-center gap-2">
 						<div className="w-10 h-10 bg-gray-50 rounded-full flex items-center justify-center p-2">
-							<Image src="/Icons/image 10.png" alt="Microphone Access" width={24} height={24} />
+							<Image
+								src="/Icons/image 10.png"
+								alt="Microphone Access"
+								width={24}
+								height={24}
+							/>
 						</div>
 						<div className="ml-2">
-							<h4 className="text-lg text-gray-700 font-normal">Microphone Access</h4>
-							<p className="text-sm text-gray-500">Use voice commands to interact with Mira</p>
+							<h4 className="text-lg text-gray-700 font-normal">
+								Microphone Access
+							</h4>
+							<p className="text-sm text-gray-500">
+								Use voice commands to interact with Mira
+							</p>
 						</div>
 					</div>
-					<CustomCheckbox 
+					<CustomCheckbox
 						checked={formData.microphoneAccess}
-						onChange={(checked) => handleInputChange('microphoneAccess', checked)}
+						onChange={(checked) =>
+							handleInputChange("microphoneAccess", checked)
+						}
 					/>
 				</div>
 
@@ -1266,16 +1507,27 @@ export default function SettingsPage() {
 				<div className="flex items-center justify-between px-6 py-4 bg-white rounded-lg border border-gray-400">
 					<div className="flex items-center gap-2">
 						<div className="w-10 h-10 bg-gray-50 rounded-full flex items-center justify-center p-2">
-							<Image src="/Icons/image 11.png" alt="Wake Word Detection" width={24} height={24} />
+							<Image
+								src="/Icons/image 11.png"
+								alt="Wake Word Detection"
+								width={24}
+								height={24}
+							/>
 						</div>
 						<div className="ml-2">
-							<h4 className="text-lg text-gray-700 font-normal">Wake Word Detection</h4>
-							<p className="text-sm text-gray-500">Activate Mira with your voice</p>
+							<h4 className="text-lg text-gray-700 font-normal">
+								Wake Word Detection
+							</h4>
+							<p className="text-sm text-gray-500">
+								Activate Mira with your voice
+							</p>
 						</div>
 					</div>
-					<CustomCheckbox 
+					<CustomCheckbox
 						checked={formData.wakeWordDetection}
-						onChange={(checked) => handleInputChange('wakeWordDetection', checked)}
+						onChange={(checked) =>
+							handleInputChange("wakeWordDetection", checked)
+						}
 					/>
 				</div>
 			</div>
@@ -1292,9 +1544,10 @@ export default function SettingsPage() {
 	const renderPrivacyTab = () => (
 		<div className="space-y-5">
 			<p className="text-xl text-gray-800 leading-6">
-				Control what information you share and manage how your data is used to keep your account secure.
+				Control what information you share and manage how your data is used to
+				keep your account secure.
 			</p>
-			
+
 			<div className="space-y-8">
 				{/* Email Connections */}
 				<div>
@@ -1303,7 +1556,12 @@ export default function SettingsPage() {
 						<div className="flex items-center justify-between px-6 py-4 bg-white rounded-lg border border-gray-400">
 							<div className="flex items-center gap-5">
 								<div className="w-6 h-6 rounded flex items-center justify-center">
-									<Image src="/Icons/image 4.png" alt="Gmail" width={24} height={24} />
+									<Image
+										src="/Icons/image 4.png"
+										alt="Gmail"
+										width={24}
+										height={24}
+									/>
 								</div>
 								<span className="text-lg text-gray-700">Gmail</span>
 								{connectedEmails.includes("Gmail") && (
@@ -1312,13 +1570,15 @@ export default function SettingsPage() {
 									</span>
 								)}
 							</div>
-							<button 
+							<button
 								onClick={() => {
 									if (connectedEmails.includes("Gmail")) {
 										handleGmailDisconnect();
 									} else {
 										// Handle connect - no return_to for settings page
-										const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+										const apiBase = (
+											process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+										).replace(/\/+$/, "");
 										window.location.href = `${apiBase}/gmail/auth`;
 									}
 								}}
@@ -1335,7 +1595,12 @@ export default function SettingsPage() {
 						<div className="flex items-center justify-between px-6 py-4 bg-white rounded-lg border border-gray-400">
 							<div className="flex items-center gap-5">
 								<div className="w-6 h-6 rounded flex items-center justify-center">
-									<Image src="/Icons/image 5.png" alt="Outlook" width={24} height={24} />
+									<Image
+										src="/Icons/image 5.png"
+										alt="Outlook"
+										width={24}
+										height={24}
+									/>
 								</div>
 								<span className="text-lg text-gray-700">Outlook</span>
 								{connectedEmails.includes("Outlook") && (
@@ -1344,14 +1609,25 @@ export default function SettingsPage() {
 									</span>
 								)}
 							</div>
-							<button 
+							<button
 								onClick={() => {
 									if (connectedEmails.includes("Outlook")) {
 										handleOutlookDisconnect();
 									} else {
-										const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
-										// No return_to for settings page - user stays on settings
-										window.location.href = `${apiBase}/microsoft/auth`;
+										const apiBase = (
+											process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+										).replace(/\/+$/, "");
+										const token =
+											localStorage.getItem("access_token") ||
+											localStorage.getItem("token");
+										if (!token) {
+											alert("Please log in first to connect Outlook.");
+											return;
+										}
+										// Pass token so backend can identify user and save credentials properly
+										window.location.href = `${apiBase}/microsoft/auth?token=${encodeURIComponent(
+											token
+										)}`;
 									}
 								}}
 								className={`px-4 py-2 rounded-lg text-sm transition-colors ${
@@ -1397,7 +1673,12 @@ export default function SettingsPage() {
 						<div className="flex items-center justify-between px-6 py-4 bg-white rounded-lg border border-gray-400">
 							<div className="flex items-center gap-5">
 								<div className="w-6 h-6 rounded flex items-center justify-center">
-									<Image src="/Icons/image 7.png" alt="Google Calendar" width={24} height={24} />
+									<Image
+										src="/Icons/image 7.png"
+										alt="Google Calendar"
+										width={24}
+										height={24}
+									/>
 								</div>
 								<span className="text-lg text-gray-700">Google Calendar</span>
 								{connectedCalendars.includes("Google Calendar") && (
@@ -1406,23 +1687,34 @@ export default function SettingsPage() {
 									</span>
 								)}
 							</div>
-							<button 
+							<button
 								onClick={async () => {
 									if (connectedCalendars.includes("Google Calendar")) {
 										handleGoogleCalendarDisconnect();
 									} else {
 										try {
-											const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
-											const token = localStorage.getItem("access_token") || localStorage.getItem("token");
+											const apiBase = (
+												process.env.NEXT_PUBLIC_API_URL ||
+												"http://127.0.0.1:8000"
+											).replace(/\/+$/, "");
+											const token =
+												localStorage.getItem("access_token") ||
+												localStorage.getItem("token");
 											if (!token) {
-												alert("Please log in first to connect Google Calendar.");
+												alert(
+													"Please log in first to connect Google Calendar."
+												);
 												return;
 											}
 											// Pass token as query parameter so backend can extract user ID
-											window.location.href = `${apiBase}/google/calendar/oauth/start?token=${encodeURIComponent(token)}`;
+											window.location.href = `${apiBase}/google/calendar/oauth/start?token=${encodeURIComponent(
+												token
+											)}`;
 										} catch (error) {
 											console.error("Error connecting Google Calendar:", error);
-											alert("Failed to connect Google Calendar. Please try again.");
+											alert(
+												"Failed to connect Google Calendar. Please try again."
+											);
 										}
 									}
 								}}
@@ -1432,14 +1724,21 @@ export default function SettingsPage() {
 										: "bg-gray-50 border border-gray-300 text-gray-700 hover:bg-gray-100"
 								}`}
 							>
-								{connectedCalendars.includes("Google Calendar") ? "Disconnect" : "Connect"}
+								{connectedCalendars.includes("Google Calendar")
+									? "Disconnect"
+									: "Connect"}
 							</button>
 						</div>
 
 						<div className="flex items-center justify-between px-6 py-4 bg-white rounded-lg border border-gray-400">
 							<div className="flex items-center gap-5">
 								<div className="w-6 h-6 rounded flex items-center justify-center">
-									<Image src="/Icons/image 5.png" alt="Outlook Calendar" width={24} height={24} />
+									<Image
+										src="/Icons/image 5.png"
+										alt="Outlook Calendar"
+										width={24}
+										height={24}
+									/>
 								</div>
 								<span className="text-lg text-gray-700">Outlook Calendar</span>
 								{connectedCalendars.includes("Outlook Calendar") && (
@@ -1448,14 +1747,25 @@ export default function SettingsPage() {
 									</span>
 								)}
 							</div>
-							<button 
+							<button
 								onClick={() => {
 									if (connectedCalendars.includes("Outlook Calendar")) {
 										handleOutlookCalendarDisconnect();
 									} else {
-										const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
-										// No return_to for settings page - user stays on settings
-										window.location.href = `${apiBase}/microsoft/auth?purpose=calendar`;
+										const apiBase = (
+											process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+										).replace(/\/+$/, "");
+										const token =
+											localStorage.getItem("access_token") ||
+											localStorage.getItem("token");
+										if (!token) {
+											alert("Please log in first to connect Outlook Calendar.");
+											return;
+										}
+										// Pass token so backend can identify user and save credentials properly
+										window.location.href = `${apiBase}/microsoft/auth?token=${encodeURIComponent(
+											token
+										)}&purpose=calendar`;
 									}
 								}}
 								className={`px-4 py-2 rounded-lg text-sm transition-colors ${
@@ -1464,7 +1774,9 @@ export default function SettingsPage() {
 										: "bg-gray-50 border border-gray-300 text-gray-700 hover:bg-gray-100"
 								}`}
 							>
-								{connectedCalendars.includes("Outlook Calendar") ? "Disconnect" : "Connect"}
+								{connectedCalendars.includes("Outlook Calendar")
+									? "Disconnect"
+									: "Connect"}
 							</button>
 						</div>
 
@@ -1492,7 +1804,12 @@ export default function SettingsPage() {
 						<div className="flex items-center justify-between px-6 py-4 bg-white rounded-lg border border-gray-400">
 							<div className="flex items-center gap-5">
 								<div className="w-6 h-6 rounded flex items-center justify-center">
-									<Image src="/Icons/image 8.png" alt="Exchange Calendar" width={24} height={24} />
+									<Image
+										src="/Icons/image 8.png"
+										alt="Exchange Calendar"
+										width={24}
+										height={24}
+									/>
 								</div>
 								<span className="text-lg text-gray-700">Exchange Calendar</span>
 								{connectedCalendars.includes("Exchange Calendar") && (
@@ -1501,8 +1818,10 @@ export default function SettingsPage() {
 									</span>
 								)}
 							</div>
-							<button 
-								onClick={() => alert("Exchange Calendar integration coming soon!")}
+							<button
+								onClick={() =>
+									alert("Exchange Calendar integration coming soon!")
+								}
 								className="px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-100 transition-colors"
 							>
 								Connect
@@ -1514,33 +1833,47 @@ export default function SettingsPage() {
 				{/* Permissions */}
 				<div className="space-y-5">
 					<div className="flex items-start gap-3">
-						<CustomCircularCheckbox 
+						<CustomCircularCheckbox
 							checked={formData.emailAccess}
-							onChange={(checked) => handleInputChange('emailAccess', checked)}
+							onChange={(checked) => handleInputChange("emailAccess", checked)}
 							className="mt-1"
 						/>
 						<p className="text-base text-gray-700 leading-5">
-							Allow Mira to access your email to read, compose, manage drafts, and send emails from your connected accounts. <a href="#" className="text-gray-500 underline text-sm">Learn more</a>
+							Allow Mira to access your email to read, compose, manage drafts,
+							and send emails from your connected accounts.{" "}
+							<a href="#" className="text-gray-500 underline text-sm">
+								Learn more
+							</a>
 						</p>
 					</div>
 
 					<div className="flex items-start gap-3">
-						<CustomCircularCheckbox 
+						<CustomCircularCheckbox
 							checked={formData.calendarAccess}
-							onChange={(checked) => handleInputChange('calendarAccess', checked)}
+							onChange={(checked) =>
+								handleInputChange("calendarAccess", checked)
+							}
 							className="mt-1"
 						/>
 						<p className="text-base text-gray-700 leading-5">
-							Allow Mira to access your calendar to view, create, edit, and manage your events and reminders across connected accounts.
+							Allow Mira to access your calendar to view, create, edit, and
+							manage your events and reminders across connected accounts.
 						</p>
 					</div>
 
 					{/* Privacy Policy Section */}
 					<div className="mt-6">
 						<p className="text-lg text-gray-800 leading-6">
-							<span className="font-bold">Make sure you trust Mira:</span> Review{' '}
-							<a href="#" className="text-purple-600 underline">Mira&apos;s Privacy Policy</a> and{' '}
-							<a href="#" className="text-purple-600 underline">Terms of Service</a> to understand how Mira will process and protect your data.
+							<span className="font-bold">Make sure you trust Mira:</span>{" "}
+							Review{" "}
+							<a href="#" className="text-purple-600 underline">
+								Mira&apos;s Privacy Policy
+							</a>{" "}
+							and{" "}
+							<a href="#" className="text-purple-600 underline">
+								Terms of Service
+							</a>{" "}
+							to understand how Mira will process and protect your data.
 						</p>
 					</div>
 				</div>
@@ -1558,68 +1891,115 @@ export default function SettingsPage() {
 	const renderSubscriptionTab = () => (
 		<div className="space-y-5">
 			<p className="text-xl text-gray-800 leading-6">
-				View your current plan, update billing details, or upgrade your subscription anytime.
+				View your current plan, update billing details, or upgrade your
+				subscription anytime.
 			</p>
-			
+
 			<div className="space-y-5">
 				{/* Plan Selection */}
 				<div className="space-y-5">
-					<div className={`flex items-center justify-between px-6 py-4 rounded-lg border ${formData.selectedPlan === 'basic' ? 'border-gray-400 bg-gray-50' : 'border-gray-400 bg-white'}`}>
+					<div
+						className={`flex items-center justify-between px-6 py-4 rounded-lg border ${
+							formData.selectedPlan === "basic"
+								? "border-gray-400 bg-gray-50"
+								: "border-gray-400 bg-white"
+						}`}
+					>
 						<div className="flex items-center gap-2">
 							<div className="w-10 h-10 rounded flex items-center justify-center">
-								<Image src="/Icons/Ellipse 12.svg" alt="Basic Plan" width={40} height={40} />
+								<Image
+									src="/Icons/Ellipse 12.svg"
+									alt="Basic Plan"
+									width={40}
+									height={40}
+								/>
 							</div>
 							<div>
-								<h4 className="text-lg font-normal text-gray-700">Basic Plan - Free</h4>
-								<p className="text-sm text-gray-500">AI assistant managing Email, calendar, and meeting</p>
+								<h4 className="text-lg font-normal text-gray-700">
+									Basic Plan - Free
+								</h4>
+								<p className="text-sm text-gray-500">
+									AI assistant managing Email, calendar, and meeting
+								</p>
 							</div>
 						</div>
 						<div className="relative">
 							<CustomRadioButton
 								name="plan"
 								value="basic"
-								checked={formData.selectedPlan === 'basic'}
-								onChange={(value) => handleInputChange('selectedPlan', value)}
+								checked={formData.selectedPlan === "basic"}
+								onChange={(value) => handleInputChange("selectedPlan", value)}
 							/>
 						</div>
 					</div>
 
-					<div className={`flex items-center justify-between px-6 py-4 rounded-lg border ${formData.selectedPlan === 'advanced' ? 'border-gray-400 bg-gray-50' : 'border-gray-400 bg-white'}`}>
+					<div
+						className={`flex items-center justify-between px-6 py-4 rounded-lg border ${
+							formData.selectedPlan === "advanced"
+								? "border-gray-400 bg-gray-50"
+								: "border-gray-400 bg-white"
+						}`}
+					>
 						<div className="flex items-center gap-2">
 							<div className="w-10 h-10 rounded flex items-center justify-center">
-								<Image src="/Icons/Ellipse 10.svg" alt="Advanced Plan" width={40} height={40} />
+								<Image
+									src="/Icons/Ellipse 10.svg"
+									alt="Advanced Plan"
+									width={40}
+									height={40}
+								/>
 							</div>
 							<div>
-								<h4 className="text-lg font-normal text-gray-700">Advanced Plan - $9/month</h4>
-								<p className="text-sm text-gray-500">AI assistant with customized voice</p>
+								<h4 className="text-lg font-normal text-gray-700">
+									Advanced Plan - $9/month
+								</h4>
+								<p className="text-sm text-gray-500">
+									AI assistant with customized voice
+								</p>
 							</div>
 						</div>
 						<div className="relative">
 							<CustomRadioButton
 								name="plan"
 								value="advanced"
-								checked={formData.selectedPlan === 'advanced'}
-								onChange={(value) => handleInputChange('selectedPlan', value)}
+								checked={formData.selectedPlan === "advanced"}
+								onChange={(value) => handleInputChange("selectedPlan", value)}
 							/>
 						</div>
 					</div>
 
-					<div className={`flex items-center justify-between px-6 py-4 rounded-lg border ${formData.selectedPlan === 'premium' ? 'border-gray-400 bg-gray-50' : 'border-gray-400 bg-white'}`}>
+					<div
+						className={`flex items-center justify-between px-6 py-4 rounded-lg border ${
+							formData.selectedPlan === "premium"
+								? "border-gray-400 bg-gray-50"
+								: "border-gray-400 bg-white"
+						}`}
+					>
 						<div className="flex items-center gap-2">
 							<div className="w-10 h-10 rounded flex items-center justify-center">
-								<Image src="/Icons/Ellipse 11.svg" alt="Premium Plan" width={40} height={40} />
+								<Image
+									src="/Icons/Ellipse 11.svg"
+									alt="Premium Plan"
+									width={40}
+									height={40}
+								/>
 							</div>
 							<div>
-								<h4 className="text-lg font-normal text-gray-700">Premium Plan - $19/month</h4>
-								<p className="text-sm text-gray-500">Customized voice AI assistant being able to make appointments for you</p>
+								<h4 className="text-lg font-normal text-gray-700">
+									Premium Plan - $19/month
+								</h4>
+								<p className="text-sm text-gray-500">
+									Customized voice AI assistant being able to make appointments
+									for you
+								</p>
 							</div>
 						</div>
 						<div className="relative">
 							<CustomRadioButton
 								name="plan"
 								value="premium"
-								checked={formData.selectedPlan === 'premium'}
-								onChange={(value) => handleInputChange('selectedPlan', value)}
+								checked={formData.selectedPlan === "premium"}
+								onChange={(value) => handleInputChange("selectedPlan", value)}
 							/>
 						</div>
 					</div>
@@ -1628,17 +2008,21 @@ export default function SettingsPage() {
 				{/* Card Details */}
 				<div className="space-y-10">
 					<div>
-						<h3 className="text-2xl font-medium text-gray-800 mb-2">Card Details</h3>
+						<h3 className="text-2xl font-medium text-gray-800 mb-2">
+							Card Details
+						</h3>
 						<p className="text-lg text-gray-500">Update your card details.</p>
 					</div>
 
 					<div className="space-y-5">
 						<div>
-							<label className="block text-lg text-gray-700 mb-3">Name on card</label>
+							<label className="block text-lg text-gray-700 mb-3">
+								Name on card
+							</label>
 							<input
 								type="text"
 								value={formData.cardName}
-								onChange={(e) => handleInputChange('cardName', e.target.value)}
+								onChange={(e) => handleInputChange("cardName", e.target.value)}
 								className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-gray-900 placeholder-gray-500"
 								placeholder="Enter name on card"
 							/>
@@ -1646,21 +2030,27 @@ export default function SettingsPage() {
 
 						<div className="flex gap-6">
 							<div className="flex-1">
-								<label className="block text-lg text-gray-700 mb-3">Card number</label>
+								<label className="block text-lg text-gray-700 mb-3">
+									Card number
+								</label>
 								<input
 									type="text"
 									value={formData.cardNumber}
-									onChange={(e) => handleInputChange('cardNumber', e.target.value)}
+									onChange={(e) =>
+										handleInputChange("cardNumber", e.target.value)
+									}
 									className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-gray-900 placeholder-gray-500"
 									placeholder="1234 5678 9012 3456"
 								/>
 							</div>
 							<div className="w-28">
-								<label className="block text-lg text-gray-700 mb-3">Exp date</label>
+								<label className="block text-lg text-gray-700 mb-3">
+									Exp date
+								</label>
 								<input
 									type="text"
 									value={formData.expDate}
-									onChange={(e) => handleInputChange('expDate', e.target.value)}
+									onChange={(e) => handleInputChange("expDate", e.target.value)}
 									className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-gray-900 placeholder-gray-500"
 									placeholder="MM/YY"
 								/>
@@ -1670,7 +2060,7 @@ export default function SettingsPage() {
 								<input
 									type="text"
 									value={formData.cvv}
-									onChange={(e) => handleInputChange('cvv', e.target.value)}
+									onChange={(e) => handleInputChange("cvv", e.target.value)}
 									className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-gray-900 placeholder-gray-500"
 									placeholder="123"
 								/>
@@ -1678,11 +2068,13 @@ export default function SettingsPage() {
 						</div>
 
 						<div>
-							<label className="block text-lg text-gray-700 mb-3">Address</label>
+							<label className="block text-lg text-gray-700 mb-3">
+								Address
+							</label>
 							<input
 								type="text"
 								value={formData.address}
-								onChange={(e) => handleInputChange('address', e.target.value)}
+								onChange={(e) => handleInputChange("address", e.target.value)}
 								className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-gray-900 placeholder-gray-500"
 								placeholder="Enter your address"
 							/>
@@ -1694,27 +2086,33 @@ export default function SettingsPage() {
 								<input
 									type="text"
 									value={formData.city}
-									onChange={(e) => handleInputChange('city', e.target.value)}
+									onChange={(e) => handleInputChange("city", e.target.value)}
 									className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-gray-900 placeholder-gray-500"
 									placeholder="Enter city"
 								/>
 							</div>
 							<div className="w-28">
-								<label className="block text-lg text-gray-700 mb-3">State</label>
+								<label className="block text-lg text-gray-700 mb-3">
+									State
+								</label>
 								<input
 									type="text"
 									value={formData.state}
-									onChange={(e) => handleInputChange('state', e.target.value)}
+									onChange={(e) => handleInputChange("state", e.target.value)}
 									className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-gray-900 placeholder-gray-500"
 									placeholder="State"
 								/>
 							</div>
 							<div className="w-28">
-								<label className="block text-lg text-gray-700 mb-3">Postal code</label>
+								<label className="block text-lg text-gray-700 mb-3">
+									Postal code
+								</label>
 								<input
 									type="text"
 									value={formData.postalCode}
-									onChange={(e) => handleInputChange('postalCode', e.target.value)}
+									onChange={(e) =>
+										handleInputChange("postalCode", e.target.value)
+									}
 									className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-gray-900 placeholder-gray-500"
 									placeholder="12345"
 								/>
@@ -1735,15 +2133,15 @@ export default function SettingsPage() {
 
 	const renderTabContent = () => {
 		switch (activeTab) {
-			case 'profile':
+			case "profile":
 				return renderProfileTab();
-			case 'preferences':
+			case "preferences":
 				return renderPreferencesTab();
-			case 'notifications':
+			case "notifications":
 				return renderNotificationsTab();
-			case 'privacy':
+			case "privacy":
 				return renderPrivacyTab();
-			case 'subscription':
+			case "subscription":
 				return renderSubscriptionTab();
 			default:
 				return renderProfileTab();
@@ -1773,13 +2171,17 @@ export default function SettingsPage() {
 	const fetchWeatherForCoords = async (lat: number, lon: number) => {
 		try {
 			setIsWeatherLoading(true);
-			console.log('Settings: fetching weather for coords:', lat, lon);
+			console.log("Settings: fetching weather for coords:", lat, lon);
 			const data = await getWeather(lat, lon);
 			const temp = data?.temperatureC;
-			if (typeof temp === 'number') setTemperatureC(temp);
-			else console.warn('Settings: weather response did not contain a numeric temperature', data);
+			if (typeof temp === "number") setTemperatureC(temp);
+			else
+				console.warn(
+					"Settings: weather response did not contain a numeric temperature",
+					data
+				);
 		} catch (err) {
-			console.error('Settings: Error fetching weather:', err);
+			console.error("Settings: Error fetching weather:", err);
 		} finally {
 			setIsWeatherLoading(false);
 		}
@@ -1797,15 +2199,25 @@ export default function SettingsPage() {
 			<div className="flex items-center justify-between mb-8">
 				<div className="flex items-center gap-8">
 					<div className="flex items-center gap-2">
-						<span className="text-base text-gray-800">{getFormattedDate(timezone)}</span>
+						<span className="text-base text-gray-800">
+							{getFormattedDate(timezone)}
+						</span>
 					</div>
 					<div className="flex items-center gap-2 px-3 py-2 bg-white rounded-full border border-gray-200">
 						<MapPin className="w-4 h-4 text-gray-600" />
-						<span className="text-base text-gray-800">{isLocationLoading ? 'Detecting...' : location}</span>
+						<span className="text-base text-gray-800">
+							{isLocationLoading ? "Detecting..." : location}
+						</span>
 					</div>
 					<div className="flex items-center gap-2 px-3 py-2 bg-white rounded-full border border-gray-200">
 						<Sun className="w-6 h-6 text-yellow-500" />
-						<span className="text-base text-gray-800">{isWeatherLoading ? '...' : (temperatureC != null ? `${Math.round(temperatureC)}°` : '—')}</span>
+						<span className="text-base text-gray-800">
+							{isWeatherLoading
+								? "..."
+								: temperatureC != null
+								? `${Math.round(temperatureC)}°`
+								: "—"}
+						</span>
 					</div>
 				</div>
 				<div className="w-11 h-11 bg-white rounded-lg border border-gray-200 flex items-center justify-center">
@@ -1826,19 +2238,17 @@ export default function SettingsPage() {
 						onClick={() => setActiveTab(tab.id)}
 						className={`px-2 py-1 text-xl transition-colors ${
 							activeTab === tab.id
-								? 'text-gray-800 font-medium border-b-2 border-purple-600 pb-4'
-								: 'text-gray-500 font-medium hover:text-gray-700 pb-4'
+								? "text-gray-800 font-medium border-b-2 border-purple-600 pb-4"
+								: "text-gray-500 font-medium hover:text-gray-700 pb-4"
 						}`}
 					>
 						{tab.label}
 					</button>
 				))}
 			</div>
-
+			<Sidebar />
 			{/* Tab Content */}
-			<div className="max-w-4xl">
-				{renderTabContent()}
-			</div>
+			<div className="max-w-4xl">{renderTabContent()}</div>
 		</div>
 	);
 }

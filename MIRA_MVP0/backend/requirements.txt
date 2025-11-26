@@ -1,121 +1,74 @@
-# Core FastAPI and server dependencies
-fastapi==0.119.0
-uvicorn==0.37.0
-starlette==0.48.0
-python-multipart==0.0.20
-mangum==0.17.0
+annotated-types==0.7.0
+anyio==4.11.0
 awslambdaric==2.0.4
-
-# HTTP clients
-httpx==0.28.1
-requests==2.32.5
-httpcore==1.0.9
+beautifulsoup4==4.14.2
+cachetools==6.2.1
+certifi==2025.10.5
+cffi==2.0.0
+charset-normalizer==3.4.4
+psycopg2-binary==2.9.10
+click==8.3.0
+cryptography==46.0.3
+elevenlabs==2.18.0
+exceptiongroup==1.3.0
+fastapi==0.119.0
+google-api-core==2.28.1
+google-api-python-client==2.187.0
+google-auth==2.41.1
+google-auth-httplib2==0.2.1
+google-auth-oauthlib==1.2.3
+googleapis-common-protos==1.72.0
+gotrue==2.12.4
 h11==0.16.0
 h2==4.3.0
 hpack==4.1.0
-hyperframe==6.1.0
-httptools==0.7.1
+httpcore==1.0.9
 httplib2==0.31.0
-
-# Authentication and OAuth
-google-auth==2.41.1
-google-auth-oauthlib==1.2.3
-google-auth-httplib2==0.2.1
-google-api-python-client==2.187.0
-google-api-core==2.28.1
-googleapis-common-protos==1.72.0
-requests-oauthlib==2.0.0
-oauthlib==3.3.1
-PyJWT==2.10.1
-
-# Supabase
-supabase==2.24.0
-gotrue==2.12.4
-postgrest==2.24.0
-storage3==2.24.0
-realtime==2.24.0
-supabase-auth==2.24.0
-supabase-functions==2.24.0
-
-# OpenAI
-openai==2.7.1
-
-# Voice and audio processing
-elevenlabs==2.18.0
-pydub==0.25.1
-webrtcvad==2.0.10
-
-# Calendar and date handling
+httptools==0.7.1
+httpx==0.28.1
+hyperframe==6.1.0
 icalendar==6.3.2
-python-dateutil==2.9.0.post0
-pytz==2025.2
-tzdata==2025.2
-
-# HTML parsing
-beautifulsoup4==4.14.2
-lxml==6.0.2
-html5lib==1.1
-soupsieve==2.8
-webencodings==0.5.1
-
-# Payments
-stripe==10.11.0
-
-# Pydantic and validation
-pydantic==2.12.4
-pydantic_core==2.41.5
-annotated-types==0.7.0
-
-# Environment and configuration
-python-dotenv==1.1.1
-
-# Utilities
-certifi==2025.10.5
-charset-normalizer==3.4.4
 idna==3.11
-urllib3==2.5.0
-uritemplate==4.2.0
-click==8.3.0
-colorama==0.4.6
-packaging==24.2
-pyparsing==3.2.5
-PyYAML==6.0.3
-simplejson==3.17.2
-six==1.17.0
-tqdm==4.67.1
-
-# Cryptography
-cryptography==46.0.3
-cffi==2.0.0
-pycparser==2.23
-rsa==4.9.1
+jiter==0.11.1
+mangum==0.17.0
+multidict==6.7.0
+oauthlib==3.3.1
+openai==2.7.1
+packaging==25.0
+postgrest==2.24.0
+proto-plus==1.26.1
+protobuf==6.33.0
 pyasn1==0.6.1
 pyasn1_modules==0.4.2
-
-# Type hints
-typing_extensions==4.15.0
-typing-inspection==0.4.2
-StrEnum==0.4.15
-
-# Protocol buffers
-protobuf==6.33.0
-proto-plus==1.26.1
-
-# Async and networking
-anyio==4.11.0
+pycparser==2.23
+pydantic==2.12.4
+pydantic_core==2.41.5
+pydub==0.25.1
+PyJWT==2.10.1
+pyparsing==3.2.5
+python-dateutil==2.9.0.post0
+python-dotenv==1.1.1
+python-multipart==0.0.20
+pytz==2025.2
+PyYAML==6.0.3
+realtime==2.24.0
+requests==2.32.5
+requests-oauthlib==2.0.0
+rsa==4.9.1
+six==1.17.0
 sniffio==1.3.1
+soupsieve==2.8
+starlette==0.48.0
+storage3==2.24.0
+stripe==6.7.0
+supabase==2.24.0
+supabase-auth==2.24.0
+supabase-functions==2.24.0
+typing_extensions==4.15.0
+tzdata==2025.2
+uritemplate==4.2.0
+urllib3==2.5.0
+uvicorn==0.37.0
+webencodings==0.5.1
 websockets==13.1
 yarl==1.22.0
-multidict==6.7.0
-jiter==0.11.1
-
-# Development and tooling
-watchfiles==1.1.1
-cachetools==5.5.0
-deprecation==2.1.0
-distro==1.9.0
-exceptiongroup==1.3.0
-propcache==0.4.1
-
-# Note: ffmpeg is a system binary, not a Python package
-# It should be installed separately on the system if needed for audio conversion
