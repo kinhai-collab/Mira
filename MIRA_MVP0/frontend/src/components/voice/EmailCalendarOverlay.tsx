@@ -240,9 +240,9 @@ function SummaryCard({
 			return true;
 		}
 
-		// Try to parse the date from various formats
+		// Try to parse the date from receivedAt field
 		let receivedAt: Date | null = null;
-		const receivedAtValue = e.receivedAt || e.timestamp || e.receivedDateTime;
+		const receivedAtValue = e.receivedAt;
 
 		if (!receivedAtValue) {
 			return true; // Include emails without any date field
