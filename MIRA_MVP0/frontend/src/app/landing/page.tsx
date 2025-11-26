@@ -4,53 +4,195 @@
 import Image from "next/image";
 import Link from "next/link";
 
+import StarFlowBackground from "@/components/landing/StarFlowBackground";
+
 export default function LandingPage() {
 	return (
-		<div className="relative w-full min-h-screen bg-[#D7C3F2] flex flex-col items-center px-4 md:px-10 py-20 overflow-hidden">
-			{/* ==== LEFT GRADIENT ==== */}
-			<Image
-				src="/Icons/LandingIcons/Ellipse 17.png"
-				alt="left glow"
-				width={1500}
-				height={1500}
-				className="absolute top-[-30%] left-[-5%] opacity-[0.92] z-[1]"
-			/>
+		<div
+			className="relative w-full min-h-screen flex flex-col items-center px-4 md:px-10 py-20 overflow-hidden"
+			style={{
+				background: "linear-gradient(180deg, #D0C7FA 0%, #FBDBED 100%)",
+			}}
+		>
 
-			{/* ==== RIGHT GRADIENT ==== */}
-			<Image
-				src="/Icons/LandingIcons/Ellipse 21.png"
-				alt="right glow"
-				width={900}
-				height={900}
-				className="absolute top-[-10%] right-[-10%] opacity-[0.95] z-[1]"
+
+			{/* ===================== LEFT ORB ===================== */}
+			<div
+				style={{
+					position: "absolute",
+					width: "40px",
+					height: "40px",
+					left: "26px",
+					top: "24px",
+					background: "linear-gradient(135deg, #E1B5FF 0%, #C4A0FF 100%)", // Assumed gradient based on shadow/context
+					borderRadius: "50%",
+					boxShadow: "0px 0px 10px 0px #BAB2DA",
+					zIndex: 50,
+				}}
 			/>
 
 			{/* ===================== HEADER ===================== */}
-			<div className="text-center max-w-3xl relative z-[20]">
-				<h1 className="text-4xl md:text-5xl font-bold text-[#392B4C]">
-					Welcome to <span className="text-[#7E3FF2]">Mira</span>
-				</h1>
+			<div
+				style={{
+					position: "absolute",
+					width: "745px",
+					height: "192px",
+					left: "calc(50% - 745px/2 - 2.5px)",
+					top: "165px",
+					display: "flex",
+					flexDirection: "column",
+					alignItems: "center",
+					padding: "0px",
+					gap: "8px",
+					zIndex: 20,
+				}}
+			>
+				{/* Row 1: Welcome to Mira */}
+				<div
+					style={{
+						display: "flex",
+						flexDirection: "row",
+						alignItems: "center",
+						padding: "0px",
+						gap: "8px",
+						width: "457px",
+						height: "76px",
+						flex: "none",
+						order: 0,
+						flexGrow: 0,
+					}}
+				>
+					<span
+						style={{
+							width: "322px",
+							height: "76px",
+							fontFamily: "'Outfit', sans-serif",
+							fontStyle: "normal",
+							fontWeight: 600,
+							fontSize: "60px",
+							lineHeight: "76px",
+							textAlign: "center",
+							letterSpacing: "0.005em",
+							color: "#282829",
+						}}
+					>
+						Welcome to
+					</span>
+					<span
+						style={{
+							width: "127px",
+							height: "76px",
+							fontFamily: "'Outfit', sans-serif",
+							fontStyle: "normal",
+							fontWeight: 600,
+							fontSize: "60px",
+							lineHeight: "76px",
+							textAlign: "center",
+							letterSpacing: "0.005em",
+							background: "linear-gradient(180deg, #6A49ED 0%, #C83C8E 100%)",
+							WebkitBackgroundClip: "text",
+							WebkitTextFillColor: "transparent",
+							backgroundClip: "text",
+						}}
+					>
+						Mira
+					</span>
+				</div>
 
-				<p className="text-lg md:text-xl text-gray-700 mt-4">
-					Your Proactive Personal Assistant that{" "}
-					<span className="font-semibold text-[#8D44C2]">
+				{/* Row 2: Your Proactive... */}
+				<div
+					style={{
+						width: "745px",
+						height: "50px",
+						fontFamily: "'Outfit', sans-serif",
+						fontStyle: "normal",
+						fontWeight: 500,
+						fontSize: "40px",
+						lineHeight: "50px",
+						textAlign: "center",
+						letterSpacing: "0.005em",
+						color: "#282829",
+						flex: "none",
+						order: 1,
+						alignSelf: "stretch",
+						flexGrow: 0,
+					}}
+				>
+					Your Proactive Personal Assistant that
+				</div>
+
+				{/* Row 3: gives you time back... */}
+				<div
+					style={{
+						width: "745px",
+						height: "50px",
+						fontFamily: "'Outfit', sans-serif",
+						fontStyle: "normal",
+						fontWeight: 500,
+						fontSize: "40px",
+						lineHeight: "50px",
+						textAlign: "center",
+						letterSpacing: "0.005em",
+						flex: "none",
+						order: 2,
+						alignSelf: "stretch",
+						flexGrow: 0,
+					}}
+				>
+					<span
+						style={{
+							background: "linear-gradient(180deg, #6A49ED 0%, #C83C8E 100%)",
+							WebkitBackgroundClip: "text",
+							WebkitTextFillColor: "transparent",
+							backgroundClip: "text",
+						}}
+					>
 						gives you time back
 					</span>{" "}
-					to do things you love.
-				</p>
+					<span style={{ color: "#282829" }}>to do things you love.</span>
+				</div>
 			</div>
 
+			{/* ===================== RADIAL GRADIENT (Behind Box) ===================== */}
+			<div
+				style={{
+					position: "absolute",
+					width: "1051.72px",
+					height: "799.22px",
+					left: "-72px",
+					top: "959px",
+					background:
+						"radial-gradient(50% 50% at 50% 50%, rgba(255, 255, 255, 0.4) 0%, rgba(255, 255, 255, 0) 100%)",
+					transform: "rotate(-30.81deg)",
+					opacity: 1,
+					backdropFilter: "blur(20px)",
+					zIndex: 5,
+					pointerEvents: "none",
+				}}
+			/>
+
 			{/* ===================== MAIN CONTENT ===================== */}
-			<div className="relative w-full mt-20 flex flex-col md:flex-row md:justify-between md:items-start px-6">
+			<div className="relative w-full mt-[400px] flex flex-col md:flex-row md:justify-between md:items-start px-6">
 				{/* ===================== LEFT SIDE ===================== */}
 				<div className="relative w-full md:w-1/2 flex justify-center md:justify-start">
 					{/* ==== BIG STAR CLOUD ABOVE THE BOX ==== */}
-					<div className="absolute top-[-40%] left-[30%] w-[600px] h-[600px] stars-mask z-[12] rotate-[20deg]">
+					<div
+						className="stars-mask"
+						style={{
+							position: "absolute",
+							width: "600px",
+							height: "550px",
+							top: "0px",
+							left: "200px",
+							opacity: 1,
+							zIndex: 12,
+						}}
+					>
 						<Image
 							src="/Icons/LandingIcons/Vector 6.png"
 							alt="stars"
 							fill
-							className="object-contain opacity-[0.98] brightness-[1.3] contrast-[1.1]"
+							className="object-contain brightness-[1.3] contrast-[1.1]"
 						/>
 					</div>
 
@@ -199,7 +341,6 @@ export default function LandingPage() {
 						/>
 					</div>
 				</div>
-
 				{/* ===================== RIGHT SIDE ===================== */}
 				<div className="relative z-[20] mt-16 md:mt-0 md:w-1/2 md:pl-20">
 					<div className="text-center w-full md:w-[80%] lg:w-[70%] mx-auto">
@@ -286,124 +427,320 @@ export default function LandingPage() {
 					</button>
 				</Link>
 			</div>
-
-			{/* ===================== SECTION 2 ===================== */}
-			<div className="relative w-full mt-32 px-6 md:px-16 lg:px-24 z-[10]">
-				{/* STARS BACKGROUND (Bottom Fade) */}
-				<div className="absolute bottom-[-10%] left-0 w-full h-[600px] stars-mask pointer-events-none select-none">
-					<Image
-						src="/Icons/LandingIcons/Vector 6.png"
-						alt="stars background"
-						fill
-						className="object-cover opacity-[0.55]"
-					/>
+			{/* ===================== SECTION 2 (FEATURES) ===================== */}
+			<div className="relative w-full mt-32 px-6 md:px-16 lg:px-24 z-[10] flex justify-center">
+				{/* STAR FLOW BACKGROUND */}
+				<div className="absolute bottom-[-20%] left-0 w-full h-full z-[0] pointer-events-none overflow-hidden flex justify-center items-end">
+					<div className="w-[1690px] h-[1014px] relative opacity-60">
+						<StarFlowBackground />
+					</div>
 				</div>
 
-				<div className="grid md:grid-cols-2 gap-16 relative z-[20]">
-					{/* ===================== LEFT COLUMN ===================== */}
-					<div className="flex flex-col gap-10">
-						{/* BULLET POINTS (LEFT) */}
-						<div className="space-y-6 text-[#1A1A1A]">
-							<p className="flex items-start gap-3 text-lg">
-								<Image
-									src="/Icons/Property 1=Done.svg"
-									width={22}
-									height={22}
-									alt="check"
-									className="mt-1"
-								/>
-								Simplifies Life with an Intelligent Assistance
-							</p>
-
-							<p className="flex items-start gap-3 text-lg">
-								<Image
-									src="/Icons/Property 1=Done.svg"
-									width={22}
-									height={22}
-									alt="check"
-									className="mt-1"
-								/>
-								Context Awareness and Personalization
-							</p>
-
-							<p className="flex items-start gap-3 text-lg">
-								<Image
-									src="/Icons/Property 1=Done.svg"
-									width={22}
-									height={22}
-									alt="check"
-									className="mt-1"
-								/>
-								Data Privacy and Ethical Automation
-							</p>
+				<div
+					style={{
+						display: "flex",
+						flexDirection: "column",
+						alignItems: "flex-start",
+						padding: "0px",
+						gap: "200px",
+						width: "1126px",
+						maxWidth: "100%", // Responsive fallback
+						position: "relative",
+						zIndex: 20,
+					}}
+				>
+					{/* ===================== ROW 1 (Frame 1357) ===================== */}
+					<div
+						style={{
+							display: "flex",
+							flexDirection: "row",
+							alignItems: "center",
+							padding: "0px",
+							gap: "120px",
+							width: "1126px",
+							maxWidth: "100%",
+							flexWrap: "wrap", // Responsive wrap
+						}}
+					>
+						{/* LEFT: Text Content (Frame 1343) */}
+						<div
+							style={{
+								display: "flex",
+								flexDirection: "column",
+								justifyContent: "center",
+								alignItems: "flex-start",
+								padding: "0px",
+								gap: "40px",
+								width: "506px",
+								height: "170px",
+								flex: "none",
+								order: 0,
+								flexGrow: 0,
+							}}
+						>
+							{[
+								"Simplifies Life with an Intelligent Assistance",
+								"Context Awareness and Personalization",
+								"Data Privacy and Ethical Automation",
+							].map((text, i) => (
+								<div
+									key={i}
+									style={{
+										display: "flex",
+										flexDirection: "row",
+										alignItems: "center",
+										padding: "0px",
+										gap: "8px", // Updated gap from 4px to 8px per Frame 1338/1341/1342
+										width: "506px", // Matches Frame width
+										height: "30px",
+									}}
+								>
+									<div
+										style={{
+											width: "30px",
+											height: "30px",
+											flex: "none",
+											order: 0,
+											flexGrow: 0,
+											display: "flex",
+											alignItems: "center",
+											justifyContent: "center",
+										}}
+									>
+										{/* Vector Icon */}
+										<div
+											style={{
+												width: "24px",
+												height: "18px",
+												background: "#282829",
+												maskImage: "url('/Icons/Property 1=Done.svg')",
+												WebkitMaskImage: "url('/Icons/Property 1=Done.svg')",
+												maskSize: "contain",
+												WebkitMaskSize: "contain",
+												maskRepeat: "no-repeat",
+												WebkitMaskRepeat: "no-repeat",
+												maskPosition: "center",
+												WebkitMaskPosition: "center",
+											}}
+										/>
+									</div>
+									<span
+										style={{
+											fontFamily: "'Outfit', sans-serif",
+											fontStyle: "normal",
+											fontWeight: 500,
+											fontSize: "24px",
+											lineHeight: "30px",
+											letterSpacing: "0.005em",
+											color: "#282829",
+											flex: "none",
+											order: 1,
+											flexGrow: 0,
+										}}
+									>
+										{text}
+									</span>
+								</div>
+							))}
 						</div>
 
-						{/* LEFT IMAGE (BIG UI FRAME) */}
-						<div className="w-full rounded-2xl overflow-hidden shadow-xl">
-							<Image
-								src="/Icons/LandingIcons/Home_ Trigger.png"
-								alt="UI screenshot right"
-								width={900}
-								height={600}
-								className="w-full h-auto"
-							/>
-						</div>
+						{/* RIGHT: Image (Rectangle) */}
+						<div
+							style={{
+								width: "500px",
+								height: "316px",
+								background: "url('/Icons/LandingIcons/Home_ Add_New_Event.png')",
+								backgroundSize: "cover",
+								backgroundPosition: "center",
+								filter: "drop-shadow(0px 4px 24px rgba(0, 0, 0, 0.2))",
+								borderRadius: "12px",
+								flex: "none",
+								order: 1,
+								flexGrow: 0,
+							}}
+						/>
 					</div>
 
-					{/* ===================== RIGHT COLUMN ===================== */}
-					<div className="flex flex-col gap-10">
-						{/* RIGHT TOP IMAGE */}
-						<div className="w-full rounded-2xl overflow-hidden shadow-xl">
-							<Image
-								src="/Icons/LandingIcons/Home_ Add_New_Event.png"
-								alt="UI screenshot right"
-								width={900}
-								height={600}
-								className="w-full h-auto"
-							/>
-						</div>
+					{/* ===================== ROW 2 (Frame 1358) ===================== */}
+					<div
+						style={{
+							display: "flex",
+							flexDirection: "row",
+							alignItems: "center",
+							padding: "0px",
+							gap: "120px",
+							width: "1126px",
+							maxWidth: "100%",
+							flexWrap: "wrap",
+						}}
+					>
+						{/* LEFT: Image (Rectangle) */}
+						<div
+							style={{
+								width: "500px",
+								height: "316px",
+								background: "url('/Icons/LandingIcons/Home_ Trigger.png')",
+								backgroundSize: "cover",
+								backgroundPosition: "center",
+								filter: "drop-shadow(0px 4px 24px rgba(0, 0, 0, 0.2))",
+								borderRadius: "12px",
+								flex: "none",
+								order: 0,
+								flexGrow: 0,
+							}}
+						/>
 
-						{/* BULLET POINTS (RIGHT) */}
-						<div className="space-y-6 text-[#1A1A1A]">
-							<p className="flex items-start gap-3 text-lg">
-								<Image
-									src="/Icons/Property 1=Done.svg"
-									width={22}
-									height={22}
-									alt="check"
-									className="mt-1"
-								/>
-								Voice-First, Reliable, and Personable
-							</p>
+						{/* RIGHT: Content (Frame 1356) */}
+						<div
+							style={{
+								display: "flex",
+								flexDirection: "column",
+								alignItems: "flex-start",
+								padding: "0px",
+								gap: "56px",
+								width: "506px",
+								height: "280px",
+								flex: "none",
+								order: 1,
+								flexGrow: 0,
+							}}
+						>
+							{/* Text List (Frame 1344) */}
+							<div
+								style={{
+									display: "flex",
+									flexDirection: "column",
+									alignItems: "flex-start",
+									padding: "0px",
+									gap: "40px",
+									width: "506px",
+									height: "170px",
+									flex: "none",
+									order: 0,
+									alignSelf: "stretch",
+									flexGrow: 0,
+								}}
+							>
+								{[
+									"Voice-First, Reliable, and Personable",
+									"Powerful Productivity Features",
+									"Empowers Work-Life Balance",
+								].map((text, i) => (
+									<div
+										key={i}
+										style={{
+											display: "flex",
+											flexDirection: "row",
+											alignItems: "center",
+											padding: "0px",
+											gap: "4px", // Frame 1339/1340/1342 specify 4px gap here
+											width: "506px",
+											height: "30px",
+										}}
+									>
+										<div
+											style={{
+												width: "30px",
+												height: "30px",
+												flex: "none",
+												order: 0,
+												flexGrow: 0,
+												display: "flex",
+												alignItems: "center",
+												justifyContent: "center",
+											}}
+										>
+											{/* Vector Icon */}
+											<div
+												style={{
+													width: "24px",
+													height: "18px",
+													background: "#282829",
+													maskImage: "url('/Icons/Property 1=Done.svg')",
+													WebkitMaskImage: "url('/Icons/Property 1=Done.svg')",
+													maskSize: "contain",
+													WebkitMaskSize: "contain",
+													maskRepeat: "no-repeat",
+													WebkitMaskRepeat: "no-repeat",
+													maskPosition: "center",
+													WebkitMaskPosition: "center",
+												}}
+											/>
+										</div>
+										<span
+											style={{
+												fontFamily: "'Outfit', sans-serif",
+												fontStyle: "normal",
+												fontWeight: 500,
+												fontSize: "24px",
+												lineHeight: "30px",
+												letterSpacing: "0.005em",
+												color: "#282829",
+												flex: "none",
+												order: 1,
+												flexGrow: 0,
+											}}
+										>
+											{text}
+										</span>
+									</div>
+								))}
+							</div>
 
-							<p className="flex items-start gap-3 text-lg">
-								<Image
-									src="/Icons/Property 1=Done.svg"
-									width={22}
-									height={22}
-									alt="check"
-									className="mt-1"
-								/>
-								Powerful Productivity Features
-							</p>
-
-							<p className="flex items-start gap-3 text-lg">
-								<Image
-									src="/Icons/Property 1=Done.svg"
-									width={22}
-									height={22}
-									alt="check"
-									className="mt-1"
-								/>
-								Empowers Work-Life Balance
-							</p>
-						</div>
-
-						{/* CTA BUTTON */}
-						<div>
-							<button className="bg-black text-white py-2 px-8 rounded-full text-lg font-normal shadow-lg hover:opacity-90 transition">
-								Request Early Access
-							</button>
+							{/* CTA BUTTON (Frame 998 + Frame 983) */}
+							<div
+								style={{
+									display: "flex",
+									flexDirection: "column",
+									alignItems: "flex-start",
+									padding: "0px",
+									gap: "12px",
+									width: "506px",
+									height: "54px",
+									flex: "none",
+									order: 1,
+									flexGrow: 0,
+								}}
+							>
+								<button
+									style={{
+										display: "flex",
+										flexDirection: "row",
+										justifyContent: "center",
+										alignItems: "center",
+										padding: "12px 24px",
+										width: "506px",
+										height: "54px",
+										background: "#282829",
+										borderRadius: "50px",
+										flex: "none",
+										order: 0,
+										alignSelf: "stretch",
+										flexGrow: 0,
+										border: "none",
+										cursor: "pointer",
+									}}
+								>
+									<span
+										style={{
+											width: "226px",
+											height: "30px",
+											fontFamily: "'Outfit', sans-serif",
+											fontStyle: "normal",
+											fontWeight: 500,
+											fontSize: "24px",
+											lineHeight: "30px",
+											letterSpacing: "0.005em",
+											color: "#FBFCFD",
+											flex: "none",
+											order: 0,
+											flexGrow: 0,
+										}}
+									>
+										Request Early Access
+									</span>
+								</button>
+							</div>
 						</div>
 					</div>
 				</div>
