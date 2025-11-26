@@ -229,7 +229,7 @@ function SummaryCard({
 	// Use provided value or fallback
 	const currentProvider = provider || "gmail";
 
-	// Calculate 7-day window (extended from 24 hours to show more emails)
+	// Calculate 7-day window (extended from 24 hours to show more emails to match backend)
 	const now = new Date();
 	const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
