@@ -26,6 +26,7 @@ import {
 	type ReminderStats,
 } from "@/utils/dashboardApi";
 import { getWeather } from "@/utils/weather";
+import HeaderBar from "@/components/HeaderBar";
 
 function MobileProfileMenu() {
 	const [open, setOpen] = useState(false);
@@ -445,739 +446,717 @@ export default function Dashboard() {
 
 	return (
 		<div className="flex flex-col md:flex-row h-screen bg-[#F8F8FB] text-gray-800">
-			{/* SCALE WRAPPER */}
-			{/* Main Content */}
-			<main className="flex-1 px-4 sm:px-8 md:px-12 py-8 md:py-10 overflow-y-auto">
-				{/* Header Section - Styled like Figma */}
-				<div className="mb-10 md:mb-12 text-center md:text-left space-y-3">
-					{/* Top Line: Date | Location | Weather */}
-					<div className="flex flex-wrap items-center gap-3 text-gray-600 text-sm">
-						<span className="font-medium">
-							{new Date().toLocaleDateString("en-US", {
-								weekday: "short",
-								month: "short",
-								day: "numeric",
-							})}
-						</span>
-
-						{/* Location chip */}
-						<span className="flex items-center gap-1 bg-white border border-gray-200 rounded-full px-3 py-1 shadow-sm">
-							<Image
-								src="/Icons/Property 1=Location.svg"
-								alt="Location"
-								width={14}
-								height={14}
-							/>
-							<span className="text-gray-700">{displayLocation}</span>
-						</span>
-
-						{/* Weather chip */}
-						<span className="flex items-center gap-1 bg-white border border-gray-200 rounded-full px-3 py-1 shadow-sm">
-							<Image
-								src="/Icons/Property 1=Sun.svg"
-								alt="Weather"
-								width={14}
-								height={14}
-							/>
-							<span className="text-gray-700">{displayTemperature}</span>
-						</span>
-
-						{/* Time (right-aligned on large screens) */}
-						<span className="ml-auto text-gray-400 text-sm font-medium">
-							{formatTime(currentTime)}
-						</span>
+			<div className="absolute pt-0 top-4 left-0 w-full px-4 md:pl-[90px]">
+				<HeaderBar
+					dateLabel={new Date().toLocaleDateString("en-US", {
+						weekday: "short",
+						month: "short",
+						day: "numeric",
+					})}
+					locationLabel={location}
+					temperatureLabel={temperatureC != null ? `${temperatureC}°` : "—"}
+					isLocationLoading={isLocationLoading}
+					isWeatherLoading={isWeatherLoading}
+				/>
+			</div>
+			<main className="flex-1 px-4 sm:px-6 md:px-12 py-6 md:py-10 overflow-y-auto">
+				{/* SCALE WRAPPER */}
+				<div className="scale-[1] flex flex-col">
+					{/* Header Section - Styled like Figma */}
+					<div className="mb-1 md:mb-12 pt-10 text-center md:text-left space-y-3">
+						{/* Greeting */}
+						<div className="mt-8 md:mt-10">
+							<h1 className="text-3xl md:text-[30px] font-normal text-black leading-snug">
+								{serverGreeting ?? `${getGreeting()}, ${firstName ?? "there"}!`}
+							</h1>
+							<p className="text-gray-600 text-base mt-2">
+								You’re feeling good today. Here’s your day at a glance.
+							</p>
+						</div>
 					</div>
 
-					{/* Greeting */}
-					<div className="mt-8 md:mt-10">
-						<h1 className="text-3xl md:text-[30px] font-normal text-black leading-snug">
-							{serverGreeting ?? `${getGreeting()}, ${firstName ?? "there"}!`}
-						</h1>
-						<p className="text-gray-600 text-base mt-2">
-							You’re feeling good today. Here’s your day at a glance.
-						</p>
-					</div>
-				</div>
+					{/* Daily Overview Section */}
+					<section className="mt-6 mb-8">
+						<div className="bg-white border border-gray-200 rounded-2xl shadow-[0_2px_10px_rgba(0,0,0,0.04)] px-4 sm:px-6 md:px-8 py-5 md:py-6 flex flex-col md:flex-row md:justify-between md:items-center gap-6">
+							{/* Left content block */}
+							<div className="flex flex-col gap-4">
+								{/* Title */}
+								<h3 className="text-[20px] md:text-[21px] font-normal text-gray-800">
+									Daily Overview
+								</h3>
 
-				{/* Daily Overview Section */}
-				<section className="mt-6 mb-8">
-					<div className="bg-white border border-gray-200 rounded-2xl shadow-[0_2px_10px_rgba(0,0,0,0.04)] px-8 py-5 md:py-6 flex flex-col md:flex-row md:justify-between md:items-center gap-6">
-						{/* Left content block */}
-						<div className="flex flex-col gap-4">
-							{/* Title */}
-							<h3 className="text-[20px] md:text-[21px] font-normal text-gray-800">
-								Daily Overview
-							</h3>
-
-							{/* Overview items */}
-							<div className="flex flex-col sm:flex-row flex-wrap items-start md:items-center gap-8 text-[15px] md:text-[15.5px] font-normal text-gray-800">
-								{/* Weather */}
-								<div className="flex items-center gap-3">
-									<div className="border border-gray-300 rounded-full p-[6px] flex items-center justify-center">
-										<Image
-											src="/Icons/Property 1=Sun.svg"
-											alt="Weather"
-											width={22}
-											height={22}
-										/>
-									</div>
-									<div>
-										<p className="text-[15px] leading-tight">
-											{displayWeatherDescription}
-										</p>
-										<p className="text-gray-500 text-[13.5px]">
-											{displayTemperature}
-										</p>
-									</div>
-								</div>
-
-								{/* Commute - Placeholder for now */}
-								<div className="flex items-center gap-3">
-									<div className="border border-gray-300 rounded-full p-[6px] flex items-center justify-center">
-										<Image
-											src="/Icons/Property 1=Car.svg"
-											alt="Commute"
-											width={22}
-											height={22}
-										/>
-									</div>
-									<div>
-										<p className="text-[15px] leading-tight">Commute</p>
-										<p className="text-gray-500 text-[13.5px]">Check traffic</p>
-									</div>
-								</div>
-
-								{/* Next Meeting - Dynamic */}
-								{isLoadingEvents ? (
+								{/* Overview items */}
+								<div className="flex flex-col sm:flex-row flex-wrap items-start md:items-center gap-8 text-[15px] md:text-[15.5px] font-normal text-gray-800">
+									{/* Weather */}
 									<div className="flex items-center gap-3">
 										<div className="border border-gray-300 rounded-full p-[6px] flex items-center justify-center">
 											<Image
-												src="/Icons/Property 1=Calendar.svg"
-												alt="Meeting"
+												src="/Icons/Property 1=Sun.svg"
+												alt="Weather"
 												width={22}
 												height={22}
 											/>
-										</div>
-										<div>
-											<p className="text-[15px] leading-tight">Loading...</p>
-											<p className="text-gray-500 text-[13.5px]">...</p>
-										</div>
-									</div>
-								) : eventStats?.next_event ? (
-									<div className="flex items-center gap-3">
-										<div className="border border-gray-300 rounded-full p-[6px] flex items-center justify-center">
-											{/* Show provider-specific icon */}
-											{eventStats.next_event.provider === "outlook" ? (
-												<Image
-													src="/Icons/Email/vscode-icons_file-type-outlook.png"
-													alt="Outlook Calendar"
-													width={22}
-													height={22}
-												/>
-											) : (
-												<Image
-													src="/Icons/Email/skill-icons_gmail-light.png"
-													alt="Google Calendar"
-													width={22}
-													height={22}
-												/>
-											)}
 										</div>
 										<div>
 											<p className="text-[15px] leading-tight">
-												{eventStats.next_event.summary}
+												{displayWeatherDescription}
 											</p>
 											<p className="text-gray-500 text-[13.5px]">
-												{formatEventTime(eventStats.next_event.start)} |{" "}
-												{formatDuration(eventStats.next_event.duration)}
+												{displayTemperature}
 											</p>
 										</div>
 									</div>
-								) : (
+
+									{/* Commute - Placeholder for now */}
 									<div className="flex items-center gap-3">
 										<div className="border border-gray-300 rounded-full p-[6px] flex items-center justify-center">
 											<Image
-												src="/Icons/Property 1=Calendar.svg"
-												alt="Meeting"
+												src="/Icons/Property 1=Car.svg"
+												alt="Commute"
 												width={22}
 												height={22}
 											/>
 										</div>
 										<div>
-											<p className="text-[15px] leading-tight">No meetings</p>
-											<p className="text-gray-500 text-[13.5px]">today</p>
+											<p className="text-[15px] leading-tight">Commute</p>
+											<p className="text-gray-500 text-[13.5px]">
+												Check traffic
+											</p>
 										</div>
 									</div>
-								)}
-							</div>
-						</div>
 
-						{/* Button (right side) */}
-						<button
-							onClick={() => router.push("/scenarios/morning-brief")}
-							className="self-center md:self-auto px-6 py-[6px] border border-gray-400 rounded-full hover:bg-gray-50 transition text-[14.5px] font-normal text-gray-800"
-						>
-							View Full Brief
-						</button>
-					</div>
-				</section>
-
-				{/* Dashboard Cards */}
-				<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-					{/* Emails */}
-					<div className="bg-white border border-gray-200 rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.04)] p-5 flex flex-col justify-between hover:shadow-md transition-all duration-200">
-						<div>
-							{/* Header */}
-							<h3 className="text-[18px] font-medium mb-3 flex items-center gap-2 text-gray-900">
-								<Image
-									src="/Icons/Property 1=Email.svg"
-									alt="Email"
-									width={20}
-									height={20}
-									className="opacity-90"
-								/>
-								Emails
-							</h3>
-
-							{isLoadingEmails ? (
-								<div className="text-center py-8 text-gray-500">
-									<p>Loading emails...</p>
-								</div>
-							) : emailStats ? (
-								<>
-									{/* Important Emails */}
-									<p className="text-[17px] text-gray-900 mb-0.5 leading-tight">
-										<span className="font-semibold text-[19px]">
-											{emailStats.total_important}
-										</span>{" "}
-										Important Emails
-									</p>
-
-									{/* Clock icon line */}
-									<div className="flex items-center gap-1.5 text-[14.5px] text-gray-500 mb-4">
-										<Image
-											src="/Icons/Property 1=Clock.svg"
-											alt="Time"
-											width={16}
-											height={16}
-											className="opacity-80"
-										/>
-										{emailStats.timeframe || "from the last 24 hours"}
-									</div>
-
-									{/* Priority Distribution */}
-									<p className="text-[16.5px] text-gray-800 mb-2 font-normal">
-										Priority Distribution
-									</p>
-									<div className="flex flex-wrap gap-2 mb-3">
-										{/* High */}
-										{emailStats.priority_distribution.high > 0 && (
-											<span
-												className="text-white text-[13.5px] px-[8px] py-[2px] rounded-full font-normal"
-												style={{
-													background: "#8C2B4A",
-													borderRadius: "99px",
-												}}
-											>
-												High: {emailStats.priority_distribution.high}
-											</span>
-										)}
-
-										{/* Medium */}
-										{emailStats.priority_distribution.medium > 0 && (
-											<span
-												className="text-white text-[13.5px] px-[8px] py-[2px] rounded-full font-normal"
-												style={{
-													background: "#AD819A",
-													borderRadius: "99px",
-												}}
-											>
-												Medium: {emailStats.priority_distribution.medium}
-											</span>
-										)}
-
-										{/* Low */}
-										{emailStats.priority_distribution.low > 0 && (
-											<span
-												className="text-white text-[13.5px] px-[8px] py-[2px] rounded-full font-normal"
-												style={{
-													background: "#44548D",
-													borderRadius: "99px",
-												}}
-											>
-												Low: {emailStats.priority_distribution.low}
-											</span>
-										)}
-
-										{/* Show message if no emails */}
-										{emailStats.priority_distribution.high === 0 &&
-											emailStats.priority_distribution.medium === 0 &&
-											emailStats.priority_distribution.low === 0 && (
-												<span className="text-gray-500 text-[13.5px]">
-													No emails in the last 24 hours
-												</span>
-											)}
-									</div>
-
-									{/* Divider */}
-									<hr className="border-gray-200 mb-2" />
-
-									{/* Unread / Trend */}
-									<div className="flex justify-between items-center text-[15px] text-gray-700 mb-2">
-										<div className="flex flex-col leading-[1.1]">
-											<p className="font-normal mb-[2px]">Unread</p>
-											<span className="text-gray-900 font-semibold text-[17px]">
-												{emailStats.unread}
-											</span>
-										</div>
-
-										<div className="flex flex-col items-end leading-[1.1]">
-											<p className="font-normal mb-[2px]">Trend</p>
-											<div className="flex items-center gap-[3px]">
-												<svg
-													xmlns="http://www.w3.org/2000/svg"
-													width="16"
-													height="16"
-													viewBox="0 0 24 24"
-													fill="none"
-													stroke="#1E1E1E"
-													strokeWidth="1.8"
-													strokeLinecap="round"
-													strokeLinejoin="round"
-													className="opacity-90"
-												>
-													<path d="M3 7L10 14L14 10L21 17" />
-													<path d="M21 12V17H16" />
-												</svg>
-												<span className="text-gray-900 font-semibold text-[17px]">
-													{emailStats.trend}%
-												</span>
+									{/* Next Meeting - Dynamic */}
+									{isLoadingEvents ? (
+										<div className="flex items-center gap-3">
+											<div className="border border-gray-300 rounded-full p-[6px] flex items-center justify-center">
+												<Image
+													src="/Icons/Property 1=Calendar.svg"
+													alt="Meeting"
+													width={22}
+													height={22}
+												/>
+											</div>
+											<div>
+												<p className="text-[15px] leading-tight">Loading...</p>
+												<p className="text-gray-500 text-[13.5px]">...</p>
 											</div>
 										</div>
-									</div>
-
-									{/* Divider */}
-									<hr className="border-gray-200 mb-2" />
-
-									{/* Top Sender Box */}
-									<div className="bg-[#F8F9FB] border border-gray-200 rounded-xl px-3.5 py-2.5 text-[15px]">
-										<p className="text-gray-600 font-normal leading-tight">
-											Top Sender
-										</p>
-										<p className="text-gray-900 font-medium leading-tight mt-[2px]">
-											{emailStats.top_sender}
-										</p>
-									</div>
-								</>
-							) : (
-								<div className="text-center py-8 text-gray-500">
-									<p>Gmail not connected</p>
-									<p className="text-sm mt-2">
-										Connect your Gmail to see email stats
-									</p>
+									) : eventStats?.next_event ? (
+										<div className="flex items-center gap-3">
+											<div className="border border-gray-300 rounded-full p-[6px] flex items-center justify-center">
+												{/* Show provider-specific icon */}
+												{eventStats.next_event.provider === "outlook" ? (
+													<Image
+														src="/Icons/Email/vscode-icons_file-type-outlook.png"
+														alt="Outlook Calendar"
+														width={22}
+														height={22}
+													/>
+												) : (
+													<Image
+														src="/Icons/Email/skill-icons_gmail-light.png"
+														alt="Google Calendar"
+														width={22}
+														height={22}
+													/>
+												)}
+											</div>
+											<div>
+												<p className="text-[15px] leading-tight">
+													{eventStats.next_event.summary}
+												</p>
+												<p className="text-gray-500 text-[13.5px]">
+													{formatEventTime(eventStats.next_event.start)} |{" "}
+													{formatDuration(eventStats.next_event.duration)}
+												</p>
+											</div>
+										</div>
+									) : (
+										<div className="flex items-center gap-3">
+											<div className="border border-gray-300 rounded-full p-[6px] flex items-center justify-center">
+												<Image
+													src="/Icons/Property 1=Calendar.svg"
+													alt="Meeting"
+													width={22}
+													height={22}
+												/>
+											</div>
+											<div>
+												<p className="text-[15px] leading-tight">No meetings</p>
+												<p className="text-gray-500 text-[13.5px]">today</p>
+											</div>
+										</div>
+									)}
 								</div>
-							)}
+							</div>
+
+							{/* Button (right side) */}
+							<button
+								onClick={() => router.push("/scenarios/morning-brief")}
+								className="self-center md:self-auto px-6 py-[6px] border border-gray-400 rounded-full hover:bg-gray-50 transition text-[14.5px] font-normal text-gray-800"
+							>
+								View Full Brief
+							</button>
 						</div>
+					</section>
 
-						{/* View All Button */}
-						<button
-							onClick={() => router.push("/dashboard/emails")}
-							className="mt-5 w-full rounded-full text-[15px] font-medium text-[#1E1E1E] tracking-[0.01em] transition-all duration-150 hover:bg-[#F8F8F8] active:scale-[0.99]"
-							style={{
-								border: "1px solid #1E1E1E",
-								padding: "4px 0",
-								lineHeight: "1.1",
-							}}
-						>
-							View All
-						</button>
-					</div>
-
-					{/* Events */}
-					<div className="bg-white border border-gray-200 rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.04)] p-5 flex flex-col justify-between hover:shadow-md transition-all duration-200">
-						<div>
-							{/* Header */}
-							<div className="flex items-center justify-between mb-4">
-								<h3 className="text-[18px] font-semibold flex items-center gap-2 text-gray-900">
+					{/* Dashboard Cards */}
+					<div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
+						{/* Emails */}
+						<div className="bg-white border border-gray-200 rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.04)] p-5 flex flex-col justify-between hover:shadow-md transition-all duration-200">
+							<div>
+								{/* Header */}
+								<h3 className="text-[18px] font-medium mb-3 flex items-center gap-2 text-gray-900">
 									<Image
-										src="/Icons/Property 1=Calendar.svg"
-										alt="Calendar"
+										src="/Icons/Property 1=Email.svg"
+										alt="Email"
 										width={20}
 										height={20}
 										className="opacity-90"
 									/>
-									Events
+									Emails
 								</h3>
 
-								{/* RSVP Badge */}
-								{!isLoadingEvents &&
-									eventStats &&
-									eventStats.rsvp_pending > 0 && (
-										<span className="text-[13px] px-[10px] py-[3px] bg-gray-50 border border-gray-300 rounded-full text-gray-700 font-medium">
-											{eventStats.rsvp_pending} RSVPs
-										</span>
-									)}
-							</div>
+								{isLoadingEmails ? (
+									<div className="text-center py-8 text-gray-500">
+										<p>Loading emails...</p>
+									</div>
+								) : emailStats ? (
+									<>
+										{/* Important Emails */}
+										<p className="text-[17px] text-gray-900 mb-0.5 leading-tight">
+											<span className="font-semibold text-[19px]">
+												{emailStats.total_important}
+											</span>{" "}
+											Important Emails
+										</p>
 
-							{isLoadingEvents ? (
-								<div className="text-center py-8 text-gray-500">
-									<p>Loading events...</p>
-								</div>
-							) : eventStats ? (
-								<>
-									{/* Busy Day */}
-									{eventStats.total_events > 0 && (
-										<div
-											className="px-[12px] py-[8px] mb-4"
-											style={{
-												background:
-													eventStats.busy_level === "busy"
-														? "#FDF0EF"
-														: eventStats.busy_level === "moderate"
-														? "#FFF9E6"
-														: "#F0F9FF",
-												border: "0.5px solid #C4C7CC",
-												borderRadius: "8px",
-											}}
-										>
-											<div className="flex items-center gap-[6px] mb-[2px]">
-												<svg
-													xmlns="http://www.w3.org/2000/svg"
-													width="16"
-													height="16"
-													viewBox="0 0 24 24"
-													fill="none"
-													stroke={
-														eventStats.busy_level === "busy"
-															? "#F16A6A"
-															: eventStats.busy_level === "moderate"
-															? "#FABA2E"
-															: "#95D6A4"
-													}
-													strokeWidth="2"
-													strokeLinecap="round"
-													strokeLinejoin="round"
-													className="translate-y-[0.5px]"
+										{/* Clock icon line */}
+										<div className="flex items-center gap-1.5 text-[14.5px] text-gray-500 mb-4">
+											<Image
+												src="/Icons/Property 1=Clock.svg"
+												alt="Time"
+												width={16}
+												height={16}
+												className="opacity-80"
+											/>
+											{emailStats.timeframe || "from the last 24 hours"}
+										</div>
+
+										{/* Priority Distribution */}
+										<p className="text-[16.5px] text-gray-800 mb-2 font-normal">
+											Priority Distribution
+										</p>
+										<div className="flex flex-wrap gap-2 mb-3">
+											{/* High */}
+											{emailStats.priority_distribution.high > 0 && (
+												<span
+													className="text-white text-[13.5px] px-[8px] py-[2px] rounded-full font-normal"
+													style={{
+														background: "#8C2B4A",
+														borderRadius: "99px",
+													}}
 												>
-													<circle cx="12" cy="12" r="10" />
-													<polyline points="12 6 12 12 16 14" />
-												</svg>
-												<span className="text-[15px] font-semibold text-[#000000]">
-													{eventStats.busy_level === "busy"
-														? "Busy Day"
-														: eventStats.busy_level === "moderate"
-														? "Moderate Day"
-														: "Light Day"}
+													High: {emailStats.priority_distribution.high}
+												</span>
+											)}
+
+											{/* Medium */}
+											{emailStats.priority_distribution.medium > 0 && (
+												<span
+													className="text-white text-[13.5px] px-[8px] py-[2px] rounded-full font-normal"
+													style={{
+														background: "#AD819A",
+														borderRadius: "99px",
+													}}
+												>
+													Medium: {emailStats.priority_distribution.medium}
+												</span>
+											)}
+
+											{/* Low */}
+											{emailStats.priority_distribution.low > 0 && (
+												<span
+													className="text-white text-[13.5px] px-[8px] py-[2px] rounded-full font-normal"
+													style={{
+														background: "#44548D",
+														borderRadius: "99px",
+													}}
+												>
+													Low: {emailStats.priority_distribution.low}
+												</span>
+											)}
+
+											{/* Show message if no emails */}
+											{emailStats.priority_distribution.high === 0 &&
+												emailStats.priority_distribution.medium === 0 &&
+												emailStats.priority_distribution.low === 0 && (
+													<span className="text-gray-500 text-[13.5px]">
+														No emails in the last 24 hours
+													</span>
+												)}
+										</div>
+
+										{/* Divider */}
+										<hr className="border-gray-200 mb-2" />
+
+										{/* Unread / Trend */}
+										<div className="flex justify-between items-center text-[15px] text-gray-700 mb-2">
+											<div className="flex flex-col leading-[1.1]">
+												<p className="font-normal mb-[2px]">Unread</p>
+												<span className="text-gray-900 font-semibold text-[17px]">
+													{emailStats.unread}
 												</span>
 											</div>
-											<p className="text-[14px] text-[#000000] leading-[1.2] ml-[22px]">
-												{eventStats.total_hours}h across{" "}
-												{eventStats.total_events} event
-												{eventStats.total_events !== 1 ? "s" : ""}
+
+											<div className="flex flex-col items-end leading-[1.1]">
+												<p className="font-normal mb-[2px]">Trend</p>
+												<div className="flex items-center gap-[3px]">
+													<svg
+														xmlns="http://www.w3.org/2000/svg"
+														width="16"
+														height="16"
+														viewBox="0 0 24 24"
+														fill="none"
+														stroke="#1E1E1E"
+														strokeWidth="1.8"
+														strokeLinecap="round"
+														strokeLinejoin="round"
+														className="opacity-90"
+													>
+														<path d="M3 7L10 14L14 10L21 17" />
+														<path d="M21 12V17H16" />
+													</svg>
+													<span className="text-gray-900 font-semibold text-[17px]">
+														{emailStats.trend}%
+													</span>
+												</div>
+											</div>
+										</div>
+
+										{/* Divider */}
+										<hr className="border-gray-200 mb-2" />
+
+										{/* Top Sender Box */}
+										<div className="bg-[#F8F9FB] border border-gray-200 rounded-xl px-3.5 py-2.5 text-[15px]">
+											<p className="text-gray-600 font-normal leading-tight">
+												Top Sender
+											</p>
+											<p className="text-gray-900 font-medium leading-tight mt-[2px]">
+												{emailStats.top_sender}
 											</p>
 										</div>
-									)}
+									</>
+								) : (
+									<div className="text-center py-8 text-gray-500">
+										<p>Gmail not connected</p>
+										<p className="text-sm mt-2">
+											Connect your Gmail to see email stats
+										</p>
+									</div>
+								)}
+							</div>
 
-									{/* Next Event Section */}
-									{eventStats.next_event ? (
-										<>
-											<p className="text-[15px] text-gray-800 font-semibold mb-2">
-												Next Event
-											</p>
-											<div className="bg-[#F8F9FB] border border-gray-200 rounded-xl px-4 py-3 mb-4">
-												<div className="flex items-start justify-between gap-2 mb-2">
-													<p className="text-[16px] font-semibold text-gray-900 flex-1">
-														{eventStats.next_event.summary}
-													</p>
-													{/* Provider Badge */}
-													{eventStats.next_event.provider && (
-														<div className="flex items-center gap-1">
+							{/* View All Button */}
+							<button
+								onClick={() => router.push("/dashboard/emails")}
+								className="mt-5 w-full rounded-full text-[15px] font-medium text-[#1E1E1E] tracking-[0.01em] transition-all duration-150 hover:bg-[#F8F8F8] active:scale-[0.99]"
+								style={{
+									border: "1px solid #1E1E1E",
+									padding: "4px 0",
+									lineHeight: "1.1",
+								}}
+							>
+								View All
+							</button>
+						</div>
+
+						{/* Events */}
+						<div className="bg-white border border-gray-200 rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.04)] p-5 flex flex-col justify-between hover:shadow-md transition-all duration-200">
+							<div>
+								{/* Header */}
+								<div className="flex items-center justify-between mb-4">
+									<h3 className="text-[18px] font-semibold flex items-center gap-2 text-gray-900">
+										<Image
+											src="/Icons/Property 1=Calendar.svg"
+											alt="Calendar"
+											width={20}
+											height={20}
+											className="opacity-90"
+										/>
+										Events
+									</h3>
+
+									{/* RSVP Badge */}
+									{!isLoadingEvents &&
+										eventStats &&
+										eventStats.rsvp_pending > 0 && (
+											<span className="text-[13px] px-[10px] py-[3px] bg-gray-50 border border-gray-300 rounded-full text-gray-700 font-medium">
+												{eventStats.rsvp_pending} RSVPs
+											</span>
+										)}
+								</div>
+
+								{isLoadingEvents ? (
+									<div className="text-center py-8 text-gray-500">
+										<p>Loading events...</p>
+									</div>
+								) : eventStats ? (
+									<>
+										{/* Busy Day */}
+										{eventStats.total_events > 0 && (
+											<div
+												className="px-[12px] py-[8px] mb-4"
+												style={{
+													background:
+														eventStats.busy_level === "busy"
+															? "#FDF0EF"
+															: eventStats.busy_level === "moderate"
+															? "#FFF9E6"
+															: "#F0F9FF",
+													border: "0.5px solid #C4C7CC",
+													borderRadius: "8px",
+												}}
+											>
+												<div className="flex items-center gap-[6px] mb-[2px]">
+													<svg
+														xmlns="http://www.w3.org/2000/svg"
+														width="16"
+														height="16"
+														viewBox="0 0 24 24"
+														fill="none"
+														stroke={
+															eventStats.busy_level === "busy"
+																? "#F16A6A"
+																: eventStats.busy_level === "moderate"
+																? "#FABA2E"
+																: "#95D6A4"
+														}
+														strokeWidth="2"
+														strokeLinecap="round"
+														strokeLinejoin="round"
+														className="translate-y-[0.5px]"
+													>
+														<circle cx="12" cy="12" r="10" />
+														<polyline points="12 6 12 12 16 14" />
+													</svg>
+													<span className="text-[15px] font-semibold text-[#000000]">
+														{eventStats.busy_level === "busy"
+															? "Busy Day"
+															: eventStats.busy_level === "moderate"
+															? "Moderate Day"
+															: "Light Day"}
+													</span>
+												</div>
+												<p className="text-[14px] text-[#000000] leading-[1.2] ml-[22px]">
+													{eventStats.total_hours}h across{" "}
+													{eventStats.total_events} event
+													{eventStats.total_events !== 1 ? "s" : ""}
+												</p>
+											</div>
+										)}
+
+										{/* Next Event Section */}
+										{eventStats.next_event ? (
+											<>
+												<p className="text-[15px] text-gray-800 font-semibold mb-2">
+													Next Event
+												</p>
+												<div className="bg-[#F8F9FB] border border-gray-200 rounded-xl px-4 py-3 mb-4">
+													<div className="flex items-start justify-between gap-2 mb-2">
+														<p className="text-[16px] font-semibold text-gray-900 flex-1">
+															{eventStats.next_event.summary}
+														</p>
+														{/* Provider Badge */}
+														{eventStats.next_event.provider && (
+															<div className="flex items-center gap-1">
+																<Image
+																	src={
+																		eventStats.next_event.provider === "google"
+																			? "/Icons/Email/skill-icons_gmail-light.png"
+																			: "/Icons/Email/vscode-icons_file-type-outlook.png"
+																	}
+																	alt={
+																		eventStats.next_event.provider === "google"
+																			? "Google Calendar"
+																			: "Outlook Calendar"
+																	}
+																	width={16}
+																	height={16}
+																	className="opacity-80"
+																/>
+															</div>
+														)}
+													</div>
+
+													{/* Time */}
+													<div className="flex items-center gap-2 text-[14px] text-gray-600 mb-1">
+														<Image
+															src="/Icons/Property 1=Clock.svg"
+															alt="Time"
+															width={14}
+															height={14}
+														/>
+														{formatEventTime(eventStats.next_event.start)} |{" "}
+														{formatDuration(eventStats.next_event.duration)}
+													</div>
+
+													{/* Location/Conference */}
+													{(eventStats.next_event.conference_data ||
+														eventStats.next_event.location) && (
+														<div className="flex items-center gap-2 text-[14px] text-gray-600 mb-1">
 															<Image
-																src={
-																	eventStats.next_event.provider === "google"
-																		? "/Icons/Email/skill-icons_gmail-light.png"
-																		: "/Icons/Email/vscode-icons_file-type-outlook.png"
-																}
-																alt={
-																	eventStats.next_event.provider === "google"
-																		? "Google Calendar"
-																		: "Outlook Calendar"
-																}
-																width={16}
-																height={16}
-																className="opacity-80"
+																src="/Icons/qlementine-icons_camera-16.svg"
+																alt="Location"
+																width={14}
+																height={14}
 															/>
+															{eventStats.next_event.conference_data
+																? "Video call"
+																: eventStats.next_event.location}
+														</div>
+													)}
+
+													{/* Attendees */}
+													{eventStats.next_event.attendees_count > 0 && (
+														<div className="flex items-center gap-2 text-[14px] text-gray-600">
+															<Image
+																src="/Icons/mingcute_group-line.svg"
+																alt="Members"
+																width={14}
+																height={14}
+															/>
+															{eventStats.next_event.attendees_count} attendee
+															{eventStats.next_event.attendees_count !== 1
+																? "s"
+																: ""}
 														</div>
 													)}
 												</div>
+											</>
+										) : (
+											<div className="bg-[#F8F9FB] border border-gray-200 rounded-xl px-4 py-3 mb-4 text-center">
+												<p className="text-[15px] text-gray-600">
+													No upcoming events today
+												</p>
+											</div>
+										)}
 
-												{/* Time */}
-												<div className="flex items-center gap-2 text-[14px] text-gray-600 mb-1">
-													<Image
-														src="/Icons/Property 1=Clock.svg"
-														alt="Time"
-														width={14}
-														height={14}
-													/>
-													{formatEventTime(eventStats.next_event.start)} |{" "}
-													{formatDuration(eventStats.next_event.duration)}
-												</div>
+										{/* Tags */}
+										<div className="flex flex-wrap gap-2 mb-1">
+											{eventStats.deep_work_blocks > 0 && (
+												<span
+													className="text-white text-[13px] px-[10px] py-[4px] rounded-full font-normal"
+													style={{
+														background: "#95D6A4",
+														borderRadius: "99px",
+													}}
+												>
+													{eventStats.deep_work_blocks} deep work block
+													{eventStats.deep_work_blocks !== 1 ? "s" : ""}
+												</span>
+											)}
 
-												{/* Location/Conference */}
-												{(eventStats.next_event.conference_data ||
-													eventStats.next_event.location) && (
-													<div className="flex items-center gap-2 text-[14px] text-gray-600 mb-1">
-														<Image
-															src="/Icons/qlementine-icons_camera-16.svg"
-															alt="Location"
-															width={14}
-															height={14}
-														/>
-														{eventStats.next_event.conference_data
-															? "Video call"
-															: eventStats.next_event.location}
-													</div>
+											{eventStats.at_risk_tasks > 0 && (
+												<span
+													className="text-white text-[13px] px-[10px] py-[4px] rounded-full font-normal"
+													style={{
+														background: "#F16A6A",
+														borderRadius: "99px",
+													}}
+												>
+													{eventStats.at_risk_tasks} at risk task
+													{eventStats.at_risk_tasks !== 1 ? "s" : ""}
+												</span>
+											)}
+
+											{eventStats.deep_work_blocks === 0 &&
+												eventStats.at_risk_tasks === 0 &&
+												eventStats.total_events === 0 && (
+													<span className="text-gray-500 text-[13px]">
+														No events scheduled
+													</span>
 												)}
+										</div>
+									</>
+								) : (
+									<div className="text-center py-8 text-gray-500">
+										<p>Calendar not connected</p>
+										<p className="text-sm mt-2">
+											Connect Google Calendar to see events
+										</p>
+									</div>
+								)}
+							</div>
 
-												{/* Attendees */}
-												{eventStats.next_event.attendees_count > 0 && (
-													<div className="flex items-center gap-2 text-[14px] text-gray-600">
-														<Image
-															src="/Icons/mingcute_group-line.svg"
-															alt="Members"
-															width={14}
-															height={14}
-														/>
-														{eventStats.next_event.attendees_count} attendee
-														{eventStats.next_event.attendees_count !== 1
-															? "s"
-															: ""}
-													</div>
+							{/* View All Button */}
+							<button
+								onClick={() => router.push("/dashboard/calendar")}
+								className="mt-5 w-full rounded-full text-[15px] font-medium text-[#1E1E1E] tracking-[0.01em] transition-all duration-150 hover:bg-[#F8F8F8] active:scale-[0.99]"
+								style={{
+									border: "1px solid #1E1E1E",
+									padding: "4px 0",
+									lineHeight: "1.1",
+								}}
+							>
+								View All
+							</button>
+						</div>
+
+						{/* Tasks */}
+						<div className="bg-white border border-gray-200 rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.04)] p-5 flex flex-col justify-between hover:shadow-md transition-all duration-200">
+							<div>
+								{/* Header */}
+								<div className="flex items-center justify-between mb-4">
+									<h3 className="text-[17px] md:text-[18px] font-semibold flex items-center gap-2 text-gray-900">
+										<Image
+											src="/Icons/Property 1=Brief.svg"
+											alt="Tasks"
+											width={20}
+											height={20}
+											className="opacity-90"
+										/>
+										Tasks
+									</h3>
+
+									{/* Task Count Badge */}
+									{isLoadingTasks ? (
+										<span className="text-[13px] bg-gray-200 text-gray-600 font-semibold px-[9px] py-[3px] rounded-full shadow-sm animate-pulse">
+											...
+										</span>
+									) : (
+										<span className="text-[13px] bg-[#44548D] text-[#fff] font-semibold px-[9px] py-[3px] rounded-full shadow-sm">
+											{taskStats?.total_tasks || 0}
+										</span>
+									)}
+								</div>
+
+								{/* Task List */}
+								{isLoadingTasks ? (
+									<div className="text-center py-8 text-gray-500">
+										<p>Loading tasks...</p>
+									</div>
+								) : taskStats && taskStats.next_tasks.length > 0 ? (
+									taskStats.next_tasks.map((task) => (
+										<div
+											key={task.id}
+											className="bg-[#F8F9FB] border border-gray-200 rounded-xl px-4 py-2.5 mb-3"
+										>
+											<div className="flex items-start justify-between gap-2 mb-1">
+												<p className="text-[15px] text-gray-900 font-medium leading-tight flex-1">
+													{task.title}
+												</p>
+												{task.source && (
+													<span
+														className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
+															task.source === "google"
+																? "bg-blue-100 text-blue-700"
+																: "bg-purple-100 text-purple-700"
+														}`}
+													>
+														{task.source === "google" ? "Google" : "MIRA"}
+													</span>
 												)}
 											</div>
-										</>
+											<p className="text-[13px] text-gray-500 flex items-center gap-1">
+												<span className="text-[18px] leading-none">•</span> Due:{" "}
+												{formatTaskDueDate(task.due_date)}
+											</p>
+										</div>
+									))
+								) : (
+									<div className="text-center py-8 text-gray-500">
+										<p>No active tasks</p>
+										<p className="text-sm mt-2">
+											Create your first task to get started
+										</p>
+									</div>
+								)}
+							</div>
+
+							{/* Button */}
+							<button
+								className="mt-5 w-full rounded-full text-[15px] font-medium text-[#1E1E1E] tracking-[0.01em] transition-all duration-150 hover:bg-[#F8F8F8] active:scale-[0.99]"
+								style={{
+									border: "1px solid #1E1E1E",
+									padding: "4px 0",
+									lineHeight: "1.1",
+								}}
+							>
+								View All
+							</button>
+						</div>
+
+						{/* Reminders */}
+						<div className="bg-white border border-gray-200 rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.04)] p-5 flex flex-col justify-between hover:shadow-md transition-all duration-200">
+							<div>
+								{/* Header */}
+								<div className="flex items-center justify-between mb-4">
+									<h3 className="text-[17px] md:text-[18px] font-semibold flex items-center gap-2 text-gray-900">
+										<Image
+											src="/Icons/Property 1=Reminder.svg"
+											alt="Reminders"
+											width={20}
+											height={20}
+											className="opacity-90"
+										/>
+										Reminders
+									</h3>
+
+									{/* Count Badge */}
+									{isLoadingReminders ? (
+										<span className="text-[13px] bg-gray-200 text-gray-600 font-semibold px-[9px] py-[3px] rounded-full shadow-sm animate-pulse">
+											...
+										</span>
 									) : (
-										<div className="bg-[#F8F9FB] border border-gray-200 rounded-xl px-4 py-3 mb-4 text-center">
-											<p className="text-[15px] text-gray-600">
-												No upcoming events today
-											</p>
-										</div>
+										<span className="text-[13px] bg-[#44548D] text-[#fff] font-semibold px-[9px] py-[3px] rounded-full shadow-sm">
+											{reminderStats?.total_reminders || 0}
+										</span>
 									)}
-
-									{/* Tags */}
-									<div className="flex flex-wrap gap-2 mb-1">
-										{eventStats.deep_work_blocks > 0 && (
-											<span
-												className="text-white text-[13px] px-[10px] py-[4px] rounded-full font-normal"
-												style={{
-													background: "#95D6A4",
-													borderRadius: "99px",
-												}}
-											>
-												{eventStats.deep_work_blocks} deep work block
-												{eventStats.deep_work_blocks !== 1 ? "s" : ""}
-											</span>
-										)}
-
-										{eventStats.at_risk_tasks > 0 && (
-											<span
-												className="text-white text-[13px] px-[10px] py-[4px] rounded-full font-normal"
-												style={{
-													background: "#F16A6A",
-													borderRadius: "99px",
-												}}
-											>
-												{eventStats.at_risk_tasks} at risk task
-												{eventStats.at_risk_tasks !== 1 ? "s" : ""}
-											</span>
-										)}
-
-										{eventStats.deep_work_blocks === 0 &&
-											eventStats.at_risk_tasks === 0 &&
-											eventStats.total_events === 0 && (
-												<span className="text-gray-500 text-[13px]">
-													No events scheduled
-												</span>
-											)}
-									</div>
-								</>
-							) : (
-								<div className="text-center py-8 text-gray-500">
-									<p>Calendar not connected</p>
-									<p className="text-sm mt-2">
-										Connect Google Calendar to see events
-									</p>
 								</div>
-							)}
-						</div>
 
-						{/* View All Button */}
-						<button
-							onClick={() => router.push("/dashboard/calendar")}
-							className="mt-5 w-full rounded-full text-[15px] font-medium text-[#1E1E1E] tracking-[0.01em] transition-all duration-150 hover:bg-[#F8F8F8] active:scale-[0.99]"
-							style={{
-								border: "1px solid #1E1E1E",
-								padding: "4px 0",
-								lineHeight: "1.1",
-							}}
-						>
-							View All
-						</button>
-					</div>
-
-					{/* Tasks */}
-					<div className="bg-white border border-gray-200 rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.04)] p-5 flex flex-col justify-between hover:shadow-md transition-all duration-200">
-						<div>
-							{/* Header */}
-							<div className="flex items-center justify-between mb-4">
-								<h3 className="text-[17px] md:text-[18px] font-semibold flex items-center gap-2 text-gray-900">
-									<Image
-										src="/Icons/Property 1=Brief.svg"
-										alt="Tasks"
-										width={20}
-										height={20}
-										className="opacity-90"
-									/>
-									Tasks
-								</h3>
-
-								{/* Task Count Badge */}
-								{isLoadingTasks ? (
-									<span className="text-[13px] bg-gray-200 text-gray-600 font-semibold px-[9px] py-[3px] rounded-full shadow-sm animate-pulse">
-										...
-									</span>
-								) : (
-									<span className="text-[13px] bg-[#44548D] text-[#fff] font-semibold px-[9px] py-[3px] rounded-full shadow-sm">
-										{taskStats?.total_tasks || 0}
-									</span>
-								)}
-							</div>
-
-							{/* Task List */}
-							{isLoadingTasks ? (
-								<div className="text-center py-8 text-gray-500">
-									<p>Loading tasks...</p>
-								</div>
-							) : taskStats && taskStats.next_tasks.length > 0 ? (
-								taskStats.next_tasks.map((task) => (
-									<div
-										key={task.id}
-										className="bg-[#F8F9FB] border border-gray-200 rounded-xl px-4 py-2.5 mb-3"
-									>
-										<div className="flex items-start justify-between gap-2 mb-1">
-											<p className="text-[15px] text-gray-900 font-medium leading-tight flex-1">
-												{task.title}
-											</p>
-											{task.source && (
-												<span
-													className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
-														task.source === "google"
-															? "bg-blue-100 text-blue-700"
-															: "bg-purple-100 text-purple-700"
-													}`}
-												>
-													{task.source === "google" ? "Google" : "MIRA"}
-												</span>
-											)}
-										</div>
-										<p className="text-[13px] text-gray-500 flex items-center gap-1">
-											<span className="text-[18px] leading-none">•</span> Due:{" "}
-											{formatTaskDueDate(task.due_date)}
-										</p>
-									</div>
-								))
-							) : (
-								<div className="text-center py-8 text-gray-500">
-									<p>No active tasks</p>
-									<p className="text-sm mt-2">
-										Create your first task to get started
-									</p>
-								</div>
-							)}
-						</div>
-
-						{/* Button */}
-						<button
-							className="mt-5 w-full rounded-full text-[15px] font-medium text-[#1E1E1E] tracking-[0.01em] transition-all duration-150 hover:bg-[#F8F8F8] active:scale-[0.99]"
-							style={{
-								border: "1px solid #1E1E1E",
-								padding: "4px 0",
-								lineHeight: "1.1",
-							}}
-						>
-							View All
-						</button>
-					</div>
-
-					{/* Reminders */}
-					<div className="bg-white border border-gray-200 rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.04)] p-5 flex flex-col justify-between hover:shadow-md transition-all duration-200">
-						<div>
-							{/* Header */}
-							<div className="flex items-center justify-between mb-4">
-								<h3 className="text-[17px] md:text-[18px] font-semibold flex items-center gap-2 text-gray-900">
-									<Image
-										src="/Icons/Property 1=Reminder.svg"
-										alt="Reminders"
-										width={20}
-										height={20}
-										className="opacity-90"
-									/>
-									Reminders
-								</h3>
-
-								{/* Count Badge */}
+								{/* Reminder List */}
 								{isLoadingReminders ? (
-									<span className="text-[13px] bg-gray-200 text-gray-600 font-semibold px-[9px] py-[3px] rounded-full shadow-sm animate-pulse">
-										...
-									</span>
+									<div className="text-center py-8 text-gray-500">
+										<p>Loading reminders...</p>
+									</div>
+								) : reminderStats && reminderStats.next_reminders.length > 0 ? (
+									reminderStats.next_reminders.map((reminder) => (
+										<div
+											key={reminder.id}
+											className="bg-[#F8F9FB] border border-gray-200 rounded-xl px-4 py-2.5 mb-3"
+										>
+											<p className="text-[15px] text-gray-900 font-medium mb-[2px] leading-tight">
+												{reminder.title}
+											</p>
+											<p className="text-[13px] text-gray-500 flex items-center gap-1">
+												<span className="text-[18px] leading-none">•</span>{" "}
+												{formatReminderTime(reminder.reminder_time)}
+											</p>
+										</div>
+									))
 								) : (
-									<span className="text-[13px] bg-[#44548D] text-[#fff] font-semibold px-[9px] py-[3px] rounded-full shadow-sm">
-										{reminderStats?.total_reminders || 0}
-									</span>
+									<div className="text-center py-8 text-gray-500">
+										<p>No active reminders</p>
+										<p className="text-sm mt-2">
+											Create your first reminder to get started
+										</p>
+									</div>
 								)}
 							</div>
 
-							{/* Reminder List */}
-							{isLoadingReminders ? (
-								<div className="text-center py-8 text-gray-500">
-									<p>Loading reminders...</p>
-								</div>
-							) : reminderStats && reminderStats.next_reminders.length > 0 ? (
-								reminderStats.next_reminders.map((reminder) => (
-									<div
-										key={reminder.id}
-										className="bg-[#F8F9FB] border border-gray-200 rounded-xl px-4 py-2.5 mb-3"
-									>
-										<p className="text-[15px] text-gray-900 font-medium mb-[2px] leading-tight">
-											{reminder.title}
-										</p>
-										<p className="text-[13px] text-gray-500 flex items-center gap-1">
-											<span className="text-[18px] leading-none">•</span>{" "}
-											{formatReminderTime(reminder.reminder_time)}
-										</p>
-									</div>
-								))
-							) : (
-								<div className="text-center py-8 text-gray-500">
-									<p>No active reminders</p>
-									<p className="text-sm mt-2">
-										Create your first reminder to get started
-									</p>
-								</div>
-							)}
+							{/* Button */}
+							<button
+								className="mt-5 w-full rounded-full text-[15px] font-medium text-[#1E1E1E] tracking-[0.01em] transition-all duration-150 hover:bg-[#F8F8F8] active:scale-[0.99]"
+								style={{
+									border: "1px solid #1E1E1E",
+									padding: "4px 0",
+									lineHeight: "1.1",
+								}}
+							>
+								View All
+							</button>
 						</div>
-
-						{/* Button */}
-						<button
-							className="mt-5 w-full rounded-full text-[15px] font-medium text-[#1E1E1E] tracking-[0.01em] transition-all duration-150 hover:bg-[#F8F8F8] active:scale-[0.99]"
-							style={{
-								border: "1px solid #1E1E1E",
-								padding: "4px 0",
-								lineHeight: "1.1",
-							}}
-						>
-							View All
-						</button>
 					</div>
 				</div>
 			</main>

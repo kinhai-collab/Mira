@@ -75,9 +75,9 @@ export default function MorningBrief() {
 			setIsWeatherLoading(true);
 			const data = await getWeather(lat, lon);
 
-		if (typeof data?.temperatureC === "number") {
-			setTemperatureC(Math.round(data.temperatureC));
-		}
+			if (typeof data?.temperatureC === "number") {
+				setTemperatureC(Math.round(data.temperatureC));
+			}
 		} catch (err) {
 			console.error("Error fetching weather:", err);
 		} finally {
