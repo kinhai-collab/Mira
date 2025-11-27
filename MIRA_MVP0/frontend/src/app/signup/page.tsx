@@ -72,7 +72,6 @@ export default function SignupPage() {
 	};
 
 	const handleGoogleSignup = async () => {
-		console.log("Google signup clicked");
 		try {
             const { error } = await supabase.auth.signInWithOAuth({
 				provider: 'google',
@@ -82,12 +81,16 @@ export default function SignupPage() {
 			});
 			
 			if (error) {
-				console.error("Google OAuth error:", error);
-				alert("Google signup failed. Please try again.");
+				const errorMsg = error.message || 'Unknown error';
+				if (errorMsg.includes('556') || errorMsg.toLowerCase().includes('paused')) {
+					alert('⚠️ Your Supabase project appears to be PAUSED. Please go to Supabase Dashboard and restore your project, then try again.');
+				} else {
+					alert(`Google signup failed: ${errorMsg}`);
+				}
 			}
-		} catch (err) {
-			console.error("Error during Google signup:", err);
-			alert("Something went wrong with Google signup. Please try again.");
+		} catch (err: unknown) {
+			const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+			alert(`Something went wrong with Google signup: ${errorMessage}`);
 		}
 	};
 

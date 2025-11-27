@@ -102,14 +102,45 @@ def _transform_google_event(gcal_event: Dict[str, Any], tz: str) -> Optional[Dic
         # Check if this is an all-day event
         is_all_day = "date" in gcal_event.get("start", {})
         
+        # Extract meeting link and provider
+        location = gcal_event.get("location", "")
+        description = gcal_event.get("description", "")
+        meeting_link = ""
+        provider = None
+        
+        # Check conferenceData for Google Meet
+        if gcal_event.get("conferenceData"):
+            entry_points = gcal_event.get("conferenceData", {}).get("entryPoints", [])
+            for entry in entry_points:
+                if entry.get("entryPointType") == "video":
+                    meeting_link = entry.get("uri", "")
+                    provider = "google-meet"
+                    break
+        
+        # If no link from conferenceData, extract from description/location
+        if not meeting_link:
+            platform, link = _detect_conference_platform(location + " " + description)
+            if link:
+                meeting_link = link
+                if platform == "Google Meet":
+                    provider = "google-meet"
+                elif platform == "Microsoft Teams":
+                    provider = "microsoft-teams"
+                elif platform == "Zoom":
+                    provider = "zoom"
+        
         return {
             "summary": gcal_event.get("summary", "No title"),
             "start_dt": start_dt.replace(tzinfo=None) if start_dt.tzinfo else start_dt,
             "end_dt": end_dt.replace(tzinfo=None) if end_dt.tzinfo else end_dt,
-            "location": gcal_event.get("location", ""),
-            "description": gcal_event.get("description", ""),
+            "location": location,
+            "description": description,
             "status": gcal_event.get("status", "confirmed"),
             "all_day": is_all_day,
+            "meetingLink": meeting_link if meeting_link else None,
+            "provider": provider,
+            "calendar_provider": "google",
+            "id": gcal_event.get("id", ""),
         }
     except Exception as e:
         print(f"Error transforming event {gcal_event.get('id')}: {e}")
@@ -147,64 +178,183 @@ def _filter_today_events(events: List[Dict[str, Any]], tz: str) -> List[Dict[str
 
 # --- Core functions ----------------------------------------------------------
 
+def _transform_outlook_event(o_event: Dict[str, Any], tz: str) -> Optional[Dict[str, Any]]:
+    """
+    Transform Outlook Calendar event format to morning brief format.
+    """
+    try:
+        start_dt = _parse_google_calendar_datetime(o_event.get("start", {}).get("dateTime", ""), tz)
+        end_dt = _parse_google_calendar_datetime(o_event.get("end", {}).get("dateTime", ""), tz)
+        
+        location = o_event.get("location", {}).get("displayName", "")
+        description = o_event.get("bodyPreview", "") or o_event.get("body", {}).get("content", "")
+        
+        # Extract meeting link and provider from Outlook
+        meeting_link = ""
+        provider = None
+        
+        # Check for onlineMeeting (Teams)
+        online_meeting = o_event.get("onlineMeeting")
+        if online_meeting and isinstance(online_meeting, dict):
+            meeting_link = online_meeting.get("joinUrl", "")
+            if meeting_link:
+                provider = "microsoft-teams"
+        
+        # If no link from onlineMeeting, extract from description
+        if not meeting_link:
+            platform, link = _detect_conference_platform(location + " " + description)
+            if link:
+                meeting_link = link
+                if platform == "Google Meet":
+                    provider = "google-meet"
+                elif platform == "Microsoft Teams":
+                    provider = "microsoft-teams"
+                elif platform == "Zoom":
+                    provider = "zoom"
+        
+        return {
+            "summary": o_event.get("subject", "No title"),
+            "start_dt": start_dt.replace(tzinfo=None) if start_dt.tzinfo else start_dt,
+            "end_dt": end_dt.replace(tzinfo=None) if end_dt.tzinfo else end_dt,
+            "location": location,
+            "description": description,
+            "status": "confirmed",
+            "all_day": False,
+            "meetingLink": meeting_link if meeting_link else None,
+            "provider": provider,
+            "calendar_provider": "outlook",
+            "id": o_event.get("id", ""),
+        }
+    except Exception as e:
+        print(f"Error transforming Outlook event {o_event.get('id')}: {e}")
+        return None
+
+
 def get_today_events(user_id: str, tz: str) -> List[Dict[str, Any]]:
     """
-    Fetch today's events from Google Calendar for the user.
+    Fetch today's events from both Google Calendar and Outlook for the user.
     Falls back to empty list if calendar is not connected or on error.
     """
     print(f"📅 Fetching events for user: {user_id} in timezone: {tz}")
     
-    # Try to fetch from Google Calendar
+    all_events = []
+    
+    # Calculate time range for today in user's timezone
+    user_tz = ZoneInfo(tz)
+    now = datetime.now(user_tz)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_end = today_start + timedelta(days=1)
+    
+    # Convert to ISO format for API
+    time_min = today_start.astimezone(ZoneInfo("UTC")).isoformat()
+    time_max = today_end.astimezone(ZoneInfo("UTC")).isoformat()
+    
+    # Fetch from Google Calendar
     if CALENDAR_AVAILABLE:
         try:
-            # Calculate time range for today in user's timezone
-            user_tz = ZoneInfo(tz)
-            now = datetime.now(user_tz)
-            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-            today_end = today_start + timedelta(days=1)
-            
-            # Convert to ISO format for API
-            time_min = today_start.astimezone(ZoneInfo("UTC")).isoformat()
-            time_max = today_end.astimezone(ZoneInfo("UTC")).isoformat()
-            
             # Fetch events from Google Calendar
             response = list_events(user_id, time_min=time_min, time_max=time_max, page_token=None)
             
             # Extract events from response
             gcal_events = response.get("items", [])
             
-            if not gcal_events:
-                print(f"📅 No events found for user {user_id} today")
-                return []
-            
-            # Transform Google Calendar events to morning brief format
-            transformed_events = []
-            for gcal_event in gcal_events:
-                transformed = _transform_google_event(gcal_event, tz)
-                if transformed:
-                    transformed_events.append(transformed)
-            
-            # Filter to ensure only today's events (extra safety)
-            filtered_events = _filter_today_events(transformed_events, tz)
-            
-            print(f"📅 Found {len(filtered_events)} events for today")
-            return filtered_events
-            
+            if gcal_events:
+                # Transform Google Calendar events to morning brief format
+                for gcal_event in gcal_events:
+                    transformed = _transform_google_event(gcal_event, tz)
+                    if transformed:
+                        all_events.append(transformed)
         except HTTPException as e:
-            if "not connected" in str(e).lower() or "400" in str(e):
-                print(f"⚠️ Google Calendar not connected for user {user_id}")
-            else:
-                print(f"⚠️ Error fetching calendar events: {e}")
-            return []
+            if "not connected" not in str(e).lower():
+                print(f"⚠️ Error fetching Google Calendar events: {e}")
         except Exception as e:
-            print(f"⚠️ Unexpected error fetching calendar events: {e}")
-            import traceback
-            traceback.print_exc()
-            return []
+            print(f"⚠️ Unexpected error fetching Google Calendar events: {e}")
     
-    # Fallback: return empty list if calendar integration not available
-    print("⚠️ Calendar integration not available - returning empty events")
-    return []
+    # Fetch from Outlook Calendar
+    try:
+        import os
+        import requests
+        from supabase import create_client
+        from datetime import timezone as tz_utc
+        
+        SUPABASE_URL = os.getenv("SUPABASE_URL")
+        SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        GRAPH_API_URL = "https://graph.microsoft.com/v1.0"
+        
+        if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY:
+            supabase_db = create_client(SUPABASE_URL.rstrip('/'), SUPABASE_SERVICE_ROLE_KEY)
+            
+            # Get Outlook token from database
+            res = supabase_db.table("outlook_credentials").select("*").eq("uid", user_id).execute()
+            if res.data and len(res.data) > 0:
+                creds = res.data[0]
+                access_token = creds.get("access_token")
+                expiry_str = creds.get("expiry")
+                
+                # Check if token is expired and refresh if needed
+                if expiry_str:
+                    try:
+                        expiry = datetime.fromisoformat(expiry_str.replace("Z", "+00:00"))
+                        now_utc = datetime.now(tz_utc)
+                        if expiry <= (now_utc + timedelta(minutes=5)):
+                            refresh_token = creds.get("refresh_token")
+                            if refresh_token:
+                                MICROSOFT_CLIENT_ID = os.getenv("MICROSOFT_CLIENT_ID")
+                                MICROSOFT_CLIENT_SECRET = os.getenv("MICROSOFT_CLIENT_SECRET")
+                                MICROSOFT_TOKEN_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
+                                
+                                data = {
+                                    "client_id": MICROSOFT_CLIENT_ID,
+                                    "scope": "User.Read Calendars.ReadWrite Mail.Read",
+                                    "refresh_token": refresh_token,
+                                    "grant_type": "refresh_token",
+                                    "client_secret": MICROSOFT_CLIENT_SECRET
+                                }
+                                refresh_res = requests.post(MICROSOFT_TOKEN_URL, data=data)
+                                new_token_data = refresh_res.json()
+                                
+                                if "access_token" in new_token_data:
+                                    expires_in = new_token_data.get("expires_in", 3600)
+                                    new_expiry = datetime.now(tz_utc) + timedelta(seconds=expires_in)
+                                    update_payload = {
+                                        "access_token": new_token_data.get("access_token"),
+                                        "refresh_token": new_token_data.get("refresh_token", refresh_token),
+                                        "expiry": new_expiry.isoformat(),
+                                    }
+                                    supabase_db.table("outlook_credentials").update(update_payload).eq("uid", user_id).execute()
+                                    access_token = new_token_data.get("access_token")
+                    except Exception as e:
+                        print(f"⚠️ Error refreshing Outlook token: {e}")
+                
+                if access_token:
+                    # Fetch Outlook events
+                    headers = {"Authorization": f"Bearer {access_token}"}
+                    start_iso = today_start.astimezone(ZoneInfo("UTC")).strftime("%Y-%m-%dT%H:%M:%SZ")
+                    end_iso = today_end.astimezone(ZoneInfo("UTC")).strftime("%Y-%m-%dT%H:%M:%SZ")
+                    
+                    outlook_url = (
+                        f"{GRAPH_API_URL}/me/calendar/calendarView?"
+                        f"startDateTime={start_iso}&"
+                        f"endDateTime={end_iso}&"
+                        f"$top=250"
+                    )
+                    
+                    response = requests.get(outlook_url, headers=headers, timeout=10)
+                    if response.status_code == 200:
+                        outlook_events = response.json().get("value", [])
+                        for o_event in outlook_events:
+                            transformed = _transform_outlook_event(o_event, tz)
+                            if transformed:
+                                all_events.append(transformed)
+                        print(f"✅ Morning Brief: Found {len(outlook_events)} Outlook events")
+    except Exception as e:
+        print(f"⚠️ Error fetching Outlook events: {e}")
+    
+    # Filter to ensure only today's events
+    filtered_events = _filter_today_events(all_events, tz)
+    
+    print(f"📅 Found {len(filtered_events)} total events for today (Google + Outlook)")
+    return filtered_events
 
 
 def read_events(events: list):

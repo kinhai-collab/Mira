@@ -1,7 +1,9 @@
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
+import os
+import requests
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Header
 from pydantic import BaseModel, Field
 
 from Google_Calendar_API.service import (
@@ -13,24 +15,50 @@ from Google_Calendar_API.service import (
 
 router = APIRouter(prefix="/assistant/calendar", tags=["assistant-calendar"])
 
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
-def _current_user(request: Request) -> dict:
+
+def _current_user(request: Request, authorization: Optional[str] = None) -> dict:
     """
-    Same pattern as Google_Calendar_API:
-    - Prefer request.state.user (Supabase auth in prod)
-    - Fallback to X-User-Id / X-User-Email (local dev)
+    Extract and validate user from multiple sources:
+    1. Authorization header (Bearer token) - validates with Supabase
+    2. request.state.user (Supabase auth in prod)
+    3. X-User-Id / X-User-Email headers (local dev)
     """
+    # Method 1: Check Authorization header (preferred for frontend)
+    if not authorization:
+        authorization = request.headers.get("Authorization")
+    
+    if authorization and authorization.lower().startswith("bearer "):
+        token = authorization.split(" ", 1)[1].strip()
+        if SUPABASE_URL and SUPABASE_KEY:
+            try:
+                auth_headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {token}"}
+                res = requests.get(f"{SUPABASE_URL}/auth/v1/user", headers=auth_headers, timeout=5)
+                if res.status_code == 200:
+                    user_data = res.json()
+                    return {
+                        "id": user_data.get("id"),
+                        "email": user_data.get("email"),
+                    }
+            except Exception as e:
+                print(f"Error validating token: {e}")
+    
+    # Method 2: Check request.state.user (Supabase middleware)
     u = getattr(request.state, "user", None)
     if u and getattr(u, "id", None):
         return {"id": u.id, "email": getattr(u, "email", None)}
 
+    # Method 3: Fallback to X-User-Id header (local dev)
     uid = request.headers.get("x-user-id")
     email = request.headers.get("x-user-email")
-    if not uid:
-        raise HTTPException(
-            401, "User not authenticated (no Supabase user or X-User-Id header)"
-        )
-    return {"id": uid, "email": email}
+    if uid:
+        return {"id": uid, "email": email}
+    
+    raise HTTPException(
+        401, "User not authenticated (no valid token, Supabase user, or X-User-Id header)"
+    )
 
 
 class TimeWindow(BaseModel):
@@ -86,14 +114,18 @@ def _overlaps(a_start: datetime, a_end: datetime, b_start: datetime, b_end: date
 
 
 @router.post("/check-conflicts")
-def check_conflicts(request: Request, window: TimeWindow):
+def check_conflicts(
+    request: Request, 
+    window: TimeWindow,
+    authorization: Optional[str] = Header(default=None)
+):
     """
     Backend for: "Hey Mira, check for conflicts."
 
     The frontend / LLM should convert natural language into a concrete
     time window and call this endpoint.
     """
-    user = _current_user(request)
+    user = _current_user(request, authorization)
     uid = user["id"]
 
     events_resp = list_events(
@@ -138,14 +170,18 @@ def check_conflicts(request: Request, window: TimeWindow):
 
 
 @router.post("/schedule")
-def schedule_event(request: Request, payload: ScheduleRequest):
+def schedule_event(
+    request: Request, 
+    payload: ScheduleRequest,
+    authorization: Optional[str] = Header(default=None)
+):
     """
     Create a new Google Calendar event (invite).
 
     Maps to: "Hey Mira, schedule a meeting at 9PM with Tony"
     once the LLM has turned that into times + emails.
     """
-    user = _current_user(request)
+    user = _current_user(request, authorization)
     uid = user["id"]
 
     attendees = [{"email": a} for a in payload.attendees] if payload.attendees else None
@@ -224,13 +260,17 @@ def _find_single_event_by_time(
 
 
 @router.post("/cancel")
-def cancel_event(request: Request, payload: CancelRequest):
+def cancel_event(
+    request: Request, 
+    payload: CancelRequest,
+    authorization: Optional[str] = Header(default=None)
+):
     """
     Cancel (delete) a calendar event.
 
     Maps to: "Hey Mira, please cancel the meeting at 8PM."
     """
-    user = _current_user(request)
+    user = _current_user(request, authorization)
     uid = user["id"]
 
     if payload.event_id:
@@ -247,13 +287,17 @@ def cancel_event(request: Request, payload: CancelRequest):
 
 
 @router.post("/reschedule")
-def reschedule_event(request: Request, payload: RescheduleRequest):
+def reschedule_event(
+    request: Request, 
+    payload: RescheduleRequest,
+    authorization: Optional[str] = Header(default=None)
+):
     """
     Reschedule an existing event by updating start/end.
 
     Maps to: "Hey Mira, move my 3PM with Tony to 4PM."
     """
-    user = _current_user(request)
+    user = _current_user(request, authorization)
     uid = user["id"]
 
     if payload.event_id:

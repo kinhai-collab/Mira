@@ -22,10 +22,25 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 @router.get("/audio/morning-brief/{filename}")
 async def get_morning_brief_audio(filename: str):
-    """Serve the generated morning brief audio file."""
-    filepath = os.path.join(os.getcwd(), "speech", filename)
+    """Serve the generated morning brief audio file.
+    
+    In Lambda, audio files are ephemeral in /tmp. This endpoint may not work reliably.
+    Prefer using the base64 audio returned directly in the morning-brief response.
+    """
+    # In Lambda, check /tmp first, then fallback to local speech directory
+    if os.getenv("AWS_LAMBDA_FUNCTION_NAME"):
+        filepath = os.path.join("/tmp/speech", filename)
+        if not os.path.exists(filepath):
+            # Try local directory as fallback (unlikely to exist in Lambda)
+            filepath = os.path.join(os.getcwd(), "speech", filename)
+    else:
+        filepath = os.path.join(os.getcwd(), "speech", filename)
+    
     if not os.path.exists(filepath):
-        raise HTTPException(status_code=404, detail="Audio file not found")
+        raise HTTPException(
+            status_code=404, 
+            detail="Audio file not found. In Lambda, audio is returned as base64 in the response."
+        )
     return FileResponse(filepath, media_type="audio/mpeg")
 
 @router.post("/morning-brief")
@@ -89,10 +104,12 @@ async def get_morning_brief(
                             time_range = "N/A"
                     
                     formatted_events.append({
-                        "id": f"{ev.get('summary', 'event')}_{start_dt.isoformat() if start_dt else ''}",
+                        "id": ev.get("id", f"{ev.get('summary', 'event')}_{start_dt.isoformat() if start_dt else ''}"),
                         "title": ev.get("summary", "No title"),
                         "timeRange": time_range,
-                        "provider": "google"
+                        "meetingLink": ev.get("meetingLink"),
+                        "provider": ev.get("provider"),  # Meeting provider (google-meet, microsoft-teams, zoom)
+                        "calendar_provider": ev.get("calendar_provider", "google")  # Calendar source (google/outlook)
                     })
                 
                 # Find next event (first event that hasn't started yet)

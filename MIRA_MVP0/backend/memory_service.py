@@ -344,12 +344,6 @@ class MemoryService:
 
         candidates = self.retrieve_similar_facts(user_id=user_id, text=fact_text_for_search, limit=3)
         if candidates:
-            # Log candidates for debugging the dedupe behavior
-            try:
-                cand_debug = ", ".join([f"id={c.get('id')} dist={c.get('distance'):.4f}" for c in candidates])
-                print(f"MemoryService.upsert: candidates for user_id={user_id}: {cand_debug} threshold={dedupe_distance_threshold}")
-            except Exception:
-                pass
 
             best = candidates[0]
             dist = best.get("distance")
@@ -475,8 +469,11 @@ def get_memory_service() -> MemoryService:
     """Get the global memory service instance."""
     global _memory_service
     if _memory_service is None:
-        # Create persist directory if it doesn't exist
-        persist_dir = os.path.join(os.getcwd(), "data", "chroma_db")
+        # In Lambda, use /tmp (read-write). Otherwise use local data directory
+        if os.getenv("AWS_LAMBDA_FUNCTION_NAME"):
+            persist_dir = "/tmp/chroma_db"
+        else:
+            persist_dir = os.path.join(os.getcwd(), "data", "chroma_db")
         os.makedirs(persist_dir, exist_ok=True)
         _memory_service = MemoryService(persist_directory=persist_dir)
     return _memory_service

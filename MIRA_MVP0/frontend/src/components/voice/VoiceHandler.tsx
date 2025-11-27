@@ -27,7 +27,7 @@ export default function VoiceHandler() {
 				process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 			// Try to get a valid token and send it in the Authorization header if available
-			let headers: Record<string, string> = {};
+			const headers: Record<string, string> = {};
 			try {
 				const token = await getValidToken();
 				if (token) headers.Authorization = `Bearer ${token}`;

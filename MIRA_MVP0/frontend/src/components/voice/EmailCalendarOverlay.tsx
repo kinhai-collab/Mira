@@ -19,6 +19,7 @@ export interface VoiceSummaryEmail {
 	subject: string;
 	receivedAt: string;
 	summary?: string;
+	provider?: "gmail" | "outlook"; // ✅ Email provider (gmail/outlook)
 }
 
 export type CalendarEventProvider = "google-meet" | "microsoft-teams" | "other";
@@ -31,6 +32,7 @@ export interface VoiceSummaryCalendarEvent {
 	note?: string;
 	meetingLink?: string | null;
 	provider?: CalendarEventProvider | string | null;
+	calendar_provider?: "google" | "outlook"; // ✅ Calendar provider (google/outlook)
 }
 
 export interface EmailCalendarOverlayProps {
@@ -94,8 +96,8 @@ function StepBullet({ status }: { status: VoiceSummaryStepStatus }) {
 	);
 }
 
-const GMAIL_ICON = { src: "/Icons/image 4.png", alt: "Gmail" };
-const OUTLOOK_ICON = { src: "/Icons/image 5.png", alt: "Outlook" };
+const GMAIL_ICON = { src: "/Icons/Email/skill-icons_gmail-light.png", alt: "Gmail" };
+const OUTLOOK_ICON = { src: "/Icons/Email/vscode-icons_file-type-outlook.png", alt: "Outlook" };
 const DEFAULT_EMAIL_ICON = { src: "/Icons/Property 1=Email.svg", alt: "Email" };
 const GOOGLE_MEET_PROVIDER = {
 	type: "meet" as const,
@@ -107,10 +109,23 @@ const MICROSOFT_TEAMS_PROVIDER = {
 	label: "Teams",
 	icon: { src: "/Icons/logos_microsoft-teams.svg", alt: "Microsoft Teams" },
 };
+const DEFAULT_EVENT_PROVIDER = {
+	type: "other" as const,
+	label: "Event",
+	icon: { src: "/Icons/fluent_person-16-filled.svg", alt: "Event" },
+};
 
-function resolveEmailProviderIcon(from?: string) {
-	if (!from) return DEFAULT_EMAIL_ICON;
+function resolveEmailProviderIcon(email: VoiceSummaryEmail) {
+	// ✅ Use the provider field if available (most reliable)
+	if (email.provider === "gmail") {
+		return GMAIL_ICON;
+	}
+	if (email.provider === "outlook") {
+		return OUTLOOK_ICON;
+	}
 
+	// Fallback: check sender's email domain if provider is not set
+	const from = email.from || "";
 	const normalized = from.toLowerCase();
 
 	if (normalized.includes("@gmail.") || normalized.includes("@googlemail.")) {
@@ -132,11 +147,40 @@ function resolveEmailProviderIcon(from?: string) {
 
 type CalendarProvider =
 	| typeof GOOGLE_MEET_PROVIDER
-	| typeof MICROSOFT_TEAMS_PROVIDER;
+	| typeof MICROSOFT_TEAMS_PROVIDER
+	| typeof DEFAULT_EVENT_PROVIDER;
 
 function resolveCalendarEventProvider(
 	event: VoiceSummaryCalendarEvent
-): CalendarProvider | null {
+): CalendarProvider {
+	// ✅ First, check the meetingLink to determine provider
+	const meetingLink = (event.meetingLink || "").toLowerCase();
+	
+	// Check for Google Meet links
+	if (
+		meetingLink.includes("meet.google.com") ||
+		meetingLink.includes("meet.google") ||
+		meetingLink.includes("google.com/meet")
+	) {
+		return GOOGLE_MEET_PROVIDER;
+	}
+	
+	// Check for Microsoft Teams links
+	if (
+		meetingLink.includes("teams.microsoft.com") ||
+		meetingLink.includes("teams.microsoft") ||
+		meetingLink.includes("microsoft.com/teams") ||
+		meetingLink.includes("teams.live.com")
+	) {
+		return MICROSOFT_TEAMS_PROVIDER;
+	}
+	
+	// ✅ If there's a meeting link but it's not Google or Microsoft, use default icon
+	if (meetingLink && meetingLink.trim() !== "") {
+		return DEFAULT_EVENT_PROVIDER;
+	}
+	
+	// Check explicit provider field
 	const explicit = (event.provider ?? "").toString().toLowerCase();
 	if (explicit.includes("team")) {
 		return MICROSOFT_TEAMS_PROVIDER;
@@ -145,6 +189,7 @@ function resolveCalendarEventProvider(
 		return GOOGLE_MEET_PROVIDER;
 	}
 
+	// Check event text content
 	const text = `${event.location ?? ""} ${event.note ?? ""} ${
 		event.title ?? ""
 	}`.toLowerCase();
@@ -161,12 +206,8 @@ function resolveCalendarEventProvider(
 		return MICROSOFT_TEAMS_PROVIDER;
 	}
 
-	// Default to Google Meet styling for virtual meetings when nothing explicit is provided.
-	if (text.includes("zoom") || text.includes("call") || text.includes("meet")) {
-		return GOOGLE_MEET_PROVIDER;
-	}
-
-	return GOOGLE_MEET_PROVIDER;
+	// ✅ Default to person icon for events without Google Meet or Microsoft Teams links
+	return DEFAULT_EVENT_PROVIDER;
 }
 
 function SummaryCard({
@@ -188,40 +229,83 @@ function SummaryCard({
 	// Use provided value or fallback
 	const currentProvider = provider || "gmail";
 
-	// Calculate 24-hour window
+	// Calculate 7-day window (extended from 24 hours to show more emails to match backend)
 	const now = new Date();
-	const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+	const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-	// Filter only recent emails
+	// Filter recent emails with improved date parsing
 	const recentEmails = safeEmails.filter((e) => {
-		if (!e.receivedAt) return false;
-
-		let receivedAt: Date | null = null;
-
-		// Handle numeric timestamps or ISO strings safely
-		if (!isNaN(Number(e.receivedAt))) {
-			// If numeric timestamp (milliseconds)
-			receivedAt = new Date(Number(e.receivedAt));
-		} else {
-			// If ISO string or Gmail RFC 2822 format
-			const parsed = Date.parse(e.receivedAt);
-			if (!isNaN(parsed)) receivedAt = new Date(parsed);
+		// If no receivedAt field, include it (better than hiding them)
+		if (!e.receivedAt) {
+			return true;
 		}
 
-		return receivedAt && receivedAt > twentyFourHoursAgo && receivedAt <= now;
-	});
-	// Use only recent emails for display and counts
-	const emailsToShow = recentEmails;
+		// Try to parse the date from receivedAt field
+		let receivedAt: Date | null = null;
+		const receivedAtValue = e.receivedAt;
 
-	// Count Gmail and Outlook from recent emails
+		if (!receivedAtValue) {
+			return true; // Include emails without any date field
+		}
+
+		// Handle numeric timestamps (milliseconds or seconds)
+		if (!isNaN(Number(receivedAtValue))) {
+			const numValue = Number(receivedAtValue);
+			// If it looks like seconds (less than year 2000 in ms), convert to ms
+			receivedAt = new Date(numValue > 946684800000 ? numValue : numValue * 1000);
+		} else if (typeof receivedAtValue === 'string') {
+			// Handle ISO string or other date formats
+			const parsed = Date.parse(receivedAtValue);
+			if (!isNaN(parsed)) {
+				receivedAt = new Date(parsed);
+			}
+		}
+
+		// If we couldn't parse the date, include the email anyway
+		if (!receivedAt || isNaN(receivedAt.getTime())) {
+			return true;
+		}
+
+		// Check if email is within the last 7 days
+		return receivedAt > sevenDaysAgo && receivedAt <= now;
+	});
+	
+	// If filtering removed all emails, show all emails as fallback (safety measure)
+	const emailsToShow = recentEmails.length > 0 ? recentEmails : safeEmails;
+
+	// Count Gmail and Outlook from recent emails based on each email's provider field
 	let gmailCount = 0;
 	let outlookCount = 0;
 
-	if (currentProvider === "gmail") {
-		gmailCount = emailsToShow.length;
-	} else if (currentProvider === "outlook") {
-		outlookCount = emailsToShow.length;
-	}
+	emailsToShow.forEach((email) => {
+		if (email.provider === "gmail") {
+			gmailCount++;
+		} else if (email.provider === "outlook") {
+			outlookCount++;
+		} else {
+			// Fallback: if provider is not set, try to infer from sender's email domain
+			const from = email.from || "";
+			const normalized = from.toLowerCase();
+			if (normalized.includes("@gmail.") || normalized.includes("@googlemail.")) {
+				gmailCount++;
+			} else if (
+				normalized.includes("@outlook.") ||
+				normalized.includes("@hotmail.") ||
+				normalized.includes("@live.") ||
+				normalized.includes("@office365.") ||
+				normalized.includes("@microsoft.")
+			) {
+				outlookCount++;
+			} else {
+				// If we can't determine, use currentProvider as fallback
+				if (currentProvider === "gmail") {
+					gmailCount++;
+				} else if (currentProvider === "outlook") {
+					outlookCount++;
+				}
+			}
+		}
+	});
 	const unreadCount = emailsToShow.length
 		? Math.ceil(emailsToShow.length * 0.6)
 		: 0;
@@ -235,18 +319,18 @@ function SummaryCard({
 
 	// Compute meeting counts safely
 	const meetCount = safeCalendarEvents.filter(
-		(event) => resolveCalendarEventProvider(event)?.type === "meet"
+		(event) => resolveCalendarEventProvider(event).type === "meet"
 	).length;
 
 	const teamsCount = safeCalendarEvents.filter(
-		(event) => resolveCalendarEventProvider(event)?.type === "teams"
+		(event) => resolveCalendarEventProvider(event).type === "teams"
 	).length;
 
 	const nextEvent = safeCalendarEvents[0];
-	// Email visibility controls
+	// Email visibility controls - use filtered emails (emailsToShow) instead of all emails
 	const [visibleCount, setVisibleCount] = React.useState(6);
-	const isAllVisible = visibleCount >= safeEmails.length;
-	const displayedEmails = safeEmails.slice(0, visibleCount);
+	const isAllVisible = visibleCount >= emailsToShow.length;
+	const displayedEmails = emailsToShow.slice(0, visibleCount);
 
 	return (
 		<div className="w-full rounded-[24px] border border-[#e6e9f0] bg-white/85 p-6 text-left shadow-[0_8px_24px_rgba(39,40,41,0.08)] backdrop-blur">
@@ -265,7 +349,7 @@ function SummaryCard({
 							</div>
 							<div className="flex items-center gap-1">
 								<span className="font-['Outfit',sans-serif] text-[14px] font-light text-[#454547]">
-									24 hours
+									Last 7 days
 								</span>
 								<Icon
 									name="ChevronRight"
@@ -315,7 +399,7 @@ function SummaryCard({
 							{displayedEmails
 								.slice(0, Math.ceil(displayedEmails.length / 2))
 								.map((email) => {
-									const icon = resolveEmailProviderIcon(email.from);
+									const icon = resolveEmailProviderIcon(email);
 
 									return (
 										<div
@@ -357,7 +441,7 @@ function SummaryCard({
 							{displayedEmails
 								.slice(Math.ceil(displayedEmails.length / 2))
 								.map((email) => {
-									const icon = resolveEmailProviderIcon(email.from);
+									const icon = resolveEmailProviderIcon(email);
 
 									return (
 										<div
@@ -527,30 +611,36 @@ function SummaryCard({
 									className="flex h-full gap-3 rounded-[18px] border border-[#e6e9f0] bg-white p-5 shadow-[0_8px_18px_rgba(39,40,41,0.05)] transition hover:shadow-md"
 								>
 									<div className="flex h-10 w-10 items-center justify-center rounded-full border border-[#eceff4] bg-[#f5f7fb]">
-										{provider ? (
-											<Image
-												src={provider.icon.src}
-												alt={`${provider.icon.alt} icon`}
-												width={22}
-												height={22}
-												className="h-5 w-5 object-contain"
-											/>
-										) : (
-											<Icon
-												name="Calendar"
-												size={20}
-												className="text-[#735ff8]"
-											/>
-										)}
+										<Image
+											src={provider.icon.src}
+											alt={`${provider.icon.alt} icon`}
+											width={22}
+											height={22}
+											className="h-5 w-5 object-contain"
+										/>
 									</div>
 
 									<div className="flex-1 space-y-2">
 										<div className="flex items-start justify-between gap-2">
-											<div className="flex items-start gap-2 flex-1">
+											<div className="flex items-start gap-2 flex-1 min-w-0">
 												<span className="mt-[6px] inline-flex size-2 shrink-0 rounded-full bg-[#6a80ff]" />
-												<p className="font-['Outfit',sans-serif] text-[14px] font-medium text-[#272829]">
-													{event.title}
-												</p>
+												<div className="flex items-center gap-2 min-w-0 flex-1">
+													<p className="font-['Outfit',sans-serif] text-[14px] font-medium text-[#272829] truncate">
+														{event.title}
+													</p>
+													{/* Calendar Provider Badge */}
+													{event.calendar_provider && (
+														<span
+															className={`text-[11px] px-2 py-0.5 rounded-full font-medium shrink-0 ${
+																event.calendar_provider === "google"
+																	? "bg-blue-100 text-blue-700"
+																	: "bg-purple-100 text-purple-700"
+															}`}
+														>
+															{event.calendar_provider === "google" ? "Google Calendar" : "Outlook Calendar"}
+														</span>
+													)}
+												</div>
 											</div>
 											{event.meetingLink && (
 												<a
@@ -714,6 +804,7 @@ export function EmailCalendarOverlay({
 							receivedAt?: string;
 							snippet?: string;
 							body?: string;
+							provider?: "gmail" | "outlook"; // ✅ Email provider field
 						}
 
 						interface EmailsResponse {
@@ -735,6 +826,7 @@ export function EmailCalendarOverlay({
 							receivedAt?: string;
 							snippet?: string;
 							body?: string;
+							provider?: "gmail" | "outlook"; // ✅ Email provider field
 						};
 
 						const safeEmails: VoiceSummaryEmail[] = Array.isArray(emails)
@@ -746,6 +838,7 @@ export function EmailCalendarOverlay({
 									const idVal = backend.id ?? "";
 									const senderEmailVal = backend.sender_email ?? "";
 									const summaryVal = backend.snippet ?? backend.body ?? "";
+									const providerVal = backend.provider; // ✅ Preserve provider field
 									return {
 										id: idVal,
 										from: String(fromVal),
@@ -753,6 +846,7 @@ export function EmailCalendarOverlay({
 										subject: String(subjectVal),
 										receivedAt: String(receivedAtVal),
 										summary: String(summaryVal),
+										provider: providerVal, // ✅ Include provider field
 									} as VoiceSummaryEmail;
 								})
 							: [];

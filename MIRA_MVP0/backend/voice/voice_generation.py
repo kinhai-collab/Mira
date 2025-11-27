@@ -502,6 +502,7 @@ async def stream_voice(text: str = "Hello from Mira!"):
         # Get the ElevenLabs client (with lazy import)
         elevenlabs_client = get_elevenlabs_client()
 
+
         voice_id = os.getenv("ELEVENLABS_VOICE_ID")
         if not voice_id:
             raise HTTPException(status_code=500, detail="Missing ELEVENLABS_VOICE_ID")
@@ -521,6 +522,52 @@ async def stream_voice(text: str = "Hello from Mira!"):
         except Exception as e:
             logging.exception(f"Failed to collect audio stream: {e}")
             audio_bytes = b""
+        
+        # Combine all chunks into one binary MP3 blob
+        audio_bytes = b"".join(list(audio_stream))
+
+        # Debug: Check the first few bytes to ensure it's valid MP3
+        print(f"Audio bytes length: {len(audio_bytes)}")
+        print(f"First 16 bytes (hex): {audio_bytes[:16].hex()}")
+        print(f"First 16 bytes (ascii): {audio_bytes[:16]}")
+
+        # Check if it starts with MP3 sync word (0xFF 0xFB or 0xFF 0xFA) or ID3 tag (0x49 0x44 0x33)
+        if len(audio_bytes) >= 3:
+            if (audio_bytes[0] == 0xFF and (audio_bytes[1] & 0xE0) == 0xE0) or \
+               (audio_bytes[0] == 0x49 and audio_bytes[1] == 0x44 and audio_bytes[2] == 0x33):
+                logging.info("Audio data appears to be valid MP3")
+            else:
+                logging.info("Audio data does not appear to be valid MP3")
+                logging.info("This might be base64 encoded or in a different format")
+                
+                print("Audio data does not appear to be valid MP3")
+                print("This might be base64 encoded or in a different format")
+
+                # Try to decode as base64 if it looks like base64
+                try:
+                    import base64
+                    # Check if the data looks like base64 (contains only base64 characters)
+                    if all(c in b'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=' for c in audio_bytes):
+                        logging.info("Attempting to decode as base64...")
+                        decoded_bytes = base64.b64decode(audio_bytes)
+                        logging.info(f"Decoded bytes length: {len(decoded_bytes)}")
+                        logging.info(f"Decoded first 16 bytes (hex): {decoded_bytes[:16].hex()}")
+                        
+                        print(f"Decoded bytes length: {len(decoded_bytes)}")
+                        print(f"Decoded first 16 bytes (hex): {decoded_bytes[:16].hex()}")
+
+                        # Check if decoded data is valid MP3
+                        if len(decoded_bytes) >= 3:
+                            if (decoded_bytes[0] == 0xFF and (decoded_bytes[1] & 0xE0) == 0xE0) or \
+                               (decoded_bytes[0] == 0x49 and decoded_bytes[1] == 0x44 and decoded_bytes[2] == 0x33):
+                                logging.info(" Decoded audio data appears to be valid MP3")
+                                audio_bytes = decoded_bytes
+                            else:
+                                logging.info("Decoded data still doesn't look like MP3")
+                except Exception as e:
+                    logging.info(f"Base64 decode failed: {e}")
+        
+                    print(f"Base64 decode failed: {e}")
 
         # Validate that we got audio data
         if not audio_bytes:
@@ -563,37 +610,48 @@ async def fetch_dashboard_data(user_token: str, has_email: bool, has_calendar: b
                 res = await client.get(f"{base_url}/dashboard/emails/list", headers=headers)
                 if res.status_code == 200:
                     data = res.json()
+                    # Extract emails from nested structure: {status: "success", data: {emails: [...]}}
                     emails = data.get("data", {}).get("emails", [])
             except Exception as e:
-                logging.debug(f"Email fetch failed: {e}")
+                print("⚠️ Email fetch failed:", e)
 
         if has_calendar:
             try:
                 res = await client.get(f"{base_url}/dashboard/events", headers=headers)
                 if res.status_code == 200:
                     data = res.json()
+                    # Extract events from nested structure: {status: "success", data: {events: [...]}}
                     calendar_events = data.get("data", {}).get("events", [])
             except Exception as e:
-                logging.debug(f"Calendar fetch failed: {e}")
+                print("âš ï¸ Calendar fetch failed:", e)
 
     return emails, calendar_events
+
 
 
 @router.post("/text-query")
 async def text_query_pipeline(request: Request):
     request_data = await request.json()
-    print("📩 Incoming text-query data:", request_data)
-
-    # Support token provided either in Authorization header or in request body as `token`
-    auth_header = request.headers.get("authorization") or None
-    if not auth_header:
-        body_token = request_data.get("token") if isinstance(request_data, dict) else None
-        if body_token:
-            auth_header = f"Bearer {body_token}"
+    print("ðŸ“© Incoming text-query data:", request_data)
 
     try:
         user_input = request_data.get("query", "").strip()
         history = request_data.get("history", [])
+        
+        # Extract user ID from authorization header
+        user_id = None
+        auth_header = request.headers.get("authorization")
+        if auth_header:
+            try:
+                user_id = get_uid_from_token(auth_header)
+            except Exception as e:
+                print(f"Could not extract user ID from token: {e}")
+                user_id = "anonymous"  # Fallback for development
+        
+        # Get memory service (handle gracefully if modules don't exist)
+        memory_service = get_memory_service() if get_memory_service else None
+        memory_manager = get_memory_manager() if get_memory_manager else None
+        intelligent_learner = get_intelligent_learner() if get_intelligent_learner else None
         
         if not user_input or len(user_input) < 1:
             return JSONResponse({
@@ -615,7 +673,7 @@ async def text_query_pipeline(request: Request):
         
         # Check for email/calendar summary intent
         email_keywords = re.compile(r"(email|inbox|mail|messages)", re.I)
-        calendar_keywords = re.compile(r"(calendar|schedule|event)", re.I)
+        calendar_keywords = re.compile(r"(calendar|schedule|event|meeting)", re.I)
         has_email_intent = email_keywords.search(user_input)
         has_calendar_intent = calendar_keywords.search(user_input)
         
@@ -639,7 +697,7 @@ async def text_query_pipeline(request: Request):
             if has_email_intent and has_calendar_intent:
                 steps.append({"id": "conflicts", "label": "Noting any schedule conflicts..."})
 
-            # ✅ Fetch live data from dashboard routes
+            # âœ… Fetch live data from dashboard routes
             emails, calendar_events = await fetch_dashboard_data(user_token, has_email_intent, has_calendar_intent)
 
             action_data = {
@@ -647,7 +705,7 @@ async def text_query_pipeline(request: Request):
                 "emails": emails if has_email_intent else [],
                 "calendarEvents": calendar_events if has_calendar_intent else [],
                 "focus": (
-                    "You have upcoming events and important unread emails — review your schedule and respond accordingly."
+                    "You have upcoming events and important unread emails â€” review your schedule and respond accordingly."
                     if has_email_intent and has_calendar_intent
                     else None
                 ),
@@ -673,48 +731,9 @@ async def text_query_pipeline(request: Request):
 
 
 
-        # Build chat message array
-        messages: List[Dict[str, Any]] = [
-            {
-                "role": "system",
-                "content": (
-                    "You are Mira, a warm, helpful assistant. Keep answers concise and friendly."
-                ),
-            },
-        ]
-        
-        # Add history
-        if isinstance(history, list):
-            for msg in history[-10:]:  # Keep last 10 messages for context
-                if isinstance(msg, dict) and "role" in msg and "content" in msg:
-                    messages.append({"role": msg["role"], "content": msg["content"]})
-        
-        # Add current user query
-        # Add current user query
-        messages.append({"role": "user", "content": user_input})
-
-        
-
-
-
-
         
 
         # Retrieve relevant memories for context
-        # Extract user ID from authorization header (we may have pulled token from body earlier)
-        user_id = None
-        if auth_header:
-            try:
-                user_id = get_uid_from_token(auth_header)
-            except Exception as e:
-                print(f"Could not extract user ID from token: {e}")
-                user_id = "anonymous"
-
-        # Get memory service/manager/learner if available
-        memory_service = get_memory_service() if get_memory_service else None
-        memory_manager = get_memory_manager() if get_memory_manager else None
-        intelligent_learner = get_intelligent_learner() if get_intelligent_learner else None
-
         relevant_memories = []
         memory_context = ""
         if user_id and user_id != "anonymous" and memory_service:
@@ -739,27 +758,16 @@ async def text_query_pipeline(request: Request):
                         seen_contents.add(content)
                         unique_memories.append(mem)
                 
-                # Format memories for context (support both fact memories and conversation metadata)
+                # Format memories for context
                 if unique_memories:
                     memory_strings = []
                     for mem in unique_memories[:5]:  # Limit to 5 total
-                        content = mem.get("content") or ""
-                        metadata = mem.get("metadata", {}) or {}
-                        # If this is a stored fact, include category and content
-                        category = metadata.get("category") or metadata.get("type") or None
-                        if content:
-                            if category:
-                                memory_strings.append(f"Fact ({category}): {content}")
-                            else:
-                                memory_strings.append(f"Fact: {content}")
-                            continue
-
-                        # Fallback: if conversation-style metadata exists, include user/assistant snippets
+                        metadata = mem.get("metadata", {})
                         user_msg = metadata.get("user_message", "")
                         assistant_msg = metadata.get("assistant_response", "")
                         if user_msg and assistant_msg:
                             memory_strings.append(f"Previous conversation: User: {user_msg} | Assistant: {assistant_msg}")
-
+                    
                     if memory_strings:
                         memory_context = "\n".join(memory_strings[:3])  # Limit context length
                         
@@ -794,13 +802,6 @@ async def text_query_pipeline(request: Request):
         try:
            
             oa = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-            # Debug: log the memory context being passed to the model so we can
-            # confirm the LLM receives stored facts. Truncate to avoid huge logs.
-            try:
-                logging.info(f"text_query_pipeline: memory_context_len={len(memory_context)} preview={memory_context[:1000]}")
-            except Exception:
-                pass
-
             comp = oa.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=messages,
@@ -808,11 +809,6 @@ async def text_query_pipeline(request: Request):
                 max_tokens=300,
             )
             response_text = (comp.choices[0].message.content or "I'm here to help!").strip()
-            # Debug: log a short preview of the LLM response so we can inspect unexpected empty replies
-            try:
-                logging.info(f"LLM reply preview: {response_text[:240]}")
-            except Exception:
-                pass
         except Exception as e:
             print(f"Error generating response: {e}")
             response_text = "Sorry, I encountered an issue generating a response."
@@ -835,21 +831,235 @@ async def text_query_pipeline(request: Request):
                     assistant_response=response_text
                 ))
         
-        # Optionally include raw model payload when debugging
-        debug_mode = os.getenv("DEBUG_TEXT_QUERY", "") == "1"
-        out = {"text": response_text, "userText": user_input}
-        if debug_mode:
-            try:
-                out["_raw"] = {
-                    "choices": [c.to_dict() if hasattr(c, 'to_dict') else str(c) for c in getattr(comp, 'choices', [])],
-                }
-            except Exception:
-                out["_raw"] = "<unavailable>"
-
-        return JSONResponse(out)
+        return JSONResponse({
+            "text": response_text,
+            "userText": user_input,
+        })
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Text query pipeline failed: {e}")
+
+# Helper: call calendar endpoints    
+async def _call_calendar_action_endpoint(
+    auth_header: Optional[str],
+    endpoint: str,
+    payload: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Internal helper to call our own /api/assistant/calendar/* endpoints
+    using the same Authorization token that the voice request received.
+    """
+    base_url = os.getenv("API_BASE_URL", "http://127.0.0.1:8000")
+
+    if not auth_header:
+        raise HTTPException(status_code=401, detail="Missing Authorization header for calendar action")
+
+    headers = {
+        "Authorization": auth_header,
+        "Content-Type": "application/json",
+    }
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.post(f"{base_url}{endpoint}", headers=headers, json=payload)
+
+    if resp.status_code >= 400:
+        raise HTTPException(
+            status_code=resp.status_code,
+            detail=f"Calendar action failed: {resp.text}",
+        )
+
+    try:
+        return resp.json()
+    except Exception:
+        return {}
+
+# Helper: interpret and execute voice calendar commands
+async def _handle_calendar_voice_command(
+    user_input: str,
+    auth_header: Optional[str],
+) -> Optional[JSONResponse]:
+    """
+    Detect and execute calendar actions (schedule / cancel / reschedule / conflict check)
+    from natural language voice input.
+
+    Returns JSONResponse if a calendar action was executed,
+    or None if the input did not request a calendar operation.
+    """
+    text_lower = user_input.lower()
+
+    # Quick keyword filter so we don't call GPT for every sentence
+    keywords = [
+        "schedule", "reschedule", "move", "shift",
+        "cancel", "delete", "remove",
+        "meeting", "event", "calendar",
+    ]
+    if not any(k in text_lower for k in keywords):
+        return None
+
+    oa = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+    system_prompt = (
+        "You are Mira's calendar planner. "
+        "Given a user's spoken request, you must output a STRICT JSON object with this shape:\n"
+        "{"
+        "\"intent\": \"schedule|cancel|reschedule|check_conflicts|none\","
+        "\"natural_response\": \"what Mira should say back to the user\","
+        "\"params\": { ... }"
+        "}\n"
+        "The params object depends on the intent:\n"
+        "- schedule: {summary, start_iso, end_iso, attendees (array of emails, may be empty)}\n"
+        "- cancel: {event_start_iso, summary}\n"
+        "- reschedule: {old_start_iso, summary, new_start_iso, new_end_iso}\n"
+        "- check_conflicts: {start_iso, end_iso}\n"
+        "Use the current day in the user's timezone if no date is given.\n"
+        "All times MUST be full ISO-8601 with timezone, e.g. 2025-11-16T21:00:00-05:00.\n"
+        "If you are not sure what to do, set intent to 'none'.\n"
+        "Respond with JSON ONLY (no extra commentary)."
+    )
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_input},
+    ]
+
+    try:
+        comp = oa.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=messages,
+            temperature=0.2,
+            max_tokens=300,
+        )
+        raw = (comp.choices[0].message.content or "").strip()
+    except Exception as e:
+        logging.exception(f"Calendar intent LLM call failed: {e}")
+        return None
+
+    # Try to parse JSON directly; if that fails, try to extract from text
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        try:
+            start = raw.index("{")
+            end = raw.rindex("}") + 1
+            parsed = json.loads(raw[start:end])
+        except Exception:
+            logging.debug(f"Failed to parse calendar intent JSON from: {raw[:200]}")
+            return None
+
+    intent = (parsed.get("intent") or "none").lower()
+    natural_response = parsed.get("natural_response") or ""
+    params = parsed.get("params") or {}
+
+    if intent == "none":
+        return None
+
+    # Execute the corresponding calendar action
+    try:
+        if intent == "schedule":
+            payload = {
+                "summary": params.get("summary") or "Meeting",
+                "start": params.get("start_iso"),
+                "end": params.get("end_iso"),
+                "attendees": params.get("attendees") or [],
+                "description": params.get("description") or None,
+                "location": params.get("location") or None,
+            }
+            if not payload["start"] or not payload["end"]:
+                raise HTTPException(400, "Missing start/end for schedule action")
+
+            result = await _call_calendar_action_endpoint(
+                auth_header,
+                "/api/assistant/calendar/schedule",
+                payload,
+            )
+
+        elif intent == "cancel":
+            payload = {
+                "start": params.get("event_start_iso"),
+                "summary": params.get("summary") or None,
+                "event_id": params.get("event_id") or None,
+            }
+            if not payload["start"] and not payload["event_id"]:
+                raise HTTPException(400, "Missing start or event_id for cancel action")
+
+            result = await _call_calendar_action_endpoint(
+                auth_header,
+                "/api/assistant/calendar/cancel",
+                payload,
+            )
+
+        elif intent == "reschedule":
+            payload = {
+                "old_start": params.get("old_start_iso"),
+                "summary": params.get("summary") or None,
+                "event_id": params.get("event_id") or None,
+                "new_start": params.get("new_start_iso"),
+                "new_end": params.get("new_end_iso"),
+            }
+            if (not payload["old_start"] and not payload["event_id"]) or not payload["new_start"] or not payload["new_end"]:
+                raise HTTPException(400, "Missing required fields for reschedule action")
+
+            result = await _call_calendar_action_endpoint(
+                auth_header,
+                "/api/assistant/calendar/reschedule",
+                payload,
+            )
+
+        elif intent == "check_conflicts":
+            payload = {
+                "start": params.get("start_iso"),
+                "end": params.get("end_iso"),
+            }
+            if not payload["start"] or not payload["end"]:
+                raise HTTPException(400, "Missing start/end for check_conflicts action")
+
+            result = await _call_calendar_action_endpoint(
+                auth_header,
+                "/api/assistant/calendar/check-conflicts",
+                payload,
+            )
+        else:
+            # Unknown intent – let normal chat pipeline handle it
+            return None
+
+    except HTTPException as he:
+        natural_response = f"I tried to update your calendar but got an error: {he.detail}"
+        result = None
+    except Exception as e:
+        logging.exception(f"Calendar action execution failed: {e}")
+        natural_response = "I ran into an error while trying to update your calendar."
+        result = None
+
+    # Optional: TTS for the natural response
+    audio_base64: Optional[str] = None
+    try:
+        el = get_elevenlabs_client()
+        voice_id = os.getenv("ELEVENLABS_VOICE_ID")
+        if not voice_id:
+            raise Exception("Missing ELEVENLABS_VOICE_ID")
+
+        stream = el.text_to_speech.convert(
+            voice_id=voice_id,
+            model_id="eleven_turbo_v2",
+            text=natural_response,
+            output_format="mp3_44100_128",
+        )
+        mp3_bytes = _stream_to_bytes(stream)
+        if mp3_bytes:
+            audio_base64 = base64.b64encode(mp3_bytes).decode("ascii")
+
+    except Exception as e:
+        logging.exception(f"Failed to generate TTS for calendar action: {e}")
+        audio_base64 = None
+
+    # Return the same shape as the rest of the voice_pipeline
+    return JSONResponse({
+        "text": natural_response,
+        "audio": audio_base64,
+        "userText": user_input,
+        "action": f"calendar_{intent}",
+        "actionResult": result,
+    })
     
 @router.post("/voice")
 async def voice_pipeline(
@@ -1006,6 +1216,10 @@ async def voice_pipeline(
         memory_manager = get_memory_manager() if get_memory_manager else None
         intelligent_learner = get_intelligent_learner() if get_intelligent_learner else None
 
+        # 2.4) Calendar actions (schedule / cancel / reschedule / conflicts)
+        cal_action_response = await _handle_calendar_voice_command(user_input, auth_header)
+        if cal_action_response is not None:
+            return cal_action_response
         # Debug: show whether memory components are available and the resolved user_id
         try:
             logging.info(f"voice_pipeline: user_id={user_id} memory_service={'yes' if memory_service else 'no'} memory_manager={'yes' if memory_manager else 'no'} learner={'yes' if intelligent_learner else 'no'}")
@@ -1311,6 +1525,7 @@ def generate_voice(text: str) -> tuple[str, str]:
         except Exception as e:
             logging.exception(f"Failed to normalize audio stream: {e}")
             audio_bytes = b""
+        audio_bytes = b"".join(list(audio_stream))
 
         if not audio_bytes:
             logging.warning("No audio data received from ElevenLabs")

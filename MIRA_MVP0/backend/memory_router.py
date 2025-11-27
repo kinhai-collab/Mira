@@ -390,7 +390,11 @@ async def get_autopilot_audit():
     """Return the last 200 lines from the autopilot audit JSONL file for inspection."""
     audit_path = None
     try:
-        base = os.path.join(os.getcwd(), "data", "autopilot")
+        # In Lambda, use /tmp. Otherwise use local data directory
+        if os.getenv("AWS_LAMBDA_FUNCTION_NAME"):
+            base = "/tmp/autopilot"
+        else:
+            base = os.path.join(os.getcwd(), "data", "autopilot")
         audit_path = os.path.join(base, "autopilot_audit.jsonl")
         if not os.path.exists(audit_path):
             return JSONResponse({"lines": []})

@@ -63,19 +63,14 @@ def respond_with_memory(
     try:
         if user_id and user_id != "anonymous":
             try:
-                print(f"DEBUG: fetching relevant context for user_id={user_id} query={user_input[:60]}")
                 memory_context = memory_manager.get_relevant_context(user_id=user_id, query=user_input, max_memories=max_memories)
-                print(f"DEBUG: memory_context length={len(memory_context)}")
             except Exception as e:
-                print(f"DEBUG: error getting relevant context: {e}")
                 memory_context = ""
             try:
                 personalization_context = intelligent_learner.get_personalization_context(user_id=user_id, current_query=user_input)
             except Exception as e:
-                print(f"DEBUG: personalization context error: {e}")
                 personalization_context = ""
     except Exception as e:
-        print(f"DEBUG: unexpected error preparing contexts: {e}")
         memory_context = ""
         personalization_context = ""
 
@@ -224,9 +219,7 @@ def respond_with_memory(
                     try:
                         salient = is_salient(user_input)
                     except Exception as e:
-                        print(f"DEBUG: is_salient check raised: {e}")
                         salient = False
-                    print(f"DEBUG: is_salient={salient} for user_input={user_input[:80]}")
                     if salient:
                         summary = summarize_text(user_input)
                         # upsert as a fact (dedupe inside the memory service)

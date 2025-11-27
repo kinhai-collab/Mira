@@ -12,7 +12,8 @@ frontend:
   environment:
     variables:
       NEXT_PUBLIC_API_URL: https://xmtg107ehj.execute-api.us-east-2.amazonaws.com
-      # IMPORTANT: Add these in Amplify Console > Environment variables
+      # IMPORTANT: These must be set in AWS Amplify Console > App Settings > Environment variables
+      # The build will fail if these are missing. Set them in the Amplify Console, not here.
       # NEXT_PUBLIC_SUPABASE_URL: https://oxozhsomntvuyrurfzre.supabase.co
       # NEXT_PUBLIC_SUPABASE_ANON_KEY: your-anon-key-here
   artifacts:

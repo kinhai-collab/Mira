@@ -39,16 +39,20 @@ export interface NextEvent {
 		type?: string;
 	};
 	attendees_count: number;
+	provider?: "google" | "outlook";  // ✅ Add provider field
 }
 
 export interface CalendarEvent {
 	id: string;
 	title: string;
 	timeRange: string;
+    start?: string; // ISO string
+    end?: string;   // ISO string
 	location?: string;
 	note?: string | null;
 	meetingLink?: string | null;
-	provider?: string | null;
+	provider?: string | null;  // Meeting provider (teams, meet, zoom)
+	calendar_provider?: "google" | "outlook";  // ✅ Calendar provider (google/outlook)
 }
 
 export interface EventStats {
@@ -100,6 +104,7 @@ export async function fetchEmailStats(): Promise<EmailStats> {
 				Authorization: `Bearer ${token}`,
 				"Content-Type": "application/json",
 			},
+			credentials: "include",  // ✅ Include cookies for Outlook token
 		});
 
 		console.log("Email stats response status:", response.status);
@@ -169,6 +174,7 @@ export async function fetchEventStats(): Promise<EventStats> {
 				Authorization: `Bearer ${token}`,
 				"Content-Type": "application/json",
 			},
+			credentials: "include",  // ✅ Include cookies for Outlook token
 		});
 
 		console.log("Event stats response status:", response.status);
@@ -232,6 +238,7 @@ export async function fetchDashboardSummary(): Promise<DashboardSummary> {
 				Authorization: `Bearer ${token}`,
 				"Content-Type": "application/json",
 			},
+			credentials: "include",  // ✅ Include cookies for Outlook token
 		});
 
 		if (!response.ok) {
@@ -327,6 +334,87 @@ export interface ReminderStats {
 	next_reminders: Reminder[];
 }
 
+
+export interface EventListData {
+	events: CalendarEvent[];
+	providers: string[];
+}
+
+/**
+ * Fetch detailed list of events from Calendar
+ */
+export async function fetchEventList(
+	startDate?: Date,
+	endDate?: Date,
+	days: number = 7
+): Promise<EventListData> {
+	try {
+		const token = await getValidToken();
+		if (!token) {
+			return { events: [], providers: [] };
+		}
+
+		const endpoint = buildApiUrl("dashboard/events/list");
+		let query = `?days=${days}`;
+		if (startDate) query += `&start_date=${startDate.toISOString()}`;
+		if (endDate) query += `&end_date=${endDate.toISOString()}`;
+
+		const response = await fetch(endpoint + query, {
+			method: "GET",
+			headers: {
+				Authorization: `Bearer ${token}`,
+				"Content-Type": "application/json",
+			},
+			credentials: "include",
+		});
+
+		if (!response.ok) {
+			throw new Error(`Failed to fetch event list: ${response.statusText}`);
+		}
+
+		const result = await response.json();
+		return result.data;
+	} catch (error) {
+		console.error("Error fetching event list:", error);
+		return { events: [], providers: [] };
+	}
+}
+
+/**
+ * Create a new event
+ */
+export async function createEvent(eventData: {
+	summary: string;
+	start: string;
+	end: string;
+	description?: string;
+	location?: string;
+	attendees?: string[];
+}) {
+	const token = await getValidToken();
+	if (!token) throw new Error("No auth token");
+
+	const endpoint = buildApiUrl("api/assistant/calendar/schedule");
+	console.log("Creating event at:", endpoint, "with data:", eventData);
+
+	const response = await fetch(endpoint, {
+		method: "POST",
+		headers: {
+			Authorization: `Bearer ${token}`,
+			"Content-Type": "application/json",
+		},
+		credentials: "include", // Include cookies for Outlook token
+		body: JSON.stringify(eventData),
+	});
+
+	if (!response.ok) {
+		const errorText = await response.text();
+		console.error("Failed to create event:", response.status, errorText);
+		throw new Error(`Failed to create event: ${response.statusText}`);
+	}
+	return await response.json();
+}
+
 /**
  * Fetch task statistics from both Google Tasks and MIRA
  */
@@ -353,6 +441,7 @@ export async function fetchTaskStats(): Promise<TaskStats> {
 				Authorization: `Bearer ${token}`,
 				"Content-Type": "application/json",
 			},
+			credentials: "include",  // ✅ Include cookies for Outlook token
 		});
 
 		console.log("Task stats response status:", response.status);
@@ -408,6 +497,7 @@ export async function fetchReminderStats(): Promise<ReminderStats> {
 				Authorization: `Bearer ${token}`,
 				"Content-Type": "application/json",
 			},
+			credentials: "include",  // ✅ Include cookies for Outlook token
 		});
 
 		console.log("Reminder stats response status:", response.status);
@@ -560,6 +650,7 @@ export interface Email {
 	timestamp: string;
 	is_unread: boolean;
 	labels: string[];
+	provider: "gmail" | "outlook";  // ✅ Added provider field
 }
 
 export interface EmailListData {
@@ -595,6 +686,7 @@ export async function fetchEmailList(
 					Authorization: `Bearer ${token}`,
 					"Content-Type": "application/json",
 				},
+				credentials: "include",  // ✅ Include cookies for Outlook token
 			}
 		);
 
@@ -627,5 +719,41 @@ export async function fetchEmailList(
 			emails: [],
 			total_count: 0,
 		};
+	}
+}
+export async function fetchEmailSummary(emailId: string): Promise<{status: string, email_id: string, summary: string} | null> {
+	try {
+		const token = await getValidToken();
+		if (!token) {
+			console.error("No authentication token available");
+			return null;
+		}
+
+		const endpoint = buildApiUrl(`dashboard/emails/summary/${emailId}`);
+		console.log("Fetching email summary from:", endpoint);
+
+		const response = await fetch(endpoint, {
+			method: "GET",
+			headers: {
+				Authorization: `Bearer ${token}`,
+				"Content-Type": "application/json",
+			},
+		});
+
+		console.log("Email summary response status:", response.status);
+
+		if (!response.ok) {
+			const errorText = await response.text();
+			console.error(`Failed to fetch email summary: ${response.statusText}`, errorText);
+			throw new Error(`Failed to fetch email summary: ${response.statusText}`);
+		}
+
+		const result = await response.json();
+		console.log("Email summary result:", result);
+
+		return result;
+	} catch (error) {
+		console.error("Error fetching email summary:", error);
+		return null;
 	}
 }
