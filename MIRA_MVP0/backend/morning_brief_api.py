@@ -20,6 +20,10 @@ router = APIRouter()
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
+# ✅ Simple in-memory cache to prevent duplicate requests within 10 seconds
+_brief_cache = {}
+_cache_timeout = 10  # seconds
+
 @router.get("/audio/morning-brief/{filename}")
 async def get_morning_brief_audio(filename: str):
     """Serve the generated morning brief audio file.
@@ -67,6 +71,20 @@ async def get_morning_brief(
             
             if not user_id:
                 raise HTTPException(status_code=400, detail="No user ID found")
+            
+            # ✅ Check cache to prevent duplicate requests
+            cache_key = f"{user_id}_{timezone}"
+            from time import time
+            current_time = time()
+            
+            if cache_key in _brief_cache:
+                cached_time, cached_result = _brief_cache[cache_key]
+                if current_time - cached_time < _cache_timeout:
+                    print(f"✅ Morning Brief: Returning cached result for user {user_id} (prevented duplicate request)")
+                    return cached_result
+                else:
+                    # Cache expired, remove it
+                    del _brief_cache[cache_key]
             
             # Get user's first name
             user_metadata = user_data.get("user_metadata", {})
@@ -146,7 +164,7 @@ async def get_morning_brief(
                 # Count Teams events (simplified - checking for "teams" in description/location)
                 teams_count = sum(1 for ev in events if "teams" in (ev.get("description", "") + ev.get("location", "")).lower())
                 
-                return {
+                response_data = {
                     "status": "success",
                     "text": result.get("text", ""),
                     "audio_base64": audio_base64,  # Direct base64 for playback
@@ -163,6 +181,11 @@ async def get_morning_brief(
                     "outlook_count": email_counts.get("outlook_count", 0),
                     "total_unread": email_counts.get("total_unread", 0)
                 }
+                
+                # ✅ Cache the result
+                _brief_cache[cache_key] = (current_time, response_data)
+                
+                return response_data
             except Exception as e:
                 print(f"Error generating morning brief: {e}")
                 import traceback

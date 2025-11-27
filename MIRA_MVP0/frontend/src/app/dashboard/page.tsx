@@ -376,72 +376,50 @@ export default function Dashboard() {
 		});
 	}, [fetchWeatherForCoords]);
 
-	// Fetch email stats
+	// Fetch all dashboard stats in parallel for better performance
 	useEffect(() => {
-		const loadEmailStats = async () => {
+		const loadAllStats = async () => {
 			setIsLoadingEmails(true);
+			setIsLoadingEvents(true);
+			setIsLoadingTasks(true);
+			setIsLoadingReminders(true);
+			
 			try {
-				const stats = await fetchEmailStats();
-				setEmailStats(stats);
+				// Load all stats in parallel instead of sequentially
+				const [emailData, eventData, taskData, reminderData] = await Promise.all([
+					fetchEmailStats().catch(err => {
+						console.error("Failed to load email stats:", err);
+						return null;
+					}),
+					fetchEventStats().catch(err => {
+						console.error("Failed to load event stats:", err);
+						return null;
+					}),
+					fetchTaskStats().catch(err => {
+						console.error("Failed to load task stats:", err);
+						return null;
+					}),
+					fetchReminderStats().catch(err => {
+						console.error("Failed to load reminder stats:", err);
+						return null;
+					}),
+				]);
+
+				if (emailData) setEmailStats(emailData);
+				if (eventData) setEventStats(eventData);
+				if (taskData) setTaskStats(taskData);
+				if (reminderData) setReminderStats(reminderData);
 			} catch (error) {
-				console.error("Failed to load email stats:", error);
+				console.error("Failed to load dashboard stats:", error);
 			} finally {
 				setIsLoadingEmails(false);
-			}
-		};
-
-		loadEmailStats();
-	}, []);
-
-	// Fetch event stats
-	useEffect(() => {
-		const loadEventStats = async () => {
-			setIsLoadingEvents(true);
-			try {
-				const stats = await fetchEventStats();
-				setEventStats(stats);
-			} catch (error) {
-				console.error("Failed to load event stats:", error);
-			} finally {
 				setIsLoadingEvents(false);
-			}
-		};
-
-		loadEventStats();
-	}, []);
-
-	// Fetch task stats
-	useEffect(() => {
-		const loadTaskStats = async () => {
-			setIsLoadingTasks(true);
-			try {
-				const stats = await fetchTaskStats();
-				setTaskStats(stats);
-			} catch (error) {
-				console.error("Failed to load task stats:", error);
-			} finally {
 				setIsLoadingTasks(false);
-			}
-		};
-
-		loadTaskStats();
-	}, []);
-
-	// Fetch reminder stats
-	useEffect(() => {
-		const loadReminderStats = async () => {
-			setIsLoadingReminders(true);
-			try {
-				const stats = await fetchReminderStats();
-				setReminderStats(stats);
-			} catch (error) {
-				console.error("Failed to load reminder stats:", error);
-			} finally {
 				setIsLoadingReminders(false);
 			}
 		};
 
-		loadReminderStats();
+		loadAllStats();
 	}, []);
 
 	return (

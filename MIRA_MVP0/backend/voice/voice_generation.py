@@ -478,12 +478,30 @@ async def stream_voice(text: str = "Hello from Mira!"):
         raise HTTPException(status_code=500, detail=f"Voice generation failed: {e}")
 
 
-async def fetch_dashboard_data(user_token: str, has_email: bool, has_calendar: bool):
+async def fetch_dashboard_data(user_token: str, has_email: bool, has_calendar: bool, request: Request = None):
     """
     Fetches live Gmail and Calendar data for the logged-in user.
     Calls internal dashboard endpoints with authentication.
     """
-    base_url = os.getenv("API_BASE_URL", "http://127.0.0.1:8000")
+    # Determine base URL: use API_BASE_URL env var, or derive from request, or use localhost
+    base_url = os.getenv("API_BASE_URL")
+    
+    if not base_url and request:
+        # Try to get base URL from request
+        scheme = request.url.scheme
+        host = request.url.hostname
+        port = request.url.port
+        if port and port not in [80, 443]:
+            base_url = f"{scheme}://{host}:{port}"
+        else:
+            base_url = f"{scheme}://{host}"
+    
+    # Fallback to localhost if still not set (for same-server calls)
+    if not base_url:
+        base_url = "http://127.0.0.1:8000"
+    
+    print(f"🔗 fetch_dashboard_data using base_url: {base_url}")
+    
     headers = {
         "Authorization": f"Bearer {user_token}",
         "Content-Type": "application/json",
@@ -492,24 +510,45 @@ async def fetch_dashboard_data(user_token: str, has_email: bool, has_calendar: b
     emails = []
     calendar_events = []
 
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    # Increase timeout for Lambda environments (Lambda self-calls can be slow)
+    is_lambda = bool(os.getenv("AWS_LAMBDA_FUNCTION_NAME"))
+    timeout_duration = 30.0 if is_lambda else 10.0
+    print(f"⏱️ Using timeout: {timeout_duration}s (Lambda: {is_lambda})")
+    
+    async with httpx.AsyncClient(timeout=timeout_duration) as client:
         if has_email:
             try:
-                res = await client.get(f"{base_url}/dashboard/emails/list", headers=headers)
+                email_url = f"{base_url}/dashboard/emails/list"
+                print(f"📧 Fetching emails from: {email_url}")
+                res = await client.get(email_url, headers=headers)
+                print(f"📧 Email response status: {res.status_code}")
                 if res.status_code == 200:
                     data = res.json()
                     # Extract emails from nested structure: {status: "success", data: {emails: [...]}}
                     emails = data.get("data", {}).get("emails", [])
+                    print(f"✅ Successfully fetched {len(emails)} emails")
+                else:
+                    error_text = await res.atext()
+                    print(f"⚠️ Email fetch returned {res.status_code}: {error_text}")
             except Exception as e:
-                print("⚠️ Email fetch failed:", e)
+                print(f"⚠️ Email fetch failed: {e}")
+                import traceback
+                traceback.print_exc()
 
         if has_calendar:
             try:
-                res = await client.get(f"{base_url}/dashboard/events", headers=headers)
+                events_url = f"{base_url}/dashboard/events"
+                print(f"📅 Fetching events from: {events_url}")
+                res = await client.get(events_url, headers=headers)
+                print(f"📅 Events response status: {res.status_code}")
                 if res.status_code == 200:
                     data = res.json()
                     # Extract events from nested structure: {status: "success", data: {events: [...]}}
                     calendar_events = data.get("data", {}).get("events", [])
+                    print(f"✅ Successfully fetched {len(calendar_events)} calendar events")
+                else:
+                    error_text = await res.atext()
+                    print(f"⚠️ Calendar fetch returned {res.status_code}: {error_text}")
             except Exception as e:
                 print("âš ï¸ Calendar fetch failed:", e)
 
@@ -585,8 +624,8 @@ async def text_query_pipeline(request: Request):
             if has_email_intent and has_calendar_intent:
                 steps.append({"id": "conflicts", "label": "Noting any schedule conflicts..."})
 
-            # âœ… Fetch live data from dashboard routes
-            emails, calendar_events = await fetch_dashboard_data(user_token, has_email_intent, has_calendar_intent)
+            # ✅ Fetch live data from dashboard routes
+            emails, calendar_events = await fetch_dashboard_data(user_token, has_email_intent, has_calendar_intent, request)
 
             action_data = {
                 "steps": steps,
@@ -1176,8 +1215,8 @@ async def voice_pipeline(
             if has_email_intent and has_calendar_intent:
                 steps.append({"id": "conflicts", "label": "Noting any schedule conflicts..."})
 
-            # âœ… Fetch live data from dashboard routes
-            emails, calendar_events = await fetch_dashboard_data(user_token, has_email_intent, has_calendar_intent)
+            # ✅ Fetch live data from dashboard routes
+            emails, calendar_events = await fetch_dashboard_data(user_token, has_email_intent, has_calendar_intent, request)
 
             action_data = {
                 "steps": steps,
