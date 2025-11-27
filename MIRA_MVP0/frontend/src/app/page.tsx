@@ -455,6 +455,9 @@ export default function Home() {
 			const { getValidToken } = await import("@/utils/auth");
 			const token = await getValidToken();
 
+			// Auto-detect timezone from browser
+			const detectedTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+			
 			const response = await fetch(`${apiBase}/api/text-query`, {
 				method: "POST",
 				headers: {
@@ -466,6 +469,7 @@ export default function Home() {
 					query: queryText,
 					history: textMessages,
 					token, // ✅ include token in body for backend
+					timezone: detectedTimezone, // 🌍 Auto-detect and send timezone
 				}),
 			});
 
@@ -501,6 +505,33 @@ export default function Home() {
 					window.dispatchEvent(
 						new CustomEvent("miraEmailCalendarSummary", {
 							detail: data.actionData ?? {},
+						})
+					);
+				}
+				return;
+			}
+
+			// ✅ Handle calendar actions (schedule, cancel, reschedule)
+			if (data.action && data.action.startsWith("calendar_")) {
+				// Display the response text from Mira
+				if (data.text) {
+					setTextMessages((prev) => [
+						...prev,
+						{ role: "assistant", content: data.text },
+					]);
+				}
+				// Log the action result for debugging
+				if (data.actionResult) {
+					console.log("Calendar action completed:", data.action, data.actionResult);
+				}
+				// ✅ Dispatch event to refresh dashboard and calendar page
+				if (typeof window !== "undefined") {
+					window.dispatchEvent(
+						new CustomEvent("miraCalendarUpdated", {
+							detail: {
+								action: data.action,
+								result: data.actionResult,
+							},
 						})
 					);
 				}

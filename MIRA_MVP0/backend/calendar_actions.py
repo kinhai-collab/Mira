@@ -198,8 +198,41 @@ def schedule_event(
     # Strip None fields
     body = {k: v for k, v in body.items() if v is not None}
 
-    created = create_event(uid, body)
-    return {"status": "scheduled", "event": created}
+    print(f"📅 Creating calendar event for user {uid}:")
+    print(f"   Summary: {body.get('summary')}")
+    print(f"   Start: {body.get('start', {}).get('dateTime')}")
+    print(f"   End: {body.get('end', {}).get('dateTime')}")
+    print(f"   Attendees: {body.get('attendees', [])}")
+
+    try:
+        created = create_event(uid, body)
+        print(f"✅ Event created successfully: {created.get('id', 'unknown')}")
+        print(f"   Event link: {created.get('htmlLink', 'N/A')}")
+        return {"status": "scheduled", "event": created}
+    except Exception as e:
+        print(f"❌ Failed to create event: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to create calendar event: {str(e)}")
+
+
+def _get_user_timezone(uid: str) -> str:
+    """Get user's timezone from preferences, default to UTC."""
+    try:
+        from supabase import create_client
+        import os
+        SUPABASE_URL = os.getenv("SUPABASE_URL")
+        SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY:
+            supabase = create_client(SUPABASE_URL.rstrip('/'), SUPABASE_SERVICE_ROLE_KEY)
+            result = supabase.table("user_profile").select("time_zone").eq("uid", uid).execute()
+            if result.data and len(result.data) > 0:
+                tz = result.data[0].get("time_zone")
+                if tz:
+                    return tz
+    except Exception as e:
+        print(f"⚠️ Could not get user timezone: {e}")
+    return "UTC"
 
 
 def _find_single_event_by_time(
@@ -211,8 +244,23 @@ def _find_single_event_by_time(
     Helper: lookup a single event around target_start.
     Used when the user just says "the meeting at 8PM".
     """
-    window_start = target_start - timedelta(minutes=15)
-    window_end = target_start + timedelta(hours=2)
+    # Get user's timezone to ensure proper time comparisons
+    user_tz_str = _get_user_timezone(uid)
+    try:
+        from zoneinfo import ZoneInfo
+        user_tz = ZoneInfo(user_tz_str)
+    except:
+        user_tz = timezone.utc
+    
+    # Ensure target_start is in user's timezone for accurate comparison
+    if target_start.tzinfo is None:
+        target_start = target_start.replace(tzinfo=user_tz)
+    else:
+        target_start = target_start.astimezone(user_tz)
+    
+    # Use a 1-hour window (30 min before/after) to find events near the target time
+    window_start = target_start - timedelta(minutes=30)
+    window_end = target_start + timedelta(minutes=30)
 
     resp = list_events(
         uid,
@@ -222,6 +270,8 @@ def _find_single_event_by_time(
     )
     items = resp.get("items") if isinstance(resp, dict) else resp or []
     candidates = []
+    
+    print(f"🔍 Searching {len(items)} events in window {window_start} to {window_end}")
 
     for e in items:
         start_str = (
@@ -239,12 +289,32 @@ def _find_single_event_by_time(
         except Exception:
             continue
 
-        # within 1 hour of the requested time
-        if abs((s - target_start).total_seconds()) <= 60 * 60:
+        # Normalize both times to user's timezone for accurate comparison
+        if s.tzinfo is None:
+            s = s.replace(tzinfo=timezone.utc)
+        # Convert both to user's timezone
+        s_normalized = s.astimezone(user_tz)
+        target_start_normalized = target_start  # Already in user_tz from above
+        
+        # within 30 minutes of the requested time (strict matching to avoid wrong events)
+        time_diff_seconds = abs((s_normalized - target_start_normalized).total_seconds())
+        time_diff_minutes = time_diff_seconds / 60
+        if time_diff_minutes <= 30:  # 30 minute window (was 2 hours - too lenient!)
+            event_summary = e.get("summary") or ""
+            print(f"  ⏰ Event '{event_summary}' at {s_normalized} (target: {target_start_normalized}, diff: {time_diff_minutes:.1f} min)")
+            
             if summary:
-                if summary.lower() in (e.get("summary") or "").lower():
+                summary_lower = summary.lower()
+                event_summary_lower = event_summary.lower()
+                # More flexible matching: check if summary contains keywords or vice versa
+                # Also check if summary is just "event" (generic) - match any event at that time
+                if summary_lower == "event" or summary_lower in event_summary_lower or event_summary_lower in summary_lower or any(word in event_summary_lower for word in summary_lower.split() if len(word) > 2):
+                    print(f"    ✅ Matches summary filter")
                     candidates.append(e)
+                else:
+                    print(f"    ❌ Summary doesn't match: '{summary_lower}' vs '{event_summary_lower}'")
             else:
+                print(f"    ✅ No summary filter, adding candidate")
                 candidates.append(e)
 
     if not candidates:
@@ -273,16 +343,27 @@ def cancel_event(
     user = _current_user(request, authorization)
     uid = user["id"]
 
+    print(f"🗑️ Cancel request: event_id={payload.event_id}, start={payload.start}, summary={payload.summary}")
+
     if payload.event_id:
         eid = payload.event_id
+        print(f"✅ Using provided event_id: {eid}")
     else:
         if not payload.start:
             raise HTTPException(
                 400, "Either event_id or start must be provided to cancel an event."
             )
-        eid = _find_single_event_by_time(uid, payload.start, payload.summary)
+        print(f"🔍 Searching for event at {payload.start} with summary '{payload.summary}'")
+        try:
+            eid = _find_single_event_by_time(uid, payload.start, payload.summary)
+            print(f"✅ Found event: {eid}")
+        except HTTPException as e:
+            print(f"❌ Event not found: {e.detail}")
+            raise
 
+    print(f"🗑️ Deleting event {eid}")
     delete_event(uid, eid)
+    print(f"✅ Event {eid} cancelled successfully")
     return {"status": "cancelled", "event_id": eid}
 
 

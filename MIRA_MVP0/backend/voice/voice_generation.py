@@ -4,7 +4,7 @@ import base64
 import asyncio
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Request
 from fastapi.responses import StreamingResponse, JSONResponse
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any
 import tempfile
 import json
@@ -564,6 +564,7 @@ async def text_query_pipeline(request: Request):
     try:
         user_input = request_data.get("query", "").strip()
         history = request_data.get("history", [])
+        detected_timezone = request_data.get("timezone")  # Timezone from browser
         
         # Extract user ID from authorization header
         user_id = None
@@ -571,6 +572,29 @@ async def text_query_pipeline(request: Request):
         if auth_header:
             try:
                 user_id = get_uid_from_token(auth_header)
+                
+                # Auto-save timezone if detected and user is authenticated
+                if detected_timezone and user_id:
+                    try:
+                        from supabase import create_client
+                        # os is already imported at top of file
+                        SUPABASE_URL = os.getenv("SUPABASE_URL")
+                        SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+                        if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY:
+                            supabase = create_client(SUPABASE_URL.rstrip('/'), SUPABASE_SERVICE_ROLE_KEY)
+                            # Check if user already has timezone set
+                            result = supabase.table("user_profile").select("time_zone").eq("uid", user_id).execute()
+                            if result.data and len(result.data) > 0:
+                                existing_tz = result.data[0].get("time_zone")
+                                if not existing_tz:  # Only update if not already set
+                                    supabase.table("user_profile").update({"time_zone": detected_timezone}).eq("uid", user_id).execute()
+                                    print(f"🌍 Auto-saved user timezone: {detected_timezone}")
+                            else:
+                                # User profile doesn't exist, create it with timezone
+                                supabase.table("user_profile").insert({"uid": user_id, "time_zone": detected_timezone}).execute()
+                                print(f"🌍 Created user profile with timezone: {detected_timezone}")
+                    except Exception as tz_error:
+                        print(f"⚠️ Could not auto-save timezone: {tz_error}")
             except Exception as e:
                 print(f"Could not extract user ID from token: {e}")
                 user_id = "anonymous"  # Fallback for development
@@ -598,11 +622,211 @@ async def text_query_pipeline(request: Request):
                 "actionTarget": "/scenarios/morning-brief",
             })
         
-        # Check for email/calendar summary intent
+        # Get user timezone for calendar operations (use detected timezone if available)
+        user_tz_for_calendar = detected_timezone if detected_timezone else None
+        
+        # ✅ Check if user is providing an email address in response to a previous request
+        # Look for previous assistant message asking for email
+        if isinstance(history, list) and len(history) > 0:
+            # Check the last assistant message
+            last_assistant_msg = None
+            for msg in reversed(history):
+                if isinstance(msg, dict) and msg.get("role") == "assistant":
+                    last_assistant_msg = msg
+                    break
+            
+            # Check if the last assistant message was asking for an email
+            if last_assistant_msg and ("email" in last_assistant_msg.get("content", "").lower() or 
+                                      "provide" in last_assistant_msg.get("content", "").lower()):
+                # Try to extract email address from user input
+                email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+                emails_found = re.findall(email_pattern, user_input)
+                
+                if emails_found:
+                    provided_email = emails_found[0]
+                    print(f"📧 Detected email provided by user: {provided_email}")
+                    
+                    # Find the user message that came RIGHT BEFORE the assistant message asking for email
+                    # This should be the event creation request
+                    # We'll search backwards from the end to find the assistant message, then get the user message before it
+                    target_user_msg = None
+                    last_assistant_content = last_assistant_msg.get("content", "").lower() if last_assistant_msg else ""
+                    
+                    # Search backwards through history to find the assistant message asking for email
+                    for i in range(len(history) - 1, -1, -1):
+                        msg = history[i]
+                        if isinstance(msg, dict) and msg.get("role") == "assistant":
+                            msg_content = msg.get("content", "").lower()
+                            # Check if this is the email request message (look for key phrases)
+                            if "email" in msg_content and ("provide" in msg_content or "couldn't find" in msg_content or "please provide" in msg_content):
+                                # Found the email request, now get the user message right before it
+                                if i > 0:
+                                    prev_msg = history[i - 1]
+                                    if isinstance(prev_msg, dict) and prev_msg.get("role") == "user":
+                                        target_user_msg = prev_msg.get("content", "")
+                                        print(f"📅 Found user message before email request: {target_user_msg}")
+                                        break
+                                break
+                    
+                    # If we found the target message, verify it's a schedule/add request (not reschedule/cancel)
+                    if target_user_msg:
+                        user_msg_lower = target_user_msg.lower()
+                        # Check if it's a schedule/add request (not reschedule/cancel/delete)
+                        # Use more flexible matching - check for "add" + "event" separately or together
+                        has_add_keyword = any(keyword in user_msg_lower for keyword in ["add event", "add an event", "add the event", "schedule", "create event", "book", "set up"])
+                        has_event_keyword = "event" in user_msg_lower
+                        is_schedule_request = (
+                            (has_add_keyword or (has_event_keyword and "add" in user_msg_lower)) and
+                            not any(keyword in user_msg_lower for keyword in ["reschedule", "cancel", "delete", "remove"])
+                        )
+                        
+                        if is_schedule_request:
+                            print(f"✅ Found matching event creation request: {target_user_msg}")
+                            
+                            # OPTIMIZATION: Check if we have stored event details from the previous assistant message
+                            # This avoids an expensive GPT re-parsing call
+                            event_details = None
+                            if isinstance(last_assistant_msg, dict):
+                                # Try to extract event details from the assistant's response
+                                # The assistant message might contain actionData with event_details
+                                # We'll check if we can parse it from the response structure
+                                pass  # For now, we'll use the GPT approach but could optimize further
+                            
+                            # Create the event with the provided email
+                            # OPTIMIZATION: Use modified input to include email directly
+                            try:
+                                print(f"🔄 Creating event with provided email: {provided_email}")
+                                modified_input = f"{target_user_msg} (attendee email: {provided_email})"
+                                
+                                event_result = await _handle_calendar_voice_command(
+                                    modified_input, 
+                                    auth_header, 
+                                    return_dict=True, 
+                                    user_timezone=user_tz_for_calendar
+                                )
+                                
+                                if event_result and event_result.get("action", "").startswith("calendar_"):
+                                    # Event was created successfully
+                                    print(f"✅ Event created successfully!")
+                                    return JSONResponse(event_result)
+                                else:
+                                    print(f"⚠️ Event creation failed or returned unexpected action")
+                                    # Fall through to general chat if event creation failed
+                            except Exception as e:
+                                print(f"⚠️ Error creating event with provided email: {e}")
+                                import traceback
+                                traceback.print_exc()
+                                # Fall through to general chat if there's an error
+                            
+                            # If we successfully processed the email and created the event, we're done
+                            # (The return statements above will exit the function if successful)
+                    else:
+                        print(f"⚠️ Found user message but it's not a schedule request: {target_user_msg}")
+                else:
+                    print(f"⚠️ Could not find user message before email request in history")
+                    # OPTIMIZATION: Fallback - search history once for event creation request
+                    for i in range(len(history) - 1, -1, -1):
+                        msg = history[i]
+                        if isinstance(msg, dict) and msg.get("role") == "user":
+                            msg_content = msg.get("content", "").lower()
+                            # Look for event creation with "Anusha" or similar attendee names
+                            if any(keyword in msg_content for keyword in ["add event", "add an event", "schedule", "create event", "book"]) and \
+                               not any(keyword in msg_content for keyword in ["reschedule", "cancel", "delete", "remove"]):
+                                # OPTIMIZATION: Use the found event request with provided email
+                                target_user_msg = msg.get("content", "")
+                                try:
+                                    modified_input = f"{target_user_msg} (attendee email: {provided_email})"
+                                    event_result = await _handle_calendar_voice_command(
+                                        modified_input,
+                                        auth_header,
+                                        return_dict=True,
+                                        user_timezone=user_tz_for_calendar
+                                    )
+                                    
+                                    if event_result and event_result.get("action", "").startswith("calendar_"):
+                                        return JSONResponse(event_result)
+                                except Exception as e:
+                                    print(f"⚠️ Fallback event creation failed: {e}")
+                                
+                                # Only try the first matching request
+                                break
+            
+            # Also check if user is confirming a previous event creation request
+            # Look for assistant message that says "Please confirm" or "proceed"
+            if last_assistant_msg:
+                last_assistant_content = last_assistant_msg.get("content", "").lower()
+                user_input_lower = user_input.lower()
+                
+                # Check if assistant asked for confirmation and user is confirming
+                if ("confirm" in last_assistant_content or "proceed" in last_assistant_content) and \
+                   any(confirm_word in user_input_lower for confirm_word in ["yes", "please", "ok", "okay", "sure", "go ahead", "do it"]):
+                    print(f"✅ User confirmed event creation: {user_input}")
+                    
+                    # Find the event details from the assistant's message or previous context
+                    # Look for the most recent event creation request in history
+                    for i in range(len(history) - 1, -1, -1):
+                        msg = history[i]
+                        if isinstance(msg, dict) and msg.get("role") == "assistant":
+                            msg_content = msg.get("content", "").lower()
+                            # Check if this message mentions event details
+                            if "add the event" in msg_content or "schedule the event" in msg_content or "add event" in msg_content:
+                                # Look for the user message before this assistant message
+                                if i > 0:
+                                    prev_user_msg = history[i - 1]
+                                    if isinstance(prev_user_msg, dict) and prev_user_msg.get("role") == "user":
+                                        user_event_request = prev_user_msg.get("content", "")
+                                        print(f"📅 Found event request to confirm: {user_event_request}")
+                                        
+                                        # Also check if there's an email in memory or previous messages
+                                        # Look for email in recent messages
+                                        provided_email = None
+                                        for j in range(len(history) - 1, max(0, i - 5), -1):
+                                            check_msg = history[j]
+                                            if isinstance(check_msg, dict) and check_msg.get("role") == "user":
+                                                check_content = check_msg.get("content", "")
+                                                email_match = re.search(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', check_content)
+                                                if email_match:
+                                                    provided_email = email_match.group(0)
+                                                    print(f"📧 Found email in previous message: {provided_email}")
+                                                    break
+                                        
+                                        # Parse the event request with the email if found
+                                        if provided_email:
+                                            modified_request = f"{user_event_request} (attendee email: {provided_email})"
+                                        else:
+                                            modified_request = user_event_request
+                                        
+                                        try:
+                                            event_result = await _handle_calendar_voice_command(
+                                                modified_request,
+                                                auth_header,
+                                                return_dict=True,
+                                                user_timezone=user_tz_for_calendar
+                                            )
+                                            
+                                            if event_result and event_result.get("action", "").startswith("calendar_"):
+                                                return JSONResponse(event_result)
+                                        except Exception as e:
+                                            print(f"⚠️ Error creating event after confirmation: {e}")
+                                            import traceback
+                                            traceback.print_exc()
+                                        break
+        
+        # ✅ Check for calendar ACTIONS first (schedule / cancel / reschedule / check conflicts)
+        # This must run BEFORE summary check to catch action commands
+        cal_action_data = await _handle_calendar_voice_command(user_input, auth_header, return_dict=True, user_timezone=user_tz_for_calendar)
+        if cal_action_data is not None:
+            # Return text-friendly response (no audio needed for text input)
+            return JSONResponse(cal_action_data)
+        
+        # Check for email/calendar summary intent (viewing/reading, not actions)
+        # Make summary check more specific - only for viewing requests
+        view_keywords = re.compile(r"(show|view|see|check|what|tell|read|summary|list|display).*(email|inbox|mail|messages|calendar|schedule|event|meeting)", re.I)
         email_keywords = re.compile(r"(email|inbox|mail|messages)", re.I)
         calendar_keywords = re.compile(r"(calendar|schedule|event|meeting)", re.I)
-        has_email_intent = email_keywords.search(user_input)
-        has_calendar_intent = calendar_keywords.search(user_input)
+        has_view_intent = view_keywords.search(user_input)
+        has_email_intent = email_keywords.search(user_input) and has_view_intent
+        has_calendar_intent = calendar_keywords.search(user_input) and has_view_intent
         
         if has_email_intent or has_calendar_intent:
             # Try to extract token from environment or a test fallback
@@ -804,12 +1028,14 @@ async def _call_calendar_action_endpoint(
 async def _handle_calendar_voice_command(
     user_input: str,
     auth_header: Optional[str],
-) -> Optional[JSONResponse]:
+    return_dict: bool = False,
+    user_timezone: Optional[str] = None,
+) -> Optional[JSONResponse | Dict[str, Any]]:
     """
     Detect and execute calendar actions (schedule / cancel / reschedule / conflict check)
-    from natural language voice input.
+    from natural language voice or text input.
 
-    Returns JSONResponse if a calendar action was executed,
+    Returns JSONResponse (if return_dict=False) or dict (if return_dict=True) if a calendar action was executed,
     or None if the input did not request a calendar operation.
     """
     text_lower = user_input.lower()
@@ -819,28 +1045,115 @@ async def _handle_calendar_voice_command(
         "schedule", "reschedule", "move", "shift",
         "cancel", "delete", "remove",
         "meeting", "event", "calendar",
+        "add", "create", "book", "set up", "set",
     ]
     if not any(k in text_lower for k in keywords):
         return None
 
     oa = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+    # Extract user_id once at the beginning for reuse throughout the function
+    user_id = None
+    if auth_header:
+        try:
+            user_id = get_uid_from_token(auth_header)
+            print(f"✅ Extracted user_id: {user_id}")
+        except Exception as e:
+            print(f"⚠️ Could not extract user_id from auth_header: {e}")
+            import traceback
+            traceback.print_exc()
+
+    # Get user's timezone - use provided timezone, or check database, or fallback to UTC
+    if not user_timezone:
+        user_timezone = "UTC"  # Default fallback
+        
+        # Check database for saved timezone (reuse user_id if available)
+        if user_id:
+            try:
+                from supabase import create_client
+                SUPABASE_URL = os.getenv("SUPABASE_URL")
+                SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+                if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY:
+                    supabase = create_client(SUPABASE_URL.rstrip('/'), SUPABASE_SERVICE_ROLE_KEY)
+                    result = supabase.table("user_profile").select("time_zone").eq("uid", user_id).execute()
+                    if result.data and len(result.data) > 0:
+                        saved_tz = result.data[0].get("time_zone")
+                        if saved_tz:
+                            user_timezone = saved_tz
+            except Exception as e:
+                print(f"⚠️ Could not get user timezone: {e}, defaulting to UTC")
+    
+    # Get current date/time in user's timezone
+    now_utc = datetime.now(timezone.utc)
+    try:
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo(user_timezone)
+        now_local = now_utc.astimezone(tz)
+        print(f"🌍 Using user timezone: {user_timezone}")
+    except Exception as e:
+        print(f"⚠️ Invalid timezone '{user_timezone}', falling back to UTC: {e}")
+        tz = timezone.utc
+        now_local = now_utc
+    
+    current_year = now_local.year
+    current_date_str = now_local.strftime("%Y-%m-%d")
+    current_time_str = now_local.strftime("%H:%M:%S")
+    current_datetime_str = now_local.isoformat()
+    tomorrow_date = (now_local + timedelta(days=1)).strftime("%Y-%m-%d")
+
     system_prompt = (
-        "You are Mira's calendar planner. "
-        "Given a user's spoken request, you must output a STRICT JSON object with this shape:\n"
+        f"You are Mira's calendar planner. "
+        f"USER TIMEZONE: {user_timezone}\n"
+        f"CURRENT DATE AND TIME: {current_datetime_str} ({user_timezone})\n"
+        f"CURRENT DATE: {current_date_str}\n"
+        f"CURRENT YEAR: {current_year}\n"
+        f"TOMORROW'S DATE: {tomorrow_date}\n"
+        f"Given a user's spoken request, you must output a STRICT JSON object with this shape:\n"
         "{"
         "\"intent\": \"schedule|cancel|reschedule|check_conflicts|none\","
         "\"natural_response\": \"what Mira should say back to the user\","
         "\"params\": { ... }"
         "}\n"
+        "CRITICAL: The 'params' field MUST be a single object (dictionary), NOT an array. Even if there are multiple possible events, return only ONE params object with the most likely match.\n"
         "The params object depends on the intent:\n"
-        "- schedule: {summary, start_iso, end_iso, attendees (array of emails, may be empty)}\n"
-        "- cancel: {event_start_iso, summary}\n"
-        "- reschedule: {old_start_iso, summary, new_start_iso, new_end_iso}\n"
+        "- schedule: {summary, start_iso, end_iso, attendees (array of FULL email addresses ONLY if explicitly provided like 'tony@company.com'), attendee_names (array of names when emails are NOT provided, e.g. ['Tony', 'John Smith']), description (optional), location (optional)}\n"
+        "IMPORTANT: If user says 'with Tony' or 'with John', put 'Tony' or 'John' in attendee_names, NOT in attendees. Only use attendees array for actual email addresses.\n"
+        "- cancel: {event_start_iso (time of event to cancel), summary (event title/name)}\n"
+        "- reschedule: {old_start_iso (current/old start time), summary (event title/name), new_start_iso (new start time), new_end_iso (new end time)}\n"
         "- check_conflicts: {start_iso, end_iso}\n"
-        "Use the current day in the user's timezone if no date is given.\n"
-        "All times MUST be full ISO-8601 with timezone, e.g. 2025-11-16T21:00:00-05:00.\n"
-        "If you are not sure what to do, set intent to 'none'.\n"
+        "IMPORTANT RULES:\n"
+        "- For attendees: ONLY include email addresses if explicitly provided (e.g. 'tony@company.com').\n"
+        "- If only a name is mentioned (e.g. 'Tony'), use an empty attendees array []. DO NOT create placeholder emails like 'tony@example.com'.\n"
+        f"- DATE/TIME PARSING: The current date is {current_date_str} (year {current_year}). 'tomorrow' means {tomorrow_date}. 'today' means {current_date_str}.\n"
+        f"- CRITICAL: Always use year {current_year} (NOT 2023 or any past year!).\n"
+        f"- TIMEZONE: User is in {user_timezone} timezone. All times should be interpreted in this timezone.\n"
+        f"- TIME FORMAT: Pay EXTREME attention to AM/PM. '3am' means 03:00 (3:00 AM), '3pm' means 15:00 (3:00 PM).\n"
+        f"  * '3am' = 03:00:00, '3pm' = 15:00:00, '1:30pm' = 13:30:00, '1:30am' = 01:30:00\n"
+        f"  * NEVER confuse AM and PM - this causes major errors!\n"
+        f"- All times MUST be full ISO-8601 with timezone offset for {user_timezone}, e.g. {current_year}-11-17T03:00:00{now_local.strftime('%z')} for 3am, {current_year}-11-17T15:00:00{now_local.strftime('%z')} for 3pm.\n"
+        f"- DURATION PARSING: Parse duration from phrases like 'for an hour', 'for 30 minutes', 'for 2 hours', 'for 1.5 hours', 'for 45 mins'.\n"
+        f"  Examples:\n"
+        f"  * 'tomorrow at 3am for an hour' → start_iso: {tomorrow_date}T03:00:00-05:00, end_iso: {tomorrow_date}T04:00:00-05:00\n"
+        f"  * 'tomorrow at 3am for 30 minutes' → start_iso: {tomorrow_date}T03:00:00-05:00, end_iso: {tomorrow_date}T03:30:00-05:00\n"
+        f"  * 'tomorrow at 3am for 2 hours' → start_iso: {tomorrow_date}T03:00:00-05:00, end_iso: {tomorrow_date}T05:00:00-05:00\n"
+        "- ALWAYS calculate end_iso by adding the parsed duration to start_iso. If no duration is specified, default to 1 hour.\n"
+        "- LOCATION PARSING: Extract location from phrases like 'at the office', 'at Starbucks', 'at 123 Main St', 'in the conference room'. Put in 'location' field.\n"
+        "- DESCRIPTION PARSING: Extract meeting topic/description from phrases like 'about the project', 'to discuss Q4 plans', 'for the team standup'. Put in 'description' field.\n"
+        "- SUMMARY: Extract the main meeting title. If user says 'meeting with Tony about dev meet', summary should be 'dev meet' or 'Meeting with Tony'.\n"
+        "- CANCEL PARSING: Detect cancel intent from phrases like 'cancel', 'delete', 'remove', 'call off'.\n"
+        f"  IMPORTANT: Return only ONE params object for the most specific event mentioned. If user says 'cancel the event at 6pm', return params with event_start_iso for 6pm.\n"
+        f"  Examples:\n"
+        f"  * 'cancel the meeting at 3pm' → intent: cancel, params: {{event_start_iso: '{current_date_str}T15:00:00-05:00', summary: 'meeting'}}\n"
+        f"  * 'cancel my meeting with Tony tomorrow at 3am' → intent: cancel, params: {{event_start_iso: '{tomorrow_date}T03:00:00-05:00', summary: 'meeting with Tony'}}\n"
+        f"  * 'delete the dev meet event' → intent: cancel, params: {{summary: 'dev meet'}}\n"
+        "- RESCHEDULE PARSING: Detect reschedule intent from phrases like 'reschedule', 'move', 'shift', 'change time', 'postpone', 'push back', 'move to'.\n"
+        f"  Examples:\n"
+        f"  * 'reschedule the meeting at 3pm to 4pm' → intent: reschedule, old_start_iso: {current_date_str}T15:00:00-05:00, new_start_iso: {current_date_str}T16:00:00-05:00, new_end_iso: {current_date_str}T17:00:00-05:00 (1 hour duration), summary: 'meeting'\n"
+        f"  * 'move tomorrow's 3am meeting to 5am' → intent: reschedule, old_start_iso: {tomorrow_date}T03:00:00-05:00, new_start_iso: {tomorrow_date}T05:00:00-05:00, new_end_iso: {tomorrow_date}T06:00:00-05:00 (1 hour duration), summary: 'meeting'\n"
+        f"  * 'shift the dev meet from tomorrow 3am to tomorrow 2pm' → intent: reschedule, old_start_iso: {tomorrow_date}T03:00:00-05:00, new_start_iso: {tomorrow_date}T14:00:00-05:00, new_end_iso: {tomorrow_date}T15:00:00-05:00, summary: 'dev meet'\n"
+        "- For reschedule: If new duration is not specified (e.g., 'move 3pm to 4pm'), assume the original duration was 1 hour and set new_end_iso = new_start_iso + 1 hour.\n"
+        "  If new duration IS specified (e.g., 'move 3pm meeting to 4pm for 2 hours'), use that duration: new_end_iso = new_start_iso + specified duration.\n"
+        "- If you are not sure what to do, set intent to 'none'.\n"
         "Respond with JSON ONLY (no extra commentary)."
     )
 
@@ -875,7 +1188,25 @@ async def _handle_calendar_voice_command(
 
     intent = (parsed.get("intent") or "none").lower()
     natural_response = parsed.get("natural_response") or ""
-    params = parsed.get("params") or {}
+    params_raw = parsed.get("params") or {}
+    
+    # Handle case where LLM returns params as a list instead of dict
+    if isinstance(params_raw, list):
+        print(f"⚠️ LLM returned params as a list, using first item: {params_raw}")
+        if len(params_raw) > 0:
+            params = params_raw[0] if isinstance(params_raw[0], dict) else {}
+        else:
+            params = {}
+    elif isinstance(params_raw, dict):
+        params = params_raw
+    else:
+        print(f"⚠️ Unexpected params type: {type(params_raw)}, using empty dict")
+        params = {}
+
+    print(f"📅 Calendar intent detected: {intent}")
+    print(f"   Params: {params}")
+    if intent == "schedule":
+        print(f"   Attendees from GPT: {params.get('attendees', [])}")
 
     if intent == "none":
         return None
@@ -883,11 +1214,109 @@ async def _handle_calendar_voice_command(
     # Execute the corresponding calendar action
     try:
         if intent == "schedule":
+            # user_id is already extracted at the beginning of the function
+            
+            # Filter out invalid/placeholder emails (like @example.com)
+            raw_attendees = params.get("attendees") or []
+            valid_attendees = []
+            for email in raw_attendees:
+                if isinstance(email, str) and "@" in email:
+                    # Reject placeholder domains
+                    if not any(domain in email.lower() for domain in ["@example.com", "@example.org", "@test.com", "@placeholder"]):
+                        valid_attendees.append(email)
+                    else:
+                        logging.warning(f"Filtered out placeholder email: {email}")
+            
+            # Look up contacts by name if names provided
+            attendee_names = params.get("attendee_names") or []
+            missing_attendees = []  # Track attendees whose emails couldn't be found
+            
+            # Look up contacts even if we have some emails - this helps verify/validate emails
+            if attendee_names:
+                if not user_id:
+                    print(f"⚠️ Cannot lookup contacts - user_id is missing. Attendee names will be ignored: {attendee_names}")
+                    # If user_id is missing, we can't lookup, so ask for emails
+                    missing_attendees = attendee_names
+                else:
+                    try:
+                        from Google_Calendar_API.contacts import find_best_contact_match
+                        print(f"🔍 Starting contact lookup for {len(attendee_names)} name(s)...")
+                        for name in attendee_names:
+                            if isinstance(name, str) and name.strip():
+                                name_clean = name.strip()
+                                print(f"🔍 Looking up contact: '{name_clean}'")
+                                email = find_best_contact_match(user_id, name_clean)
+                                if email and email not in valid_attendees:
+                                    valid_attendees.append(email)
+                                    print(f"✅ Successfully looked up contact '{name_clean}' -> {email}")
+                                elif not email:
+                                    print(f"⚠️ Could not find email for '{name_clean}'")
+                                    missing_attendees.append(name_clean)
+                                else:
+                                    print(f"ℹ️ Email for '{name_clean}' already in attendees list: {email}")
+                    except Exception as e:
+                        print(f"⚠️ Error looking up contacts: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        # If lookup failed, ask for emails
+                        missing_attendees = attendee_names
+            
+            # If we couldn't find emails for some attendees, ask the user for them
+            # But if we already have valid emails (from GPT or lookup), proceed with creating the event
+            if missing_attendees and not valid_attendees:
+                if len(missing_attendees) == 1:
+                    response_text = f"I couldn't find an email address for {missing_attendees[0]} in your contacts or recent emails. Could you please provide {missing_attendees[0]}'s email address so I can add them to the event?"
+                else:
+                    names_list = ", ".join(missing_attendees[:-1]) + f", and {missing_attendees[-1]}"
+                    response_text = f"I couldn't find email addresses for {names_list} in your contacts or recent emails. Could you please provide their email addresses so I can add them to the event?"
+                
+                # Return a response asking for email addresses
+                response_data = {
+                    "text": response_text,
+                    "userText": user_input,
+                    "action": "calendar_schedule_needs_email",
+                    "actionData": {
+                        "missing_attendees": missing_attendees,
+                        "event_details": {
+                            "summary": params.get("summary") or "Meeting",
+                            "start": params.get("start_iso"),
+                            "end": params.get("end_iso"),
+                            "description": params.get("description"),
+                            "location": params.get("location"),
+                            "found_attendees": valid_attendees,
+                        }
+                    },
+                }
+                
+                if return_dict:
+                    return response_data
+                
+                # For voice, add audio
+                audio_base64: Optional[str] = None
+                try:
+                    el = get_elevenlabs_client()
+                    voice_id = os.getenv("ELEVENLABS_VOICE_ID")
+                    if voice_id:
+                        stream = el.text_to_speech.convert(
+                            voice_id=voice_id,
+                            model_id="eleven_turbo_v2",
+                            text=response_text,
+                            output_format="mp3_44100_128",
+                        )
+                        mp3_bytes = _stream_to_bytes(stream)
+                        if mp3_bytes:
+                            audio_base64 = base64.b64encode(mp3_bytes).decode("ascii")
+                except Exception:
+                    audio_base64 = None
+                
+                response_data["audio"] = audio_base64
+                return JSONResponse(response_data)
+            
             payload = {
                 "summary": params.get("summary") or "Meeting",
                 "start": params.get("start_iso"),
                 "end": params.get("end_iso"),
-                "attendees": params.get("attendees") or [],
+                "attendees": valid_attendees,
                 "description": params.get("description") or None,
                 "location": params.get("location") or None,
             }
@@ -901,12 +1330,17 @@ async def _handle_calendar_voice_command(
             )
 
         elif intent == "cancel":
+            # CancelRequest expects: start (datetime ISO string), summary (str), event_id (str)
+            # FastAPI/Pydantic will parse ISO strings automatically
+            event_start = params.get("event_start_iso")
             payload = {
-                "start": params.get("event_start_iso"),
                 "summary": params.get("summary") or None,
                 "event_id": params.get("event_id") or None,
             }
-            if not payload["start"] and not payload["event_id"]:
+            # Include start as ISO string (Pydantic will parse it)
+            if event_start:
+                payload["start"] = event_start
+            if not payload.get("start") and not payload.get("event_id"):
                 raise HTTPException(400, "Missing start or event_id for cancel action")
 
             result = await _call_calendar_action_endpoint(
@@ -916,14 +1350,26 @@ async def _handle_calendar_voice_command(
             )
 
         elif intent == "reschedule":
+            # RescheduleRequest expects: old_start (datetime ISO string), new_start (datetime ISO string), new_end (datetime ISO string), summary (str), event_id (str)
+            # FastAPI/Pydantic will parse ISO strings automatically
+            old_start_iso = params.get("old_start_iso")
+            new_start_iso = params.get("new_start_iso")
+            new_end_iso = params.get("new_end_iso")
+            
             payload = {
-                "old_start": params.get("old_start_iso"),
                 "summary": params.get("summary") or None,
                 "event_id": params.get("event_id") or None,
-                "new_start": params.get("new_start_iso"),
-                "new_end": params.get("new_end_iso"),
             }
-            if (not payload["old_start"] and not payload["event_id"]) or not payload["new_start"] or not payload["new_end"]:
+            
+            # Include ISO strings (Pydantic will parse them to datetime)
+            if old_start_iso:
+                payload["old_start"] = old_start_iso
+            if new_start_iso:
+                payload["new_start"] = new_start_iso
+            if new_end_iso:
+                payload["new_end"] = new_end_iso
+            
+            if (not payload.get("old_start") and not payload.get("event_id")) or not payload.get("new_start") or not payload.get("new_end"):
                 raise HTTPException(400, "Missing required fields for reschedule action")
 
             result = await _call_calendar_action_endpoint(
@@ -957,36 +1403,42 @@ async def _handle_calendar_voice_command(
         natural_response = "I ran into an error while trying to update your calendar."
         result = None
 
-    # Optional: TTS for the natural response
+    # Optional: TTS for the natural response (only for voice, not text)
     audio_base64: Optional[str] = None
-    try:
-        el = get_elevenlabs_client()
-        voice_id = os.getenv("ELEVENLABS_VOICE_ID")
-        if not voice_id:
-            raise Exception("Missing ELEVENLABS_VOICE_ID")
+    if not return_dict:
+        try:
+            el = get_elevenlabs_client()
+            voice_id = os.getenv("ELEVENLABS_VOICE_ID")
+            if not voice_id:
+                raise Exception("Missing ELEVENLABS_VOICE_ID")
 
-        stream = el.text_to_speech.convert(
-            voice_id=voice_id,
-            model_id="eleven_turbo_v2",
-            text=natural_response,
-            output_format="mp3_44100_128",
-        )
-        mp3_bytes = _stream_to_bytes(stream)
-        if mp3_bytes:
-            audio_base64 = base64.b64encode(mp3_bytes).decode("ascii")
+            stream = el.text_to_speech.convert(
+                voice_id=voice_id,
+                model_id="eleven_turbo_v2",
+                text=natural_response,
+                output_format="mp3_44100_128",
+            )
+            mp3_bytes = _stream_to_bytes(stream)
+            if mp3_bytes:
+                audio_base64 = base64.b64encode(mp3_bytes).decode("ascii")
+        except Exception as e:
+            logging.exception(f"Failed to generate TTS for calendar action: {e}")
+            audio_base64 = None
 
-    except Exception as e:
-        logging.exception(f"Failed to generate TTS for calendar action: {e}")
-        audio_base64 = None
-
-    # Return the same shape as the rest of the voice_pipeline
-    return JSONResponse({
+    # Return dict for text input, JSONResponse for voice
+    response_data = {
         "text": natural_response,
-        "audio": audio_base64,
         "userText": user_input,
         "action": f"calendar_{intent}",
         "actionResult": result,
-    })
+    }
+    
+    if return_dict:
+        return response_data
+    
+    # Add audio for voice responses
+    response_data["audio"] = audio_base64
+    return JSONResponse(response_data)
     
 @router.post("/voice")
 async def voice_pipeline(
@@ -1144,7 +1596,8 @@ async def voice_pipeline(
         intelligent_learner = get_intelligent_learner() if get_intelligent_learner else None
 
         # 2.4) Calendar actions (schedule / cancel / reschedule / conflicts)
-        cal_action_response = await _handle_calendar_voice_command(user_input, auth_header)
+        # For voice, timezone will be fetched from database in _handle_calendar_voice_command
+        cal_action_response = await _handle_calendar_voice_command(user_input, auth_header, user_timezone=None)
         if cal_action_response is not None:
             return cal_action_response
         # Debug: show whether memory components are available and the resolved user_id

@@ -206,6 +206,25 @@ export default function CalendarPage() {
 		loadEvents();
 	}, [selectedDate, viewMode]);
 
+	// ✅ Listen for calendar updates and refresh events
+	useEffect(() => {
+		const handleCalendarUpdate = () => {
+			console.log("📅 Calendar updated, refreshing events...");
+			loadEvents();
+		};
+
+		if (typeof window !== "undefined") {
+			window.addEventListener("miraCalendarUpdated", handleCalendarUpdate);
+		}
+
+		return () => {
+			if (typeof window !== "undefined") {
+				window.removeEventListener("miraCalendarUpdated", handleCalendarUpdate);
+			}
+		};
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []); // Only register once, loadEvents will use current selectedDate/viewMode
+
 	// Fetch weather using Open-Meteo API directly
 	const fetchWeatherForCoords = useCallback(
 		async (lat: number, lon: number) => {

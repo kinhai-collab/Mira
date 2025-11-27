@@ -377,49 +377,78 @@ export default function Dashboard() {
 	}, [fetchWeatherForCoords]);
 
 	// Fetch all dashboard stats in parallel for better performance
-	useEffect(() => {
-		const loadAllStats = async () => {
-			setIsLoadingEmails(true);
-			setIsLoadingEvents(true);
-			setIsLoadingTasks(true);
-			setIsLoadingReminders(true);
-			
-			try {
-				// Load all stats in parallel instead of sequentially
-				const [emailData, eventData, taskData, reminderData] = await Promise.all([
-					fetchEmailStats().catch(err => {
-						console.error("Failed to load email stats:", err);
-						return null;
-					}),
-					fetchEventStats().catch(err => {
-						console.error("Failed to load event stats:", err);
-						return null;
-					}),
-					fetchTaskStats().catch(err => {
-						console.error("Failed to load task stats:", err);
-						return null;
-					}),
-					fetchReminderStats().catch(err => {
-						console.error("Failed to load reminder stats:", err);
-						return null;
-					}),
-				]);
+	const loadAllStats = async () => {
+		setIsLoadingEmails(true);
+		setIsLoadingEvents(true);
+		setIsLoadingTasks(true);
+		setIsLoadingReminders(true);
+		
+		try {
+			// Load all stats in parallel instead of sequentially
+			const [emailData, eventData, taskData, reminderData] = await Promise.all([
+				fetchEmailStats().catch(err => {
+					console.error("Failed to load email stats:", err);
+					return null;
+				}),
+				fetchEventStats().catch(err => {
+					console.error("Failed to load event stats:", err);
+					return null;
+				}),
+				fetchTaskStats().catch(err => {
+					console.error("Failed to load task stats:", err);
+					return null;
+				}),
+				fetchReminderStats().catch(err => {
+					console.error("Failed to load reminder stats:", err);
+					return null;
+				}),
+			]);
 
-				if (emailData) setEmailStats(emailData);
-				if (eventData) setEventStats(eventData);
-				if (taskData) setTaskStats(taskData);
-				if (reminderData) setReminderStats(reminderData);
-			} catch (error) {
-				console.error("Failed to load dashboard stats:", error);
-			} finally {
-				setIsLoadingEmails(false);
-				setIsLoadingEvents(false);
-				setIsLoadingTasks(false);
-				setIsLoadingReminders(false);
-			}
+			if (emailData) setEmailStats(emailData);
+			if (eventData) setEventStats(eventData);
+			if (taskData) setTaskStats(taskData);
+			if (reminderData) setReminderStats(reminderData);
+		} catch (error) {
+			console.error("Failed to load dashboard stats:", error);
+		} finally {
+			setIsLoadingEmails(false);
+			setIsLoadingEvents(false);
+			setIsLoadingTasks(false);
+			setIsLoadingReminders(false);
+		}
+	};
+
+	useEffect(() => {
+		loadAllStats();
+	}, []);
+
+	// ✅ Listen for calendar updates and refresh event stats
+	useEffect(() => {
+		const handleCalendarUpdate = () => {
+			console.log("📅 Calendar updated, refreshing event stats...");
+			// Only refresh event stats, not all stats
+			setIsLoadingEvents(true);
+			fetchEventStats()
+				.then((data) => {
+					if (data) setEventStats(data);
+				})
+				.catch((err) => {
+					console.error("Failed to refresh event stats:", err);
+				})
+				.finally(() => {
+					setIsLoadingEvents(false);
+				});
 		};
 
-		loadAllStats();
+		if (typeof window !== "undefined") {
+			window.addEventListener("miraCalendarUpdated", handleCalendarUpdate);
+		}
+
+		return () => {
+			if (typeof window !== "undefined") {
+				window.removeEventListener("miraCalendarUpdated", handleCalendarUpdate);
+			}
+		};
 	}, []);
 
 	return (

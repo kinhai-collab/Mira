@@ -411,6 +411,25 @@ async function recordOnce(): Promise<void> {
 						}
 					}
 
+					// ✅ Handle completed calendar actions (schedule, cancel, reschedule)
+					if (data.action && data.action.startsWith("calendar_")) {
+						try {
+							if (typeof window !== "undefined") {
+								window.dispatchEvent(
+									new CustomEvent("miraCalendarUpdated", {
+										detail: {
+											action: data.action,
+											result: data.actionResult,
+										},
+									})
+								);
+								console.log("📤 Dispatched miraCalendarUpdated event:", data.action);
+							}
+						} catch (e) {
+							console.warn("Failed to dispatch calendar updated event", e);
+						}
+					}
+
 					if (data.action === "email_calendar_summary") {
 						try {
 							if (typeof window !== "undefined") {
