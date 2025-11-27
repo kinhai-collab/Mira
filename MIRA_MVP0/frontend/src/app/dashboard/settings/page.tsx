@@ -462,31 +462,54 @@ export default function SettingsPage() {
 		const success = async (pos: GeolocationPosition) => {
 			try {
 				const { latitude, longitude } = pos.coords;
-				// Use OpenStreetMap Nominatim reverse geocoding (no key required)
-				const res = await fetch(
-					`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}`
-				);
-				if (!res.ok) {
-					// If reverse geocoding fails, fall back to IP-based lookup
+				
+				// Use AbortController for timeout
+				const controller = new AbortController();
+				const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+				
+				try {
+					// Use OpenStreetMap Nominatim reverse geocoding (no key required)
+					const res = await fetch(
+						`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}`,
+						{
+							headers: {
+								"User-Agent": "Mira-PMA/1.0",
+							},
+							signal: controller.signal,
+						}
+					);
+					clearTimeout(timeoutId);
+					
+					if (!res.ok) {
+						// If reverse geocoding fails, fall back to IP-based lookup
+						await ipFallback();
+						return;
+					}
+					const data = await res.json();
+					const city =
+						data?.address?.city ||
+						data?.address?.town ||
+						data?.address?.village ||
+						data?.address?.state ||
+						data?.address?.county;
+					if (city) setLocation(city);
+
+					// Keep browser timezone as primary frontend-only source. If you
+					// need timezone-from-coordinates, use a server-side timezone API.
+					setTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
+
+					// Save coordinates for weather lookup
+					setLatitude(latitude);
+					setLongitude(longitude);
+				} catch (fetchErr: any) {
+					clearTimeout(timeoutId);
+					if (fetchErr.name === "AbortError") {
+						console.warn("Nominatim request timed out, using IP fallback");
+					} else {
+						console.warn("Nominatim fetch failed, using IP fallback:", fetchErr);
+					}
 					await ipFallback();
-					return;
 				}
-				const data = await res.json();
-				const city =
-					data?.address?.city ||
-					data?.address?.town ||
-					data?.address?.village ||
-					data?.address?.state ||
-					data?.address?.county;
-				if (city) setLocation(city);
-
-				// Keep browser timezone as primary frontend-only source. If you
-				// need timezone-from-coordinates, use a server-side timezone API.
-				setTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
-
-				// Save coordinates for weather lookup
-				setLatitude(latitude);
-				setLongitude(longitude);
 			} catch (err) {
 				console.error("reverse geocode error:", err);
 				await ipFallback();
@@ -1271,18 +1294,18 @@ export default function SettingsPage() {
 	};
 
 	const renderProfileTab = () => (
-		<div className="space-y-5">
-			<p className="text-xl text-gray-800 leading-6">
+		<div className="space-y-4 sm:space-y-5">
+			<p className="text-base sm:text-lg md:text-xl text-gray-800 leading-6">
 				Update your personal information, profile photo, and account details to
 				keep your profile up to date.
 			</p>
 
-			<div className="space-y-8">
+			<div className="space-y-6 sm:space-y-8">
 				{/* Profile Picture */}
-				<div className="space-y-3">
-					<h3 className="text-lg text-gray-700 font-normal">Profile Picture</h3>
-					<div className="flex items-center gap-5">
-						<div className="w-30 h-30 bg-pink-400 rounded-full flex items-center justify-center overflow-hidden">
+				<div className="space-y-2 sm:space-y-3">
+					<h3 className="text-base sm:text-lg text-gray-700 font-normal">Profile Picture</h3>
+					<div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-5">
+						<div className="w-24 h-24 sm:w-28 sm:h-28 md:w-30 md:h-30 bg-pink-400 rounded-full flex items-center justify-center overflow-hidden shrink-0">
 							{userData?.picture ? (
 								<Image
 									src={userData.picture}
@@ -1292,67 +1315,67 @@ export default function SettingsPage() {
 									className="w-full h-full object-cover"
 								/>
 							) : (
-								<span className="text-6xl text-black font-bold">
+								<span className="text-4xl sm:text-5xl md:text-6xl text-black font-bold">
 									{userData?.fullName?.charAt(0) ||
 										userData?.email?.charAt(0) ||
 										"J"}
 								</span>
 							)}
 						</div>
-						<button className="px-4 py-2 bg-gray-50 border border-gray-800 rounded-full text-sm text-gray-800 hover:bg-gray-100 transition-colors font-light">
+						<button className="px-3 sm:px-4 py-2 bg-gray-50 border border-gray-800 rounded-full text-xs sm:text-sm text-gray-800 hover:bg-gray-100 transition-colors font-light">
 							Change Picture
 						</button>
 					</div>
 				</div>
 
 				{/* Form Fields */}
-				<div className="space-y-5">
+				<div className="space-y-4 sm:space-y-5">
 					<div>
-						<label className="block text-lg text-gray-700 mb-3">Email</label>
+						<label className="block text-sm sm:text-base md:text-lg text-gray-700 mb-2 sm:mb-3">Email</label>
 						<input
 							type="email"
 							value={formData.email}
 							onChange={(e) => handleInputChange("email", e.target.value)}
-							className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-gray-900 placeholder-gray-500"
+							className="w-full h-12 sm:h-14 px-3 sm:px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-sm sm:text-base text-gray-900 placeholder-gray-500"
 							placeholder="Enter your email"
 						/>
 					</div>
 
 					<div>
-						<label className="block text-lg text-gray-700 mb-3">
+						<label className="block text-sm sm:text-base md:text-lg text-gray-700 mb-2 sm:mb-3">
 							First name<span className="text-red-500">*</span>
 						</label>
 						<input
 							type="text"
 							value={formData.firstName}
 							onChange={(e) => handleInputChange("firstName", e.target.value)}
-							className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-gray-900 placeholder-gray-500"
+							className="w-full h-12 sm:h-14 px-3 sm:px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-sm sm:text-base text-gray-900 placeholder-gray-500"
 							placeholder="Enter your first name"
 						/>
 					</div>
 
 					<div>
-						<label className="block text-lg text-gray-700 mb-3">
+						<label className="block text-sm sm:text-base md:text-lg text-gray-700 mb-2 sm:mb-3">
 							Middle name
 						</label>
 						<input
 							type="text"
 							value={formData.middleName}
 							onChange={(e) => handleInputChange("middleName", e.target.value)}
-							className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-gray-900 placeholder-gray-500"
+							className="w-full h-12 sm:h-14 px-3 sm:px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-sm sm:text-base text-gray-900 placeholder-gray-500"
 							placeholder="Enter your middle name"
 						/>
 					</div>
 
 					<div>
-						<label className="block text-lg text-gray-700 mb-3">
+						<label className="block text-sm sm:text-base md:text-lg text-gray-700 mb-2 sm:mb-3">
 							Last name<span className="text-red-500">*</span>
 						</label>
 						<input
 							type="text"
 							value={formData.lastName}
 							onChange={(e) => handleInputChange("lastName", e.target.value)}
-							className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-gray-900 placeholder-gray-500"
+							className="w-full h-12 sm:h-14 px-3 sm:px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-sm sm:text-base text-gray-900 placeholder-gray-500"
 							placeholder="Enter your last name"
 						/>
 					</div>
@@ -1360,7 +1383,7 @@ export default function SettingsPage() {
 
 				<button
 					onClick={handleSave}
-					className="px-6 py-3 bg-gray-800 text-white rounded-full font-semibold text-lg hover:bg-gray-900 transition-colors"
+					className="px-4 sm:px-6 py-2.5 sm:py-3 bg-gray-800 text-white rounded-full font-semibold text-sm sm:text-base md:text-lg hover:bg-gray-900 transition-colors"
 				>
 					Save
 				</button>
@@ -1369,37 +1392,37 @@ export default function SettingsPage() {
 	);
 
 	const renderPreferencesTab = () => (
-		<div className="space-y-5">
-			<p className="text-xl text-gray-800 leading-6">
+		<div className="space-y-4 sm:space-y-5">
+			<p className="text-base sm:text-lg md:text-xl text-gray-800 leading-6">
 				Customize your experience by adjusting language, region, and voice
 				options to suit your needs.
 			</p>
 
-			<div className="space-y-5 w-80">
+			<div className="space-y-4 sm:space-y-5 w-full sm:w-80">
 				<div>
-					<label className="block text-lg text-gray-700 mb-3">Language</label>
+					<label className="block text-sm sm:text-base md:text-lg text-gray-700 mb-2 sm:mb-3">Language</label>
 					<div className="relative">
 						<select
 							value={formData.language}
 							onChange={(e) => handleInputChange("language", e.target.value)}
-							className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 appearance-none text-gray-900"
+							className="w-full h-12 sm:h-14 px-3 sm:px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 appearance-none text-sm sm:text-base text-gray-900"
 						>
 							<option value="English">Select Language</option>
 							<option value="Spanish">Spanish</option>
 							<option value="French">French</option>
 							<option value="German">German</option>
 						</select>
-						<ChevronDown className="absolute right-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+						<ChevronDown className="absolute right-3 sm:right-4 top-1/2 transform -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-gray-400" />
 					</div>
 				</div>
 
 				<div>
-					<label className="block text-lg text-gray-700 mb-3">Time Zone</label>
+					<label className="block text-sm sm:text-base md:text-lg text-gray-700 mb-2 sm:mb-3">Time Zone</label>
 					<div className="relative">
 						<select
 							value={formData.timeZone}
 							onChange={(e) => handleInputChange("timeZone", e.target.value)}
-							className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 appearance-none text-gray-900"
+							className="w-full h-12 sm:h-14 px-3 sm:px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 appearance-none text-sm sm:text-base text-gray-900"
 						>
 							<option value="UTC-5 (Eastern Time)">Select Time Zone</option>
 							<option value="UTC-6 (Central Time)">UTC-6 (Central Time)</option>
@@ -1408,31 +1431,31 @@ export default function SettingsPage() {
 							</option>
 							<option value="UTC-8 (Pacific Time)">UTC-8 (Pacific Time)</option>
 						</select>
-						<ChevronDown className="absolute right-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+						<ChevronDown className="absolute right-3 sm:right-4 top-1/2 transform -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-gray-400" />
 					</div>
 				</div>
 
 				<div>
-					<label className="block text-lg text-gray-700 mb-3">Voice</label>
+					<label className="block text-sm sm:text-base md:text-lg text-gray-700 mb-2 sm:mb-3">Voice</label>
 					<div className="relative">
 						<select
 							value={formData.voice}
 							onChange={(e) => handleInputChange("voice", e.target.value)}
-							className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 appearance-none text-gray-900"
+							className="w-full h-12 sm:h-14 px-3 sm:px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 appearance-none text-sm sm:text-base text-gray-900"
 						>
 							<option value="Default">Select Voice</option>
 							<option value="Male">Male</option>
 							<option value="Female">Female</option>
 							<option value="Neutral">Neutral</option>
 						</select>
-						<ChevronDown className="absolute right-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+						<ChevronDown className="absolute right-3 sm:right-4 top-1/2 transform -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-gray-400" />
 					</div>
 				</div>
 			</div>
 
 			<button
 				onClick={handleSave}
-				className="px-6 py-3 bg-gray-800 text-white rounded-full font-semibold text-lg hover:bg-gray-900 transition-colors"
+				className="px-4 sm:px-6 py-2.5 sm:py-3 bg-gray-800 text-white rounded-full font-semibold text-sm sm:text-base md:text-lg hover:bg-gray-900 transition-colors"
 			>
 				Save
 			</button>
@@ -1440,29 +1463,30 @@ export default function SettingsPage() {
 	);
 
 	const renderNotificationsTab = () => (
-		<div className="space-y-5">
-			<p className="text-xl text-gray-800 leading-6">
+		<div className="space-y-4 sm:space-y-5">
+			<p className="text-base sm:text-lg md:text-xl text-gray-800 leading-6">
 				Choose how and when you&apos;d like to receive updates, alerts, and
 				promotional messages.
 			</p>
 
-			<div className="space-y-5">
+			<div className="space-y-4 sm:space-y-5">
 				{/* Push Notifications */}
-				<div className="flex items-center justify-between px-6 py-4 bg-white rounded-lg border border-gray-400">
-					<div className="flex items-center gap-2">
-						<div className="w-10 h-10 bg-gray-50 rounded-full flex items-center justify-center p-2">
+				<div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 bg-white rounded-lg border border-gray-400 gap-3">
+					<div className="flex items-center gap-2 min-w-0 flex-1">
+						<div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-50 rounded-full flex items-center justify-center p-1.5 sm:p-2 shrink-0">
 							<Image
 								src="/Icons/image 9.png"
 								alt="Push Notification"
 								width={24}
 								height={24}
+								className="w-full h-full object-contain"
 							/>
 						</div>
-						<div className="ml-2">
-							<h4 className="text-lg text-gray-700 font-normal">
+						<div className="ml-1 sm:ml-2 min-w-0">
+							<h4 className="text-sm sm:text-base md:text-lg text-gray-700 font-normal">
 								Push Notification
 							</h4>
-							<p className="text-sm text-gray-500">
+							<p className="text-xs sm:text-sm text-gray-500">
 								Get notified about important emails and reminders
 							</p>
 						</div>
@@ -1476,21 +1500,22 @@ export default function SettingsPage() {
 				</div>
 
 				{/* Microphone Access */}
-				<div className="flex items-center justify-between px-6 py-4 bg-white rounded-lg border border-gray-400">
-					<div className="flex items-center gap-2">
-						<div className="w-10 h-10 bg-gray-50 rounded-full flex items-center justify-center p-2">
+				<div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 bg-white rounded-lg border border-gray-400 gap-3">
+					<div className="flex items-center gap-2 min-w-0 flex-1">
+						<div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-50 rounded-full flex items-center justify-center p-1.5 sm:p-2 shrink-0">
 							<Image
 								src="/Icons/image 10.png"
 								alt="Microphone Access"
 								width={24}
 								height={24}
+								className="w-full h-full object-contain"
 							/>
 						</div>
-						<div className="ml-2">
-							<h4 className="text-lg text-gray-700 font-normal">
+						<div className="ml-1 sm:ml-2 min-w-0">
+							<h4 className="text-sm sm:text-base md:text-lg text-gray-700 font-normal">
 								Microphone Access
 							</h4>
-							<p className="text-sm text-gray-500">
+							<p className="text-xs sm:text-sm text-gray-500">
 								Use voice commands to interact with Mira
 							</p>
 						</div>
@@ -1504,21 +1529,22 @@ export default function SettingsPage() {
 				</div>
 
 				{/* Wake Word Detection */}
-				<div className="flex items-center justify-between px-6 py-4 bg-white rounded-lg border border-gray-400">
-					<div className="flex items-center gap-2">
-						<div className="w-10 h-10 bg-gray-50 rounded-full flex items-center justify-center p-2">
+				<div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 bg-white rounded-lg border border-gray-400 gap-3">
+					<div className="flex items-center gap-2 min-w-0 flex-1">
+						<div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-50 rounded-full flex items-center justify-center p-1.5 sm:p-2 shrink-0">
 							<Image
 								src="/Icons/image 11.png"
 								alt="Wake Word Detection"
 								width={24}
 								height={24}
+								className="w-full h-full object-contain"
 							/>
 						</div>
-						<div className="ml-2">
-							<h4 className="text-lg text-gray-700 font-normal">
+						<div className="ml-1 sm:ml-2 min-w-0">
+							<h4 className="text-sm sm:text-base md:text-lg text-gray-700 font-normal">
 								Wake Word Detection
 							</h4>
-							<p className="text-sm text-gray-500">
+							<p className="text-xs sm:text-sm text-gray-500">
 								Activate Mira with your voice
 							</p>
 						</div>
@@ -1534,7 +1560,7 @@ export default function SettingsPage() {
 
 			<button
 				onClick={handleSave}
-				className="px-6 py-3 bg-gray-800 text-white rounded-full font-semibold text-lg hover:bg-gray-900 transition-colors"
+				className="px-4 sm:px-6 py-2.5 sm:py-3 bg-gray-800 text-white rounded-full font-semibold text-sm sm:text-base md:text-lg hover:bg-gray-900 transition-colors"
 			>
 				Save
 			</button>
@@ -1542,30 +1568,31 @@ export default function SettingsPage() {
 	);
 
 	const renderPrivacyTab = () => (
-		<div className="space-y-5">
-			<p className="text-xl text-gray-800 leading-6">
+		<div className="space-y-4 sm:space-y-5">
+			<p className="text-base sm:text-lg md:text-xl text-gray-800 leading-6">
 				Control what information you share and manage how your data is used to
 				keep your account secure.
 			</p>
 
-			<div className="space-y-8">
+			<div className="space-y-6 sm:space-y-8">
 				{/* Email Connections */}
 				<div>
-					<h3 className="text-xl text-gray-800 mb-5">Your Email</h3>
-					<div className="space-y-5">
-						<div className="flex items-center justify-between px-6 py-4 bg-white rounded-lg border border-gray-400">
-							<div className="flex items-center gap-5">
-								<div className="w-6 h-6 rounded flex items-center justify-center">
+					<h3 className="text-lg sm:text-xl text-gray-800 mb-3 sm:mb-5">Your Email</h3>
+					<div className="space-y-4 sm:space-y-5">
+						<div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 bg-white rounded-lg border border-gray-400 gap-3">
+							<div className="flex items-center gap-3 sm:gap-5 min-w-0 flex-1">
+								<div className="w-5 h-5 sm:w-6 sm:h-6 rounded flex items-center justify-center shrink-0">
 									<Image
 										src="/Icons/image 4.png"
 										alt="Gmail"
 										width={24}
 										height={24}
+										className="w-full h-full object-contain"
 									/>
 								</div>
-								<span className="text-lg text-gray-700">Gmail</span>
+								<span className="text-sm sm:text-base md:text-lg text-gray-700">Gmail</span>
 								{connectedEmails.includes("Gmail") && (
-									<span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">
+									<span className="text-[10px] sm:text-xs bg-green-100 text-green-800 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full whitespace-nowrap shrink-0">
 										Connected
 									</span>
 								)}
@@ -1582,7 +1609,7 @@ export default function SettingsPage() {
 										window.location.href = `${apiBase}/gmail/auth`;
 									}
 								}}
-								className={`px-4 py-2 rounded-lg text-sm transition-colors ${
+								className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm transition-colors whitespace-nowrap shrink-0 ${
 									connectedEmails.includes("Gmail")
 										? "bg-red-100 text-red-700 hover:bg-red-200"
 										: "bg-gray-50 border border-gray-300 text-gray-700 hover:bg-gray-100"
@@ -1592,19 +1619,20 @@ export default function SettingsPage() {
 							</button>
 						</div>
 
-						<div className="flex items-center justify-between px-6 py-4 bg-white rounded-lg border border-gray-400">
-							<div className="flex items-center gap-5">
-								<div className="w-6 h-6 rounded flex items-center justify-center">
+						<div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 bg-white rounded-lg border border-gray-400 gap-3">
+							<div className="flex items-center gap-3 sm:gap-5 min-w-0 flex-1">
+								<div className="w-5 h-5 sm:w-6 sm:h-6 rounded flex items-center justify-center shrink-0">
 									<Image
 										src="/Icons/image 5.png"
 										alt="Outlook"
 										width={24}
 										height={24}
+										className="w-full h-full object-contain"
 									/>
 								</div>
-								<span className="text-lg text-gray-700">Outlook</span>
+								<span className="text-sm sm:text-base md:text-lg text-gray-700">Outlook</span>
 								{connectedEmails.includes("Outlook") && (
-									<span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">
+									<span className="text-[10px] sm:text-xs bg-green-100 text-green-800 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full whitespace-nowrap shrink-0">
 										Connected
 									</span>
 								)}
@@ -1630,7 +1658,7 @@ export default function SettingsPage() {
 										)}`;
 									}
 								}}
-								className={`px-4 py-2 rounded-lg text-sm transition-colors ${
+								className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm transition-colors whitespace-nowrap shrink-0 ${
 									connectedEmails.includes("Outlook")
 										? "bg-red-100 text-red-700 hover:bg-red-200"
 										: "bg-gray-50 border border-gray-300 text-gray-700 hover:bg-gray-100"
@@ -1668,21 +1696,22 @@ export default function SettingsPage() {
 
 				{/* Calendar Connections */}
 				<div>
-					<h3 className="text-xl text-gray-800 mb-5">Your Calendar</h3>
-					<div className="space-y-5">
-						<div className="flex items-center justify-between px-6 py-4 bg-white rounded-lg border border-gray-400">
-							<div className="flex items-center gap-5">
-								<div className="w-6 h-6 rounded flex items-center justify-center">
+					<h3 className="text-lg sm:text-xl text-gray-800 mb-3 sm:mb-5">Your Calendar</h3>
+					<div className="space-y-4 sm:space-y-5">
+						<div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 bg-white rounded-lg border border-gray-400 gap-3">
+							<div className="flex items-center gap-3 sm:gap-5 min-w-0 flex-1">
+								<div className="w-5 h-5 sm:w-6 sm:h-6 rounded flex items-center justify-center shrink-0">
 									<Image
 										src="/Icons/image 7.png"
 										alt="Google Calendar"
 										width={24}
 										height={24}
+										className="w-full h-full object-contain"
 									/>
 								</div>
-								<span className="text-lg text-gray-700">Google Calendar</span>
+								<span className="text-sm sm:text-base md:text-lg text-gray-700">Google Calendar</span>
 								{connectedCalendars.includes("Google Calendar") && (
-									<span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">
+									<span className="text-[10px] sm:text-xs bg-green-100 text-green-800 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full whitespace-nowrap shrink-0">
 										Connected
 									</span>
 								)}
@@ -1718,7 +1747,7 @@ export default function SettingsPage() {
 										}
 									}
 								}}
-								className={`px-4 py-2 rounded-lg text-sm transition-colors ${
+								className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm transition-colors whitespace-nowrap shrink-0 ${
 									connectedCalendars.includes("Google Calendar")
 										? "bg-red-100 text-red-700 hover:bg-red-200"
 										: "bg-gray-50 border border-gray-300 text-gray-700 hover:bg-gray-100"
@@ -1730,19 +1759,20 @@ export default function SettingsPage() {
 							</button>
 						</div>
 
-						<div className="flex items-center justify-between px-6 py-4 bg-white rounded-lg border border-gray-400">
-							<div className="flex items-center gap-5">
-								<div className="w-6 h-6 rounded flex items-center justify-center">
+						<div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 bg-white rounded-lg border border-gray-400 gap-3">
+							<div className="flex items-center gap-3 sm:gap-5 min-w-0 flex-1">
+								<div className="w-5 h-5 sm:w-6 sm:h-6 rounded flex items-center justify-center shrink-0">
 									<Image
 										src="/Icons/image 5.png"
 										alt="Outlook Calendar"
 										width={24}
 										height={24}
+										className="w-full h-full object-contain"
 									/>
 								</div>
-								<span className="text-lg text-gray-700">Outlook Calendar</span>
+								<span className="text-sm sm:text-base md:text-lg text-gray-700">Outlook Calendar</span>
 								{connectedCalendars.includes("Outlook Calendar") && (
-									<span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">
+									<span className="text-[10px] sm:text-xs bg-green-100 text-green-800 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full whitespace-nowrap shrink-0">
 										Connected
 									</span>
 								)}
@@ -1768,7 +1798,7 @@ export default function SettingsPage() {
 										)}&purpose=calendar`;
 									}
 								}}
-								className={`px-4 py-2 rounded-lg text-sm transition-colors ${
+								className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm transition-colors whitespace-nowrap shrink-0 ${
 									connectedCalendars.includes("Outlook Calendar")
 										? "bg-red-100 text-red-700 hover:bg-red-200"
 										: "bg-gray-50 border border-gray-300 text-gray-700 hover:bg-gray-100"
@@ -1801,19 +1831,20 @@ export default function SettingsPage() {
 							</button>
 						</div> */}
 
-						<div className="flex items-center justify-between px-6 py-4 bg-white rounded-lg border border-gray-400">
-							<div className="flex items-center gap-5">
-								<div className="w-6 h-6 rounded flex items-center justify-center">
+						<div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 bg-white rounded-lg border border-gray-400 gap-3">
+							<div className="flex items-center gap-3 sm:gap-5 min-w-0 flex-1">
+								<div className="w-5 h-5 sm:w-6 sm:h-6 rounded flex items-center justify-center shrink-0">
 									<Image
 										src="/Icons/image 8.png"
 										alt="Exchange Calendar"
 										width={24}
 										height={24}
+										className="w-full h-full object-contain"
 									/>
 								</div>
-								<span className="text-lg text-gray-700">Exchange Calendar</span>
+								<span className="text-sm sm:text-base md:text-lg text-gray-700">Exchange Calendar</span>
 								{connectedCalendars.includes("Exchange Calendar") && (
-									<span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">
+									<span className="text-[10px] sm:text-xs bg-green-100 text-green-800 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full whitespace-nowrap shrink-0">
 										Connected
 									</span>
 								)}
@@ -1822,7 +1853,7 @@ export default function SettingsPage() {
 								onClick={() =>
 									alert("Exchange Calendar integration coming soon!")
 								}
-								className="px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+								className="px-3 sm:px-4 py-1.5 sm:py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs sm:text-sm text-gray-700 hover:bg-gray-100 transition-colors whitespace-nowrap shrink-0"
 							>
 								Connect
 							</button>
@@ -1831,39 +1862,39 @@ export default function SettingsPage() {
 				</div>
 
 				{/* Permissions */}
-				<div className="space-y-5">
-					<div className="flex items-start gap-3">
+				<div className="space-y-4 sm:space-y-5">
+					<div className="flex items-start gap-2 sm:gap-3">
 						<CustomCircularCheckbox
 							checked={formData.emailAccess}
 							onChange={(checked) => handleInputChange("emailAccess", checked)}
-							className="mt-1"
+							className="mt-1 shrink-0"
 						/>
-						<p className="text-base text-gray-700 leading-5">
+						<p className="text-sm sm:text-base text-gray-700 leading-5">
 							Allow Mira to access your email to read, compose, manage drafts,
 							and send emails from your connected accounts.{" "}
-							<a href="#" className="text-gray-500 underline text-sm">
+							<a href="#" className="text-gray-500 underline text-xs sm:text-sm">
 								Learn more
 							</a>
 						</p>
 					</div>
 
-					<div className="flex items-start gap-3">
+					<div className="flex items-start gap-2 sm:gap-3">
 						<CustomCircularCheckbox
 							checked={formData.calendarAccess}
 							onChange={(checked) =>
 								handleInputChange("calendarAccess", checked)
 							}
-							className="mt-1"
+							className="mt-1 shrink-0"
 						/>
-						<p className="text-base text-gray-700 leading-5">
+						<p className="text-sm sm:text-base text-gray-700 leading-5">
 							Allow Mira to access your calendar to view, create, edit, and
 							manage your events and reminders across connected accounts.
 						</p>
 					</div>
 
 					{/* Privacy Policy Section */}
-					<div className="mt-6">
-						<p className="text-lg text-gray-800 leading-6">
+					<div className="mt-4 sm:mt-6">
+						<p className="text-sm sm:text-base md:text-lg text-gray-800 leading-6">
 							<span className="font-bold">Make sure you trust Mira:</span>{" "}
 							Review{" "}
 							<a href="#" className="text-purple-600 underline">
@@ -1881,7 +1912,7 @@ export default function SettingsPage() {
 
 			<button
 				onClick={handleSave}
-				className="px-6 py-3 bg-gray-800 text-white rounded-full font-semibold text-lg hover:bg-gray-900 transition-colors"
+				className="px-4 sm:px-6 py-2.5 sm:py-3 bg-gray-800 text-white rounded-full font-semibold text-sm sm:text-base md:text-lg hover:bg-gray-900 transition-colors"
 			>
 				Save
 			</button>
@@ -1889,41 +1920,42 @@ export default function SettingsPage() {
 	);
 
 	const renderSubscriptionTab = () => (
-		<div className="space-y-5">
-			<p className="text-xl text-gray-800 leading-6">
+		<div className="space-y-4 sm:space-y-5">
+			<p className="text-base sm:text-lg md:text-xl text-gray-800 leading-6">
 				View your current plan, update billing details, or upgrade your
 				subscription anytime.
 			</p>
 
-			<div className="space-y-5">
+			<div className="space-y-4 sm:space-y-5">
 				{/* Plan Selection */}
-				<div className="space-y-5">
+				<div className="space-y-4 sm:space-y-5">
 					<div
-						className={`flex items-center justify-between px-6 py-4 rounded-lg border ${
+						className={`flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 rounded-lg border gap-3 ${
 							formData.selectedPlan === "basic"
 								? "border-gray-400 bg-gray-50"
 								: "border-gray-400 bg-white"
 						}`}
 					>
-						<div className="flex items-center gap-2">
-							<div className="w-10 h-10 rounded flex items-center justify-center">
+						<div className="flex items-center gap-2 min-w-0 flex-1">
+							<div className="w-8 h-8 sm:w-10 sm:h-10 rounded flex items-center justify-center shrink-0">
 								<Image
 									src="/Icons/Ellipse 12.svg"
 									alt="Basic Plan"
 									width={40}
 									height={40}
+									className="w-full h-full object-contain"
 								/>
 							</div>
-							<div>
-								<h4 className="text-lg font-normal text-gray-700">
+							<div className="min-w-0">
+								<h4 className="text-sm sm:text-base md:text-lg font-normal text-gray-700">
 									Basic Plan - Free
 								</h4>
-								<p className="text-sm text-gray-500">
+								<p className="text-xs sm:text-sm text-gray-500">
 									AI assistant managing Email, calendar, and meeting
 								</p>
 							</div>
 						</div>
-						<div className="relative">
+						<div className="relative shrink-0">
 							<CustomRadioButton
 								name="plan"
 								value="basic"
@@ -1934,31 +1966,32 @@ export default function SettingsPage() {
 					</div>
 
 					<div
-						className={`flex items-center justify-between px-6 py-4 rounded-lg border ${
+						className={`flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 rounded-lg border gap-3 ${
 							formData.selectedPlan === "advanced"
 								? "border-gray-400 bg-gray-50"
 								: "border-gray-400 bg-white"
 						}`}
 					>
-						<div className="flex items-center gap-2">
-							<div className="w-10 h-10 rounded flex items-center justify-center">
+						<div className="flex items-center gap-2 min-w-0 flex-1">
+							<div className="w-8 h-8 sm:w-10 sm:h-10 rounded flex items-center justify-center shrink-0">
 								<Image
 									src="/Icons/Ellipse 10.svg"
 									alt="Advanced Plan"
 									width={40}
 									height={40}
+									className="w-full h-full object-contain"
 								/>
 							</div>
-							<div>
-								<h4 className="text-lg font-normal text-gray-700">
+							<div className="min-w-0">
+								<h4 className="text-sm sm:text-base md:text-lg font-normal text-gray-700">
 									Advanced Plan - $9/month
 								</h4>
-								<p className="text-sm text-gray-500">
+								<p className="text-xs sm:text-sm text-gray-500">
 									AI assistant with customized voice
 								</p>
 							</div>
 						</div>
-						<div className="relative">
+						<div className="relative shrink-0">
 							<CustomRadioButton
 								name="plan"
 								value="advanced"
@@ -1969,32 +2002,33 @@ export default function SettingsPage() {
 					</div>
 
 					<div
-						className={`flex items-center justify-between px-6 py-4 rounded-lg border ${
+						className={`flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 rounded-lg border gap-3 ${
 							formData.selectedPlan === "premium"
 								? "border-gray-400 bg-gray-50"
 								: "border-gray-400 bg-white"
 						}`}
 					>
-						<div className="flex items-center gap-2">
-							<div className="w-10 h-10 rounded flex items-center justify-center">
+						<div className="flex items-center gap-2 min-w-0 flex-1">
+							<div className="w-8 h-8 sm:w-10 sm:h-10 rounded flex items-center justify-center shrink-0">
 								<Image
 									src="/Icons/Ellipse 11.svg"
 									alt="Premium Plan"
 									width={40}
 									height={40}
+									className="w-full h-full object-contain"
 								/>
 							</div>
-							<div>
-								<h4 className="text-lg font-normal text-gray-700">
+							<div className="min-w-0">
+								<h4 className="text-sm sm:text-base md:text-lg font-normal text-gray-700">
 									Premium Plan - $19/month
 								</h4>
-								<p className="text-sm text-gray-500">
+								<p className="text-xs sm:text-sm text-gray-500">
 									Customized voice AI assistant being able to make appointments
 									for you
 								</p>
 							</div>
 						</div>
-						<div className="relative">
+						<div className="relative shrink-0">
 							<CustomRadioButton
 								name="plan"
 								value="premium"
@@ -2006,31 +2040,31 @@ export default function SettingsPage() {
 				</div>
 
 				{/* Card Details */}
-				<div className="space-y-10">
+				<div className="space-y-6 sm:space-y-8 md:space-y-10">
 					<div>
-						<h3 className="text-2xl font-medium text-gray-800 mb-2">
+						<h3 className="text-xl sm:text-2xl font-medium text-gray-800 mb-1 sm:mb-2">
 							Card Details
 						</h3>
-						<p className="text-lg text-gray-500">Update your card details.</p>
+						<p className="text-sm sm:text-base md:text-lg text-gray-500">Update your card details.</p>
 					</div>
 
-					<div className="space-y-5">
+					<div className="space-y-4 sm:space-y-5">
 						<div>
-							<label className="block text-lg text-gray-700 mb-3">
+							<label className="block text-sm sm:text-base md:text-lg text-gray-700 mb-2 sm:mb-3">
 								Name on card
 							</label>
 							<input
 								type="text"
 								value={formData.cardName}
 								onChange={(e) => handleInputChange("cardName", e.target.value)}
-								className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-gray-900 placeholder-gray-500"
+								className="w-full h-12 sm:h-14 px-3 sm:px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-sm sm:text-base text-gray-900 placeholder-gray-500"
 								placeholder="Enter name on card"
 							/>
 						</div>
 
-						<div className="flex gap-6">
+						<div className="flex flex-col sm:flex-row gap-4 sm:gap-6">
 							<div className="flex-1">
-								<label className="block text-lg text-gray-700 mb-3">
+								<label className="block text-sm sm:text-base md:text-lg text-gray-700 mb-2 sm:mb-3">
 									Card number
 								</label>
 								<input
@@ -2039,72 +2073,72 @@ export default function SettingsPage() {
 									onChange={(e) =>
 										handleInputChange("cardNumber", e.target.value)
 									}
-									className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-gray-900 placeholder-gray-500"
+									className="w-full h-12 sm:h-14 px-3 sm:px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-sm sm:text-base text-gray-900 placeholder-gray-500"
 									placeholder="1234 5678 9012 3456"
 								/>
 							</div>
-							<div className="w-28">
-								<label className="block text-lg text-gray-700 mb-3">
+							<div className="w-full sm:w-28">
+								<label className="block text-sm sm:text-base md:text-lg text-gray-700 mb-2 sm:mb-3">
 									Exp date
 								</label>
 								<input
 									type="text"
 									value={formData.expDate}
 									onChange={(e) => handleInputChange("expDate", e.target.value)}
-									className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-gray-900 placeholder-gray-500"
+									className="w-full h-12 sm:h-14 px-3 sm:px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-sm sm:text-base text-gray-900 placeholder-gray-500"
 									placeholder="MM/YY"
 								/>
 							</div>
-							<div className="w-28">
-								<label className="block text-lg text-gray-700 mb-3">CVV</label>
+							<div className="w-full sm:w-28">
+								<label className="block text-sm sm:text-base md:text-lg text-gray-700 mb-2 sm:mb-3">CVV</label>
 								<input
 									type="text"
 									value={formData.cvv}
 									onChange={(e) => handleInputChange("cvv", e.target.value)}
-									className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-gray-900 placeholder-gray-500"
+									className="w-full h-12 sm:h-14 px-3 sm:px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-sm sm:text-base text-gray-900 placeholder-gray-500"
 									placeholder="123"
 								/>
 							</div>
 						</div>
 
 						<div>
-							<label className="block text-lg text-gray-700 mb-3">
+							<label className="block text-sm sm:text-base md:text-lg text-gray-700 mb-2 sm:mb-3">
 								Address
 							</label>
 							<input
 								type="text"
 								value={formData.address}
 								onChange={(e) => handleInputChange("address", e.target.value)}
-								className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-gray-900 placeholder-gray-500"
+								className="w-full h-12 sm:h-14 px-3 sm:px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-sm sm:text-base text-gray-900 placeholder-gray-500"
 								placeholder="Enter your address"
 							/>
 						</div>
 
-						<div className="flex gap-6">
+						<div className="flex flex-col sm:flex-row gap-4 sm:gap-6">
 							<div className="flex-1">
-								<label className="block text-lg text-gray-700 mb-3">City</label>
+								<label className="block text-sm sm:text-base md:text-lg text-gray-700 mb-2 sm:mb-3">City</label>
 								<input
 									type="text"
 									value={formData.city}
 									onChange={(e) => handleInputChange("city", e.target.value)}
-									className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-gray-900 placeholder-gray-500"
+									className="w-full h-12 sm:h-14 px-3 sm:px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-sm sm:text-base text-gray-900 placeholder-gray-500"
 									placeholder="Enter city"
 								/>
 							</div>
-							<div className="w-28">
-								<label className="block text-lg text-gray-700 mb-3">
+							<div className="w-full sm:w-28">
+								<label className="block text-sm sm:text-base md:text-lg text-gray-700 mb-2 sm:mb-3">
 									State
 								</label>
 								<input
 									type="text"
 									value={formData.state}
 									onChange={(e) => handleInputChange("state", e.target.value)}
-									className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-gray-900 placeholder-gray-500"
+									className="w-full h-12 sm:h-14 px-3 sm:px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-sm sm:text-base text-gray-900 placeholder-gray-500"
 									placeholder="State"
 								/>
 							</div>
-							<div className="w-28">
-								<label className="block text-lg text-gray-700 mb-3">
+							<div className="w-full sm:w-28">
+								<label className="block text-sm sm:text-base md:text-lg text-gray-700 mb-2 sm:mb-3">
 									Postal code
 								</label>
 								<input
@@ -2113,7 +2147,7 @@ export default function SettingsPage() {
 									onChange={(e) =>
 										handleInputChange("postalCode", e.target.value)
 									}
-									className="w-full h-14 px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-gray-900 placeholder-gray-500"
+									className="w-full h-12 sm:h-14 px-3 sm:px-4 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-sm sm:text-base text-gray-900 placeholder-gray-500"
 									placeholder="12345"
 								/>
 							</div>
@@ -2124,7 +2158,7 @@ export default function SettingsPage() {
 
 			<button
 				onClick={handleSave}
-				className="px-6 py-3 bg-gray-800 text-white rounded-full font-semibold text-lg hover:bg-gray-900 transition-colors"
+				className="px-4 sm:px-6 py-2.5 sm:py-3 bg-gray-800 text-white rounded-full font-semibold text-sm sm:text-base md:text-lg hover:bg-gray-900 transition-colors"
 			>
 				Save
 			</button>
@@ -2194,24 +2228,24 @@ export default function SettingsPage() {
 	}, [latitude, longitude]);
 
 	return (
-		<div className="min-h-screen bg-gray-50 p-8">
+		<div className="min-h-screen bg-gray-50 p-3 sm:p-4 md:p-6 lg:p-8">
 			{/* Header */}
-			<div className="flex items-center justify-between mb-8">
-				<div className="flex items-center gap-8">
-					<div className="flex items-center gap-2">
-						<span className="text-base text-gray-800">
+			<div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 sm:mb-6 md:mb-8 gap-3 sm:gap-4">
+				<div className="flex flex-wrap items-center gap-2 sm:gap-3 md:gap-4 lg:gap-8">
+					<div className="flex items-center gap-1.5 sm:gap-2">
+						<span className="text-xs sm:text-sm md:text-base text-gray-800">
 							{getFormattedDate(timezone)}
 						</span>
 					</div>
-					<div className="flex items-center gap-2 px-3 py-2 bg-white rounded-full border border-gray-200">
-						<MapPin className="w-4 h-4 text-gray-600" />
-						<span className="text-base text-gray-800">
+					<div className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-2.5 md:px-3 py-1.5 sm:py-2 bg-white rounded-full border border-gray-200">
+						<MapPin className="w-3 h-3 sm:w-3.5 sm:h-3.5 md:w-4 md:h-4 text-gray-600 shrink-0" />
+						<span className="text-xs sm:text-sm md:text-base text-gray-800 truncate max-w-[100px] sm:max-w-none">
 							{isLocationLoading ? "Detecting..." : location}
 						</span>
 					</div>
-					<div className="flex items-center gap-2 px-3 py-2 bg-white rounded-full border border-gray-200">
-						<Sun className="w-6 h-6 text-yellow-500" />
-						<span className="text-base text-gray-800">
+					<div className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-2.5 md:px-3 py-1.5 sm:py-2 bg-white rounded-full border border-gray-200">
+						<Sun className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6 text-yellow-500 shrink-0" />
+						<span className="text-xs sm:text-sm md:text-base text-gray-800">
 							{isWeatherLoading
 								? "..."
 								: temperatureC != null
@@ -2220,26 +2254,26 @@ export default function SettingsPage() {
 						</span>
 					</div>
 				</div>
-				<div className="w-11 h-11 bg-white rounded-lg border border-gray-200 flex items-center justify-center">
-					<Bell className="w-6 h-6 text-gray-600" />
+				<div className="w-9 h-9 sm:w-10 sm:h-10 md:w-11 md:h-11 bg-white rounded-lg border border-gray-200 flex items-center justify-center shrink-0">
+					<Bell className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6 text-gray-600" />
 				</div>
 			</div>
 
 			{/* Title */}
-			<div className="mb-8">
-				<h1 className="text-4xl font-medium text-black">Settings</h1>
+			<div className="mb-4 sm:mb-6 md:mb-8">
+				<h1 className="text-2xl sm:text-3xl md:text-4xl font-medium text-black">Settings</h1>
 			</div>
 
 			{/* Tab Navigation */}
-			<div className="flex items-center gap-8 mb-8 border-b border-gray-300">
+			<div className="flex items-center gap-2 sm:gap-4 md:gap-6 lg:gap-8 mb-4 sm:mb-6 md:mb-8 border-b border-gray-300 overflow-x-auto scrollbar-hide">
 				{tabs.map((tab) => (
 					<button
 						key={tab.id}
 						onClick={() => setActiveTab(tab.id)}
-						className={`px-2 py-1 text-xl transition-colors ${
+						className={`px-2 py-1 text-sm sm:text-base md:text-lg lg:text-xl transition-colors whitespace-nowrap shrink-0 ${
 							activeTab === tab.id
-								? "text-gray-800 font-medium border-b-2 border-purple-600 pb-4"
-								: "text-gray-500 font-medium hover:text-gray-700 pb-4"
+								? "text-gray-800 font-medium border-b-2 border-purple-600 pb-3 sm:pb-4"
+								: "text-gray-500 font-medium hover:text-gray-700 pb-3 sm:pb-4"
 						}`}
 					>
 						{tab.label}
