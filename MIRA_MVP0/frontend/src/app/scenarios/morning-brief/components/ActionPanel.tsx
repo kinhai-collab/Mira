@@ -16,7 +16,7 @@ export default function ActionPanel({ data }: { data?: ActionPanelData }) {
 			{/* Header */}
 			<h4
 				className="
-					text-[#62445E] font-semibold 
+					text-[#62445E] font-normal 
 					text-base sm:text-lg 
 					mb-1 sm:mb-2
 				"

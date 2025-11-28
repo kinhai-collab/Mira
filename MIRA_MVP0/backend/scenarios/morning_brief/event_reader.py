@@ -19,9 +19,9 @@ except ImportError:
 
 # --- Detect video platform links ---------------------------------------------
 PLATFORM_PATTERNS = {
-    "Zoom": r"zoom\.us/[^\s]+",
-    "Google Meet": r"meet\.google\.com/[^\s]+",
-    "Microsoft Teams": r"teams\.microsoft\.com/[^\s]+",
+    "Zoom": r"zoom\.us/[^\s]+|zoom\.com/[^\s]+",
+    "Google Meet": r"meet\.google\.com/[^\s]+|hangouts\.google\.com/[^\s]+|google\.com/meet/[^\s]+",
+    "Microsoft Teams": r"teams\.microsoft\.com/[^\s]+|teams\.live\.com/[^\s]+|microsoft\.com/teams/[^\s]+",
 }
 
 # --- Utility helpers ---------------------------------------------------------
@@ -115,6 +115,7 @@ def _transform_google_event(gcal_event: Dict[str, Any], tz: str) -> Optional[Dic
                 if entry.get("entryPointType") == "video":
                     meeting_link = entry.get("uri", "")
                     provider = "google-meet"
+                    print(f"✅ Detected Google Meet from conferenceData: {meeting_link[:50]}...")
                     break
         
         # If no link from conferenceData, extract from description/location
@@ -124,10 +125,15 @@ def _transform_google_event(gcal_event: Dict[str, Any], tz: str) -> Optional[Dic
                 meeting_link = link
                 if platform == "Google Meet":
                     provider = "google-meet"
+                    print(f"✅ Detected Google Meet from description/location: {link[:50]}...")
                 elif platform == "Microsoft Teams":
                     provider = "microsoft-teams"
                 elif platform == "Zoom":
                     provider = "zoom"
+        
+        # Debug: Log if we found a Google Meet
+        if provider == "google-meet":
+            print(f"📞 Google Meet detected for event: {gcal_event.get('summary', 'Unknown')} - Link: {meeting_link[:80] if meeting_link else 'None'}")
         
         return {
             "summary": gcal_event.get("summary", "No title"),
@@ -198,9 +204,23 @@ def _transform_outlook_event(o_event: Dict[str, Any], tz: str) -> Optional[Dict[
         if online_meeting and isinstance(online_meeting, dict):
             meeting_link = online_meeting.get("joinUrl", "")
             if meeting_link:
-                provider = "microsoft-teams"
+                # Verify it's actually a Teams link
+                link_lower = meeting_link.lower()
+                if any(pattern in link_lower for pattern in ["teams.microsoft.com", "teams.live.com", "microsoft.com/teams"]):
+                    provider = "microsoft-teams"
+                    print(f"✅ Detected Teams from onlineMeeting.joinUrl: {meeting_link[:50]}...")
+                else:
+                    # If joinUrl exists but doesn't match Teams patterns, try to detect platform
+                    platform, _ = _detect_conference_platform(meeting_link)
+                    if platform == "Microsoft Teams":
+                        provider = "microsoft-teams"
+                        print(f"✅ Detected Teams from joinUrl via pattern matching: {meeting_link[:50]}...")
+                    elif platform == "Google Meet":
+                        provider = "google-meet"
+                    elif platform == "Zoom":
+                        provider = "zoom"
         
-        # If no link from onlineMeeting, extract from description
+        # If no link from onlineMeeting, extract from description/location
         if not meeting_link:
             platform, link = _detect_conference_platform(location + " " + description)
             if link:
@@ -209,8 +229,13 @@ def _transform_outlook_event(o_event: Dict[str, Any], tz: str) -> Optional[Dict[
                     provider = "google-meet"
                 elif platform == "Microsoft Teams":
                     provider = "microsoft-teams"
+                    print(f"✅ Detected Teams from description/location: {link[:50]}...")
                 elif platform == "Zoom":
                     provider = "zoom"
+        
+        # Debug: Log if we found a Teams meeting
+        if provider == "microsoft-teams":
+            print(f"📞 Teams meeting detected for event: {o_event.get('subject', 'Unknown')} - Link: {meeting_link[:80] if meeting_link else 'None'}")
         
         return {
             "summary": o_event.get("subject", "No title"),
@@ -230,10 +255,15 @@ def _transform_outlook_event(o_event: Dict[str, Any], tz: str) -> Optional[Dict[
         return None
 
 
-def get_today_events(user_id: str, tz: str) -> List[Dict[str, Any]]:
+def get_today_events(user_id: str, tz: str, outlook_token: Optional[str] = None) -> List[Dict[str, Any]]:
     """
     Fetch today's events from both Google Calendar and Outlook for the user.
     Falls back to empty list if calendar is not connected or on error.
+    
+    Args:
+        user_id: User ID
+        tz: User's timezone
+        outlook_token: Optional cached Outlook token to avoid re-fetching credentials
     """
     print(f"📅 Fetching events for user: {user_id} in timezone: {tz}")
     
@@ -271,84 +301,95 @@ def get_today_events(user_id: str, tz: str) -> List[Dict[str, Any]]:
             print(f"⚠️ Unexpected error fetching Google Calendar events: {e}")
     
     # Fetch from Outlook Calendar
-    try:
-        import os
-        import requests
-        from supabase import create_client
-        from datetime import timezone as tz_utc
-        
-        SUPABASE_URL = os.getenv("SUPABASE_URL")
-        SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-        GRAPH_API_URL = "https://graph.microsoft.com/v1.0"
-        
-        if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY:
-            supabase_db = create_client(SUPABASE_URL.rstrip('/'), SUPABASE_SERVICE_ROLE_KEY)
+    # ✅ Use provided outlook_token if available, otherwise fetch from database
+    access_token = outlook_token
+    if outlook_token:
+        print("✅ Morning Brief: Using cached Outlook token for events")
+    else:
+        try:
+            import os
+            import requests
+            from supabase import create_client
+            from datetime import timezone  # ✅ Import timezone class, use timezone.utc
             
-            # Get Outlook token from database
-            res = supabase_db.table("outlook_credentials").select("*").eq("uid", user_id).execute()
-            if res.data and len(res.data) > 0:
-                creds = res.data[0]
-                access_token = creds.get("access_token")
-                expiry_str = creds.get("expiry")
+            SUPABASE_URL = os.getenv("SUPABASE_URL")
+            SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+            GRAPH_API_URL = "https://graph.microsoft.com/v1.0"
+            
+            if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY:
+                supabase_db = create_client(SUPABASE_URL.rstrip('/'), SUPABASE_SERVICE_ROLE_KEY)
                 
-                # Check if token is expired and refresh if needed
-                if expiry_str:
-                    try:
-                        expiry = datetime.fromisoformat(expiry_str.replace("Z", "+00:00"))
-                        now_utc = datetime.now(tz_utc)
-                        if expiry <= (now_utc + timedelta(minutes=5)):
-                            refresh_token = creds.get("refresh_token")
-                            if refresh_token:
-                                MICROSOFT_CLIENT_ID = os.getenv("MICROSOFT_CLIENT_ID")
-                                MICROSOFT_CLIENT_SECRET = os.getenv("MICROSOFT_CLIENT_SECRET")
-                                MICROSOFT_TOKEN_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
-                                
-                                data = {
-                                    "client_id": MICROSOFT_CLIENT_ID,
-                                    "scope": "User.Read Calendars.ReadWrite Mail.Read",
-                                    "refresh_token": refresh_token,
-                                    "grant_type": "refresh_token",
-                                    "client_secret": MICROSOFT_CLIENT_SECRET
-                                }
-                                refresh_res = requests.post(MICROSOFT_TOKEN_URL, data=data)
-                                new_token_data = refresh_res.json()
-                                
-                                if "access_token" in new_token_data:
-                                    expires_in = new_token_data.get("expires_in", 3600)
-                                    new_expiry = datetime.now(tz_utc) + timedelta(seconds=expires_in)
-                                    update_payload = {
-                                        "access_token": new_token_data.get("access_token"),
-                                        "refresh_token": new_token_data.get("refresh_token", refresh_token),
-                                        "expiry": new_expiry.isoformat(),
+                # Get Outlook token from database
+                res = supabase_db.table("outlook_credentials").select("*").eq("uid", user_id).execute()
+                if res.data and len(res.data) > 0:
+                    creds = res.data[0]
+                    access_token = creds.get("access_token")
+                    expiry_str = creds.get("expiry")
+                    
+                    # Check if token is expired and refresh if needed
+                    if expiry_str:
+                        try:
+                            expiry = datetime.fromisoformat(expiry_str.replace("Z", "+00:00"))
+                            now_utc = datetime.now(timezone.utc)  # ✅ Use timezone.utc (instance), not timezone (class)
+                            if expiry <= (now_utc + timedelta(minutes=5)):
+                                refresh_token = creds.get("refresh_token")
+                                if refresh_token:
+                                    MICROSOFT_CLIENT_ID = os.getenv("MICROSOFT_CLIENT_ID")
+                                    MICROSOFT_CLIENT_SECRET = os.getenv("MICROSOFT_CLIENT_SECRET")
+                                    MICROSOFT_TOKEN_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
+                                    
+                                    data = {
+                                        "client_id": MICROSOFT_CLIENT_ID,
+                                        "scope": "User.Read Calendars.ReadWrite Mail.Read",
+                                        "refresh_token": refresh_token,
+                                        "grant_type": "refresh_token",
+                                        "client_secret": MICROSOFT_CLIENT_SECRET
                                     }
-                                    supabase_db.table("outlook_credentials").update(update_payload).eq("uid", user_id).execute()
-                                    access_token = new_token_data.get("access_token")
-                    except Exception as e:
-                        print(f"⚠️ Error refreshing Outlook token: {e}")
-                
-                if access_token:
-                    # Fetch Outlook events
-                    headers = {"Authorization": f"Bearer {access_token}"}
-                    start_iso = today_start.astimezone(ZoneInfo("UTC")).strftime("%Y-%m-%dT%H:%M:%SZ")
-                    end_iso = today_end.astimezone(ZoneInfo("UTC")).strftime("%Y-%m-%dT%H:%M:%SZ")
-                    
-                    outlook_url = (
-                        f"{GRAPH_API_URL}/me/calendar/calendarView?"
-                        f"startDateTime={start_iso}&"
-                        f"endDateTime={end_iso}&"
-                        f"$top=250"
-                    )
-                    
-                    response = requests.get(outlook_url, headers=headers, timeout=10)
-                    if response.status_code == 200:
-                        outlook_events = response.json().get("value", [])
-                        for o_event in outlook_events:
-                            transformed = _transform_outlook_event(o_event, tz)
-                            if transformed:
-                                all_events.append(transformed)
-                        print(f"✅ Morning Brief: Found {len(outlook_events)} Outlook events")
-    except Exception as e:
-        print(f"⚠️ Error fetching Outlook events: {e}")
+                                    refresh_res = requests.post(MICROSOFT_TOKEN_URL, data=data)
+                                    new_token_data = refresh_res.json()
+                                    
+                                    if "access_token" in new_token_data:
+                                        expires_in = new_token_data.get("expires_in", 3600)
+                                        new_expiry = datetime.now(timezone.utc) + timedelta(seconds=expires_in)  # ✅ Use timezone.utc
+                                        update_payload = {
+                                            "access_token": new_token_data.get("access_token"),
+                                            "refresh_token": new_token_data.get("refresh_token", refresh_token),
+                                            "expiry": new_expiry.isoformat(),
+                                        }
+                                        supabase_db.table("outlook_credentials").update(update_payload).eq("uid", user_id).execute()
+                                        access_token = new_token_data.get("access_token")
+                        except Exception as e:
+                            print(f"⚠️ Error refreshing Outlook token: {e}")
+        except Exception as e:
+            print(f"⚠️ Error fetching Outlook token: {e}")
+    
+    if access_token:
+        try:
+            # Fetch Outlook events
+            import requests
+            GRAPH_API_URL = "https://graph.microsoft.com/v1.0"
+            headers = {"Authorization": f"Bearer {access_token}"}
+            start_iso = today_start.astimezone(ZoneInfo("UTC")).strftime("%Y-%m-%dT%H:%M:%SZ")
+            end_iso = today_end.astimezone(ZoneInfo("UTC")).strftime("%Y-%m-%dT%H:%M:%SZ")
+            
+            outlook_url = (
+                f"{GRAPH_API_URL}/me/calendar/calendarView?"
+                f"startDateTime={start_iso}&"
+                f"endDateTime={end_iso}&"
+                f"$top=250&"
+                f"$select=id,subject,start,end,location,bodyPreview,body,onlineMeeting"
+            )
+            
+            response = requests.get(outlook_url, headers=headers, timeout=10)
+            if response.status_code == 200:
+                outlook_events = response.json().get("value", [])
+                for o_event in outlook_events:
+                    transformed = _transform_outlook_event(o_event, tz)
+                    if transformed:
+                        all_events.append(transformed)
+                print(f"✅ Morning Brief: Found {len(outlook_events)} Outlook events")
+        except Exception as e:
+            print(f"⚠️ Error fetching Outlook events: {e}")
     
     # Filter to ensure only today's events
     filtered_events = _filter_today_events(all_events, tz)

@@ -139,7 +139,7 @@ export default function Sidebar() {
 	return (
 		<>
 			{/* DESKTOP SIDEBAR */}
-			<div className="hidden md:flex fixed left-0 top-0 flex-col items-center justify-between h-screen bg-[#F0ECF8] py-6 border-r border-gray-200 w-20 z-10">
+			<div className="hidden md:flex fixed left-0 top-0 flex-col items-center justify-between h-screen bg-[#F0ECF8] py-6 border-r border-gray-200 w-20 z-50">
 				{/* Top Section */}
 				<div className="flex flex-col items-center space-y-6">
 					{/* Mira orb */}
@@ -177,21 +177,51 @@ export default function Sidebar() {
 			</div>
 
 			{/* MOBILE BOTTOM NAV */}
-			<div className="md:hidden fixed bottom-0 left-0 right-0 bg-[#F0ECF8] border-t border-gray-200 flex justify-around items-center py-3 z-[999] shadow-lg">
-				{["Dashboard", "Settings", "Reminder"].map((name, i) => (
+			<div className="md:hidden fixed bottom-0 left-0 right-0 bg-[#F0ECF8] border-t border-gray-200 py-3 z-[999] shadow-lg">
+				<div className="flex justify-around items-center w-full">
+					{/* ORB — smaller */}
 					<button
-						key={i}
-						onClick={() => {
-							if (name === "Dashboard") router.push("/dashboard");
-							else router.push(`/dashboard/${name.toLowerCase()}`);
-						}}
-						className="flex items-center justify-center w-11 h-11 rounded-xl bg-white shadow-sm hover:bg-gray-100 transition-all active:bg-gray-200"
-					>
-						<Icon name={name} size={22} className="text-gray-700" />
-					</button>
-				))}
+						onClick={() => router.push("/")}
+						className="
+                w-6 h-6 
+                rounded-full 
+                bg-gradient-to-br from-pink-300 to-purple-400 
+                shadow-md 
+                hover:scale-110 
+                hover:shadow-[0_0_12px_3px_rgba(200,150,255,0.4)] 
+                transition
+            "
+					/>
 
-				<MobileProfileMenu />
+					{/* Navigation buttons (reduced size) */}
+					{["Dashboard", "Settings", "Reminder"].map((name, i) => (
+						<button
+							key={i}
+							onClick={() => {
+								if (name === "Dashboard") router.push("/dashboard");
+								else router.push(`/dashboard/${name.toLowerCase()}`);
+							}}
+							className="
+                    w-9 h-9                   /* smaller button */
+                    flex items-center justify-center
+                    rounded-lg
+                    bg-white border border-gray-100
+                    shadow-sm 
+                    hover:bg-gray-100 
+                    hover:shadow-md 
+                    transition
+                "
+						>
+							<Icon name={name} size={16} className="opacity-80" />{" "}
+							{/* smaller icon */}
+						</button>
+					))}
+
+					{/* Profile (kept small) */}
+					<div className="scale-90">
+						<MobileProfileMenu />
+					</div>
+				</div>
 			</div>
 		</>
 	);

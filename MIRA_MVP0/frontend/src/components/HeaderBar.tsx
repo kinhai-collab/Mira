@@ -32,7 +32,7 @@ export default function HeaderBar({
 	};
 
 	return (
-		<div className="sticky top-0 z-50 w-full bg-[#F8F8FB]/90 backdrop-blur-sm px-4 py-3 flex items-center justify-between">
+		<div className="sticky top-0 z-20 w-full bg-[#F8F8FB]/90 backdrop-blur-sm px-4 py-3 flex items-center justify-between">
 			{/* LEFT SECTION */}
 			<div className="flex items-center gap-2 text-sm flex-nowrap overflow-hidden">
 				<span className="font-normal text-gray-800 whitespace-nowrap">

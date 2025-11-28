@@ -17,11 +17,11 @@ export default function ReschedulingPanel() {
         mx-auto
       "
 		>
-			<p className="text-[20px] font-semibold text-[#1F1F1F] mb-4">
+			<p className="text-[20px] font-normal text-[#1F1F1F] mb-4">
 				Rescheduling your meeting…
 			</p>
 
-			<div className="border-l-[2px] border-[#C9BDFC] pl-4 space-y-4">
+			<div className="border-l-[1px] border-[#382099] pl-[24px] space-y-[4px]">
 				<div className="flex items-center gap-3">
 					<div className="w-[10px] h-[10px] rounded-full bg-[#9E2A2F]" />
 					<p className="text-[15px] text-[#303030]">

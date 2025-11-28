@@ -18,10 +18,14 @@ except ImportError:
     print("⚠️ Gmail API not available - using fallback")
 
 
-def get_email_summary(user_id: str) -> str:
+def get_email_summary(user_id: str, gmail_service=None) -> str:
     """
     Fetches email summary from Gmail for the morning brief.
     Returns a conversational summary of unread emails and important messages.
+    
+    Args:
+        user_id: User ID
+        gmail_service: Optional pre-built Gmail service (to avoid re-fetching credentials)
     """
     print(f"📧 Fetching email summary for user: {user_id}")
     
@@ -29,17 +33,19 @@ def get_email_summary(user_id: str) -> str:
         return ""
     
     try:
-        # Get Google credentials (same ones used for Calendar, which include Gmail scopes)
-        creds_row = get_creds(user_id)
-        if not creds_row:
-            print("⚠️ Google credentials not found - skipping email summary")
-            return ""
-        
-        # Build credentials and refresh if needed
-        credentials = _creds(creds_row)
-        
-        # Build Gmail service
-        gmail_service = build("gmail", "v1", credentials=credentials)
+        # ✅ Reuse provided service if available, otherwise build new one
+        if gmail_service is None:
+            # Get Google credentials (same ones used for Calendar, which include Gmail scopes)
+            creds_row = get_creds(user_id)
+            if not creds_row:
+                print("⚠️ Google credentials not found - skipping email summary")
+                return ""
+            
+            # Build credentials and refresh if needed
+            credentials = _creds(creds_row)
+            
+            # Build Gmail service
+            gmail_service = build("gmail", "v1", credentials=credentials)
         
         # Get unread count
         unread_response = gmail_service.users().messages().list(
@@ -56,7 +62,7 @@ def get_email_summary(user_id: str) -> str:
         important_response = gmail_service.users().messages().list(
             userId="me",
             q=f"{query} is:important",
-            maxResults=5
+            maxResults=3  # ✅ Reduce from 5 to 3 for faster loading
         ).execute()
         important_messages = important_response.get("messages", [])
         
@@ -64,7 +70,7 @@ def get_email_summary(user_id: str) -> str:
         recent_response = gmail_service.users().messages().list(
             userId="me",
             q=query,
-            maxResults=10
+            maxResults=5  # ✅ Reduce from 10 to 5 for faster loading
         ).execute()
         recent_messages = recent_response.get("messages", [])
         
@@ -82,12 +88,12 @@ def get_email_summary(user_id: str) -> str:
         # Get sender summary from recent messages
         if recent_messages:
             senders = {}
-            for msg in recent_messages[:5]:  # Check first 5 messages
+            for msg in recent_messages[:3]:  # ✅ Check first 3 messages (was 5) for faster loading
                 try:
                     message = gmail_service.users().messages().get(
                         userId="me",
                         id=msg["id"],
-                        format="metadata",
+                        format="metadata",  # ✅ Use metadata for faster loading
                         metadataHeaders=["From"]
                     ).execute()
                     
@@ -196,7 +202,7 @@ def get_outlook_email_summary(user_id: str) -> str:
 
         # recent unread (24 hours)
         yesterday = (datetime.utcnow() - timedelta(days=1)).isoformat() + "Z"
-        recent_url = f"{GRAPH_API_URL}/me/messages?$filter=isRead eq false and receivedDateTime ge {yesterday}&$top=10"
+        recent_url = f"{GRAPH_API_URL}/me/messages?$filter=isRead eq false and receivedDateTime ge {yesterday}&$top=5"  # ✅ Reduce from 10 to 5 for faster loading
         recent_resp = requests.get(recent_url, headers=headers).json()
         recent_msgs = recent_resp.get("value", [])
 
@@ -213,7 +219,7 @@ def get_outlook_email_summary(user_id: str) -> str:
 
         # sender summary
         senders = {}
-        for m in recent_msgs[:5]:
+        for m in recent_msgs[:3]:  # ✅ Check first 3 messages (was 5) for faster loading
             sender = m.get("from", {}).get("emailAddress", {}).get("name")
             if sender:
                 senders[sender] = senders.get(sender, 0) + 1
@@ -228,10 +234,14 @@ def get_outlook_email_summary(user_id: str) -> str:
         print("⚠ Outlook summary error:", e)
         return ""
 
-def get_email_counts(user_id: str) -> Dict[str, int]:
+def get_email_counts(user_id: str, gmail_service=None, outlook_token=None) -> Dict[str, int]:
     """
     Fetches email counts from both Gmail and Outlook for the morning brief UI.
     Returns structured count data for display.
+    
+    Args:
+        user_id: User ID
+        gmail_service: Optional pre-built Gmail service (to avoid re-fetching credentials)
     """
     print(f"📊 Fetching email counts for user: {user_id}")
     
@@ -249,12 +259,18 @@ def get_email_counts(user_id: str) -> Dict[str, int]:
     # Fetch Gmail counts
     if EMAIL_AVAILABLE:
         try:
-            # Get Google credentials
-            creds_row = get_creds(user_id)
-            if creds_row:
-                # Build credentials and Gmail service
-                credentials = _creds(creds_row)
-                gmail_service = build("gmail", "v1", credentials=credentials)
+            # ✅ Reuse provided service if available, otherwise build new one
+            if gmail_service is None:
+                # Get Google credentials
+                creds_row = get_creds(user_id)
+                if creds_row:
+                    # Build credentials and Gmail service
+                    credentials = _creds(creds_row)
+                    gmail_service = build("gmail", "v1", credentials=credentials)
+                else:
+                    gmail_service = None
+            
+            if gmail_service:
                 
                 # Get total unread count
                 unread_response = gmail_service.users().messages().list(
@@ -275,71 +291,81 @@ def get_email_counts(user_id: str) -> Dict[str, int]:
             print(f"⚠️ Error fetching Gmail counts: {e}")
     
     # Fetch Outlook counts
-    try:
-        from supabase import create_client
-        import os
-        SUPABASE_URL = os.getenv("SUPABASE_URL")
-        SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-        GRAPH_API_URL = "https://graph.microsoft.com/v1.0"
-        
-        if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY:
-            supabase_db = create_client(SUPABASE_URL.rstrip('/'), SUPABASE_SERVICE_ROLE_KEY)
+    # ✅ Use provided outlook_token if available, otherwise fetch from database
+    if outlook_token:
+        access_token = outlook_token
+        print("✅ Morning Brief: Using cached Outlook token for email counts")
+    else:
+        access_token = None
+        try:
+            from supabase import create_client
+            import os
+            SUPABASE_URL = os.getenv("SUPABASE_URL")
+            SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+            GRAPH_API_URL = "https://graph.microsoft.com/v1.0"
             
-            # Get Outlook token from database
-            res = supabase_db.table("outlook_credentials").select("*").eq("uid", user_id).execute()
-            if res.data and len(res.data) > 0:
-                creds = res.data[0]
-                access_token = creds.get("access_token")
-                expiry_str = creds.get("expiry")
+            if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY:
+                supabase_db = create_client(SUPABASE_URL.rstrip('/'), SUPABASE_SERVICE_ROLE_KEY)
                 
-                # Check if token is expired (with 5 minute buffer)
-                if expiry_str:
-                    try:
-                        expiry = datetime.fromisoformat(expiry_str.replace("Z", "+00:00"))
-                        now = datetime.now(timezone.utc)
-                        if expiry <= (now + timedelta(minutes=5)):
-                            # Token expired, try to refresh
-                            refresh_token = creds.get("refresh_token")
-                            if refresh_token:
-                                MICROSOFT_CLIENT_ID = os.getenv("MICROSOFT_CLIENT_ID")
-                                MICROSOFT_CLIENT_SECRET = os.getenv("MICROSOFT_CLIENT_SECRET")
-                                MICROSOFT_TOKEN_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
-                                
-                                data = {
-                                    "client_id": MICROSOFT_CLIENT_ID,
-                                    "scope": "User.Read Calendars.ReadWrite Mail.Read",
-                                    "refresh_token": refresh_token,
-                                    "grant_type": "refresh_token",
-                                    "client_secret": MICROSOFT_CLIENT_SECRET
-                                }
-                                refresh_res = requests.post(MICROSOFT_TOKEN_URL, data=data)
-                                new_token_data = refresh_res.json()
-                                
-                                if "access_token" in new_token_data:
-                                    expires_in = new_token_data.get("expires_in", 3600)
-                                    new_expiry = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
-                                    update_payload = {
-                                        "access_token": new_token_data.get("access_token"),
-                                        "refresh_token": new_token_data.get("refresh_token", refresh_token),
-                                        "expiry": new_expiry.isoformat(),
-                                    }
-                                    supabase_db.table("outlook_credentials").update(update_payload).eq("uid", user_id).execute()
-                                    access_token = new_token_data.get("access_token")
-                    except Exception as e:
-                        print(f"⚠️ Error refreshing Outlook token: {e}")
-                
-                if access_token:
-                    # Fetch Outlook unread count
-                    headers = {"Authorization": f"Bearer {access_token}"}
-                    outlook_url = f"{GRAPH_API_URL}/me/messages?$filter=isRead eq false&$count=true&$top=1"
-                    response = requests.get(outlook_url, headers=headers, timeout=10)
+                # Get Outlook token from database
+                res = supabase_db.table("outlook_credentials").select("*").eq("uid", user_id).execute()
+                if res.data and len(res.data) > 0:
+                    creds = res.data[0]
+                    access_token = creds.get("access_token")
+                    expiry_str = creds.get("expiry")
                     
-                    if response.status_code == 200:
-                        data = response.json()
-                        outlook_count = data.get("@odata.count", 0)
-                        print(f"✅ Morning Brief: Found {outlook_count} Outlook unread emails")
-    except Exception as e:
-        print(f"⚠️ Error fetching Outlook counts: {e}")
+                    # Check if token is expired (with 5 minute buffer)
+                    if expiry_str:
+                        try:
+                            expiry = datetime.fromisoformat(expiry_str.replace("Z", "+00:00"))
+                            now = datetime.now(timezone.utc)
+                            if expiry <= (now + timedelta(minutes=5)):
+                                # Token expired, try to refresh
+                                refresh_token = creds.get("refresh_token")
+                                if refresh_token:
+                                    MICROSOFT_CLIENT_ID = os.getenv("MICROSOFT_CLIENT_ID")
+                                    MICROSOFT_CLIENT_SECRET = os.getenv("MICROSOFT_CLIENT_SECRET")
+                                    MICROSOFT_TOKEN_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
+                                    
+                                    data = {
+                                        "client_id": MICROSOFT_CLIENT_ID,
+                                        "scope": "User.Read Calendars.ReadWrite Mail.Read",
+                                        "refresh_token": refresh_token,
+                                        "grant_type": "refresh_token",
+                                        "client_secret": MICROSOFT_CLIENT_SECRET
+                                    }
+                                    refresh_res = requests.post(MICROSOFT_TOKEN_URL, data=data)
+                                    new_token_data = refresh_res.json()
+                                    
+                                    if "access_token" in new_token_data:
+                                        expires_in = new_token_data.get("expires_in", 3600)
+                                        new_expiry = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+                                        update_payload = {
+                                            "access_token": new_token_data.get("access_token"),
+                                            "refresh_token": new_token_data.get("refresh_token", refresh_token),
+                                            "expiry": new_expiry.isoformat(),
+                                        }
+                                        supabase_db.table("outlook_credentials").update(update_payload).eq("uid", user_id).execute()
+                                        access_token = new_token_data.get("access_token")
+                        except Exception as e:
+                            print(f"⚠️ Error refreshing Outlook token: {e}")
+        except Exception as e:
+            print(f"⚠️ Error fetching Outlook token: {e}")
+    
+    if access_token:
+        try:
+            GRAPH_API_URL = "https://graph.microsoft.com/v1.0"
+            # Fetch Outlook unread count
+            headers = {"Authorization": f"Bearer {access_token}"}
+            outlook_url = f"{GRAPH_API_URL}/me/messages?$filter=isRead eq false&$count=true&$top=1"
+            response = requests.get(outlook_url, headers=headers, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                outlook_count = data.get("@odata.count", 0)
+                print(f"✅ Morning Brief: Found {outlook_count} Outlook unread emails")
+        except Exception as e:
+            print(f"⚠️ Error fetching Outlook counts: {e}")
     
     total_unread = gmail_count + outlook_count
     

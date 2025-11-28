@@ -455,6 +455,9 @@ export default function Home() {
 			const { getValidToken } = await import("@/utils/auth");
 			const token = await getValidToken();
 
+			// Auto-detect timezone from browser
+			const detectedTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
 			const response = await fetch(`${apiBase}/api/text-query`, {
 				method: "POST",
 				headers: {
@@ -466,6 +469,7 @@ export default function Home() {
 					query: queryText,
 					history: textMessages,
 					token, // ✅ include token in body for backend
+					timezone: detectedTimezone, // 🌍 Auto-detect and send timezone
 				}),
 			});
 
@@ -507,6 +511,37 @@ export default function Home() {
 				return;
 			}
 
+			// ✅ Handle calendar actions (schedule, cancel, reschedule)
+			if (data.action && data.action.startsWith("calendar_")) {
+				// Display the response text from Mira
+				if (data.text) {
+					setTextMessages((prev) => [
+						...prev,
+						{ role: "assistant", content: data.text },
+					]);
+				}
+				// Log the action result for debugging
+				if (data.actionResult) {
+					console.log(
+						"Calendar action completed:",
+						data.action,
+						data.actionResult
+					);
+				}
+				// ✅ Dispatch event to refresh dashboard and calendar page
+				if (typeof window !== "undefined") {
+					window.dispatchEvent(
+						new CustomEvent("miraCalendarUpdated", {
+							detail: {
+								action: data.action,
+								result: data.actionResult,
+							},
+						})
+					);
+				}
+				return;
+			}
+
 			// ✅ Default case — add assistant text reply
 			if (data.text) {
 				setTextMessages((prev) => [
@@ -533,7 +568,7 @@ export default function Home() {
 	return (
 		<div className="flex flex-col min-h-screen bg-[#F8F8FB] text-gray-800">
 			{/* Global Header Bar */}
-			<div className="absolute top-6 left-0 w-full pl-[70px] md:pl-[90px]">
+			<div className="fixed top-0 left-0 w-full bg-[#F8F8FB] pl-[70px] md:pl-[90px]">
 				<HeaderBar
 					dateLabel={new Date().toLocaleDateString("en-US", {
 						weekday: "short",
@@ -546,16 +581,18 @@ export default function Home() {
 					isWeatherLoading={isWeatherLoading}
 				/>
 			</div>
-			<main className="flex-1 flex flex-col items-center px-2 sm:px-4 md:px-6 pt-20 pb-20">
+			<main className="flex-1 flex flex-col items-center px-2 sm:px-4 md:px-6">
 				{/* SCALE CONTAINER */}
-				<div className="scale-[0.9] flex flex-col items-center w-full max-w-[900px] mx-auto px-4">
+				<div className="scale-[0.85] flex flex-col items-center w-full max-w-[900px] mx-auto px-4">
 					{/* Orb + Greeting */}
-					<div className="relative flex flex-col items-center mt-9 sm:mt-20">
+					<div className="relative flex flex-col items-center mt-9 max-sm:mt-8">
 						<div className="w-32 h-32 sm:w-44 sm:h-44 rounded-full bg-gradient-to-br from-[#C4A0FF] via-[#E1B5FF] to-[#F5C5E5] shadow-[0_0_80px_15px_rgba(210,180,255,0.45)] animate-pulse"></div>
+					</div>
+					{textMessages.length === 0 && (
 						<p className="w-full max-w-[368px] h-[50px] opacity-100 text-[rgba(70,70,71,1)] font-['Outfit'] font-medium text-lg sm:text-2xl md:text-3xl lg:text-[40px] leading-[100%] tracking-[0.5%] mt-6 sm:mt-8 text-center whitespace-nowrap flex items-center justify-center">
 							{greeting}
 						</p>
-					</div>
+					)}
 
 					{/* Conversation Feed for Text Mode */}
 					{isTextMode && textMessages.length > 0 && (
@@ -563,14 +600,16 @@ export default function Home() {
 							{textMessages.map((msg, idx) => (
 								<div
 									key={idx}
-									className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"
-										}`}
+									className={`flex ${
+										msg.role === "user" ? "justify-end" : "justify-start"
+									}`}
 								>
 									<div
-										className={`max-w-[80%] rounded-2xl px-4 py-3 ${msg.role === "user"
-											? "bg-gradient-to-r from-[#d9b8ff] to-[#bfa3ff] text-gray-900"
-											: "bg-white border border-gray-200 text-gray-800"
-											} shadow-sm`}
+										className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+											msg.role === "user"
+												? "bg-gradient-to-r from-[#d9b8ff] to-[#bfa3ff] text-gray-900"
+												: "bg-white border border-gray-200 text-gray-800"
+										} shadow-sm`}
 									>
 										<p className="text-sm leading-relaxed">{msg.content}</p>
 									</div>
@@ -589,9 +628,34 @@ export default function Home() {
 							)}
 						</div>
 					)}
-
+					{summaryOverlayVisible && (
+						<div className="mt-10 flex w-full justify-center px-4">
+							<EmailCalendarOverlay
+								visible={summaryOverlayVisible}
+								stage={summaryStage}
+								steps={summarySteps}
+								emails={summaryEmails}
+								calendarEvents={summaryEvents}
+								focusNote={summaryFocus}
+								isMuted={isMuted}
+								onMuteToggle={handleMuteToggle}
+								chips={{
+									dateLabel: getFormattedDate(timezone),
+									locationLabel: isLocationLoading ? "Detecting..." : location,
+									temperatureLabel:
+										temperatureC != null
+											? `${Math.round(temperatureC)}°`
+											: isWeatherLoading
+											? "..."
+											: "—",
+								}}
+								showContextChips={false}
+								showControls={false}
+							/>
+						</div>
+					)}
 					{/* Input Bar — Always Visible */}
-					<div className="relative mt-10 sm:mt-14 w-full max-w-[700px] flex flex-col items-center">
+					<div className="relative mt-6 sm:mt-14 w-full max-w-[700px] flex flex-col items-center">
 						<div className="w-full rounded-[10px] bg-gradient-to-r from-[#F4A4D3] to-[#B5A6F7] p-[1.5px] shadow-[0_12px_35px_rgba(181,166,247,0.45)]">
 							<div className="flex items-center rounded-[10px] bg-white px-4 sm:px-5 py-2 sm:py-2.5 w-full">
 								<input
@@ -626,8 +690,8 @@ export default function Home() {
 						</div>
 					</div>
 
-					{/* Example Prompts — Only Visible Before Conversation */}
-					{!isConversationActive && textMessages.length === 0 && (
+					{/* Example Prompts — Visible until first user message */}
+					{textMessages.length === 0 && (
 						<div className="w-full max-w-[724px] min-h-[198px] text-left opacity-100 mt-6 sm:mt-8 px-4">
 							<p className="w-full max-w-[724px] h-auto min-h-[23px] opacity-100 text-[rgba(40,40,41,1)] font-['Outfit'] font-normal text-base sm:text-[18px] leading-[100%] tracking-[0.5%] mb-3">
 								Or start with an example below
@@ -646,7 +710,7 @@ export default function Home() {
 									<button
 										key={i}
 										onClick={() => {
-											setIsConversationActive(true); // ✅ hide examples once clicked
+											setIsConversationActive(true);
 											handleTextSubmit(example);
 										}}
 										disabled={isLoadingResponse}
@@ -659,104 +723,76 @@ export default function Home() {
 						</div>
 					)}
 
-					{/* Email & calendar thinking panel */}
-					{summaryOverlayVisible && (
-						<div className="mt-10 flex w-full justify-center px-4">
-							<EmailCalendarOverlay
-								visible={summaryOverlayVisible}
-								stage={summaryStage}
-								steps={summarySteps}
-								emails={summaryEmails}
-								calendarEvents={summaryEvents}
-								focusNote={summaryFocus}
-								isMuted={isMuted}
-								onMuteToggle={handleMuteToggle}
-								chips={{
-									dateLabel: getFormattedDate(timezone),
-									locationLabel: isLocationLoading ? "Detecting..." : location,
-									temperatureLabel:
-										temperatureC != null
-											? `${Math.round(temperatureC)}°`
-											: isWeatherLoading
-												? "..."
-												: "—",
-								}}
-								showContextChips={false}
-								showControls={false}
-							/>
-						</div>
-					)}
-
 					{/* Mic & Keyboard Toggle */}
-					<div className="mt-10 sm:mt-12 flex items-center justify-center">
-						<div className="relative w-[130px] sm:w-[150px] h-[36px] border border-[#000] bg-white rounded-full px-[6px] shadow-[0_1px_4px_rgba(0,0,0,0.08)] flex items-center justify-between">
-							{/* Mic Button */}
-							<button
-								onClick={() => {
-									const newState = !isListening;
-									setIsListening(newState);
-									if (newState) {
+					<div
+						className="
+    w-full 
+    flex 
+    justify-center 
+    mt-6            
+    max-sm:mt-4
+	   max-sm:mb-6
+"
+					>
+						<div className="relative w-[130px] sm:w-[150px] …">
+							{" "}
+							<div className="relative w-[130px] sm:w-[150px] h-[36px] border border-[#000] bg-white rounded-full px-[6px] shadow-[0_1px_4px_rgba(0,0,0,0.08)] flex items-center justify-between">
+								{/* Mic Button */}
+								<button
+									onClick={() => {
+										setIsListening(true);
+										setIsTextMode(false);
+
 										setIsConversationActive(true);
 										startMiraVoice();
-									} else {
-										setIsConversationActive(false);
-										stopMiraVoice();
-										setIsMuted(false);
-										setMiraMute(false);
-									}
-								}}
-								className={`flex items-center justify-center w-[60px] h-[28px] rounded-full border border-gray-200 transition-all duration-300 ${isListening
-									? "bg-black hover:bg-gray-800"
-									: "bg-white hover:bg-gray-50"
+									}}
+									className={`flex items-center justify-center w-[60px] h-[28px] rounded-full border border-gray-200 transition-all duration-300 ${
+										isListening ? "bg-black" : "bg-white"
 									}`}
-							>
-								<Image
-									src={
-										isListening
-											? "/Icons/Property 1=Mic.svg"
-											: "/Icons/Property 1=MicOff.svg"
-									}
-									alt={isListening ? "Mic On" : "Mic Off"}
-									width={16}
-									height={16}
-									className={`transition-all duration-300 ${isListening ? "invert" : "brightness-0"
-										}`}
-								/>
-							</button>
+								>
+									<Image
+										src={
+											isListening
+												? "/Icons/Property 1=Mic.svg"
+												: "/Icons/Property 1=MicOff.svg"
+										}
+										alt="Mic"
+										width={16}
+										height={16}
+										className={isListening ? "invert" : "brightness-0"}
+									/>
+								</button>
 
-							{/* Keyboard Button */}
-							<button
-								onClick={() => {
-									const newTextMode = !isTextMode;
-									setIsTextMode(newTextMode);
-									if (newTextMode) {
-										// Switching to text mode
+								{/* Keyboard Button */}
+								<button
+									onClick={() => {
+										setIsTextMode(true);
 										setIsListening(false);
+
 										setIsConversationActive(false);
 										stopMiraVoice();
 										setIsMuted(false);
 										setMiraMute(false);
-									}
-								}}
-								className={`flex items-center justify-center w-[60px] h-[28px] rounded-full border border-gray-200 transition-all duration-300 ${isTextMode || !isListening
-									? "bg-black hover:bg-gray-800"
-									: "bg-white hover:bg-gray-50"
+									}}
+									className={`flex items-center justify-center w-[60px] h-[28px] rounded-full border border-gray-200 transition-all duration-300 ${
+										isTextMode ? "bg-black" : "bg-white"
 									}`}
-							>
-								<Image
-									src="/Icons/Property 1=Keyboard.svg"
-									alt="Keyboard Icon"
-									width={16}
-									height={16}
-									className={`transition-all duration-300 ${isTextMode || !isListening ? "invert" : "brightness-0"
-										}`}
-								/>
-							</button>
+								>
+									<Image
+										src="/Icons/Property 1=Keyboard.svg"
+										alt="Keyboard Icon"
+										width={16}
+										height={16}
+										className={isTextMode ? "invert" : "brightness-0"}
+									/>
+								</button>
+							</div>
 						</div>
 					</div>
+					{/* Email & calendar thinking panel */}
 				</div>
-				<Sidebar />
 			</main>
+			<Sidebar />
 		</div>
 	);
 }
