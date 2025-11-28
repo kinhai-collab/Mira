@@ -30,7 +30,7 @@ export default function RecommendationPanel({
 		title: string;
 		timeRange: string;
 		meetingLink?: string | null;
-		provider?: string | null;  // Meeting provider (google-meet, microsoft-teams, zoom)
+		provider?: string | null; // Meeting provider (google-meet, microsoft-teams, zoom)
 		calendar_provider?: string | null;
 	}[];
 
@@ -103,7 +103,7 @@ export default function RecommendationPanel({
 				</div>
 
 				<div className="mt-[10px] flex items-center gap-1 cursor-pointer group w-fit ml-[24px]">
-					<p className="text-[14px] font-medium text-[#735FF8] group-hover:underline underline-offset-2">
+					<p className="text-[14px] font-light text-[#735FF8] group-hover:underline underline-offset-2">
 						See More
 					</p>
 
@@ -130,9 +130,9 @@ export default function RecommendationPanel({
 
 			{/* SUMMARY */}
 			<div className="mt-2">
-				<p className="text-[18px] font-normal text-[#1F1F1F] mb-2">Summary</p>
+				<p className="text-[20px] font-normal text-[#1F1F1F] mb-2">Summary</p>
 
-				<div className="pl-[20px] border-l-[2px] border-[#382099] space-y-[2px]">
+				<div className="border-l-[1px] border-[#382099] pl-[24px] space-y-[4px]">
 					{briefLines.map((line, index) => (
 						<p
 							key={index}
@@ -148,7 +148,7 @@ export default function RecommendationPanel({
 
 			{/* WEATHER */}
 			<div className="space-y-2">
-				<p className="text-[18px] font-normal text-[#1F1F1F]">Weather</p>
+				<p className="text-[20px] font-normal text-[#1F1F1F]">Weather</p>
 
 				<div className="flex items-center gap-2">
 					<Image
@@ -174,20 +174,23 @@ export default function RecommendationPanel({
 
 			{/* EVENTS */}
 			<div className="space-y-3">
-				<p className="text-[18px] font-semibold text-[#1F1F1F]">
+				<p className="text-[20px] font-normal text-[#1F1F1F]">
 					{totalEvents ?? 0} Events
 				</p>
 
 				{(() => {
 					// Calculate Teams count dynamically from events
-					const teamsCount = events?.filter(ev => {
-						const link = ev.meetingLink || '';
-						const provider = ev.provider || '';
-						return link.includes('teams.microsoft.com') || 
-						       link.includes('teams.live.com') || 
-						       provider === 'microsoft-teams';
-					}).length || 0;
-					
+					const teamsCount =
+						events?.filter((ev) => {
+							const link = ev.meetingLink || "";
+							const provider = ev.provider || "";
+							return (
+								link.includes("teams.microsoft.com") ||
+								link.includes("teams.live.com") ||
+								provider === "microsoft-teams"
+							);
+						}).length || 0;
+
 					if (teamsCount > 0) {
 						return (
 							<p className="flex items-center gap-2 text-[14px] text-[#6A6A6A]">
@@ -219,33 +222,47 @@ export default function RecommendationPanel({
 						// Note: calendar_provider (google/outlook) is NOT used for icon selection
 						// Only meeting links and meeting providers determine the icon
 						const getEventIcon = () => {
-							const link = (ev.meetingLink || '').toLowerCase();
-							const provider = (ev.provider || '').toLowerCase();
-							
+							const link = (ev.meetingLink || "").toLowerCase();
+							const provider = (ev.provider || "").toLowerCase();
+
 							// Check link first (case-insensitive) - only for actual meeting links
-							if (link.includes('meet.google.com') || link.includes('hangouts.google.com') || link.includes('google.com/meet')) {
-								return '/Icons/logos_google-meet.svg';
-							} else if (link.includes('teams.microsoft.com') || link.includes('teams.live.com') || link.includes('microsoft.com/teams')) {
-								return '/Icons/logos_microsoft-teams.svg';
-							} else if (link.includes('zoom.us') || link.includes('zoom.com')) {
-								return '/Icons/fluent_person-16-filled.svg';
+							if (
+								link.includes("meet.google.com") ||
+								link.includes("hangouts.google.com") ||
+								link.includes("google.com/meet")
+							) {
+								return "/Icons/logos_google-meet.svg";
+							} else if (
+								link.includes("teams.microsoft.com") ||
+								link.includes("teams.live.com") ||
+								link.includes("microsoft.com/teams")
+							) {
+								return "/Icons/logos_microsoft-teams.svg";
+							} else if (
+								link.includes("zoom.us") ||
+								link.includes("zoom.com")
+							) {
+								return "/Icons/fluent_person-16-filled.svg";
 							}
-							
+
 							// Fallback to provider field (case-insensitive) - only for meeting providers
 							// Only check for specific meeting provider names, not generic "google" or "outlook"
-							if (provider === 'google-meet') {
-								return '/Icons/logos_google-meet.svg';
-							} else if (provider === 'microsoft-teams' || provider === 'teams') {
-								return '/Icons/logos_microsoft-teams.svg';
-							} else if (provider === 'zoom') {
-								return '/Icons/fluent_person-16-filled.svg';
+							if (provider === "google-meet") {
+								return "/Icons/logos_google-meet.svg";
+							} else if (
+								provider === "microsoft-teams" ||
+								provider === "teams"
+							) {
+								return "/Icons/logos_microsoft-teams.svg";
+							} else if (provider === "zoom") {
+								return "/Icons/fluent_person-16-filled.svg";
 							}
-							
+
 							// Default: no meeting link or provider (personal event)
 							// Always use person icon for events without meeting links
-							return '/Icons/fluent_person-16-filled.svg';
+							return "/Icons/fluent_person-16-filled.svg";
 						};
-						
+
 						return (
 							<div
 								key={ev.id}
@@ -260,7 +277,7 @@ export default function RecommendationPanel({
 								/>
 
 								<div className="flex flex-col">
-									<p className="text-[16px] font-medium text-[#1F1F1F]">
+									<p className="text-[16px] font-light text-[#1F1F1F]">
 										{ev.title}
 									</p>
 									<p className="text-[14px] text-[#6A6A6A]">{ev.timeRange}</p>
@@ -275,7 +292,7 @@ export default function RecommendationPanel({
 
 			{/* EMAIL SUMMARY */}
 			<div className="space-y-3">
-				<p className="text-[18px] font-semibold text-[#1F1F1F]">
+				<p className="text-[20px] font-normal text-[#1F1F1F]">
 					{emailImportant ?? 0} Important Emails
 				</p>
 
@@ -312,7 +329,7 @@ export default function RecommendationPanel({
 							);
 						}
 					}}
-					className="px-6 py-2 rounded-full border border-[#CFCFCF] text-[#1F1F1F] font-medium"
+					className="px-6 py-2 rounded-full border border-[#CFCFCF] text-[#1F1F1F] font-light"
 				>
 					Repeat
 				</button>
@@ -326,7 +343,7 @@ export default function RecommendationPanel({
 						);
 						onAccept();
 					}}
-					className="px-6 py-2 rounded-full bg-[#1F1F1F] text-white font-medium"
+					className="px-6 py-2 rounded-full bg-[#1F1F1F] text-white font-light"
 				>
 					Finish
 				</button>

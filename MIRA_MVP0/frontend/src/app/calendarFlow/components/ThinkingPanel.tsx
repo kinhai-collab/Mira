@@ -26,12 +26,12 @@ export default function CalendarThinkingPanel() {
 			</div>
 
 			{/* Title */}
-			<p className="text-[#1F1F1F] font-semibold text-[19px] mb-4">
+			<p className="text-[#1F1F1F] font-normal text-[20px] mb-4">
 				Summarizing your emails and events…
 			</p>
 
 			{/* Task List */}
-			<div className="pl-5 border-l-[3px] border-[#C9BDFC] space-y-3">
+			<div className="border-l-[1px] border-[#382099] pl-[24px] space-y-[4px]">
 				{/* Task 1 */}
 				<div className="flex items-center gap-3">
 					<Image
