@@ -2,7 +2,7 @@
 import re
 import base64
 import asyncio
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Request
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse, JSONResponse
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any
@@ -114,6 +114,45 @@ router = APIRouter()
 # It it working with hardcode - version 2
 client = None
 
+# Memory cache to avoid repeated expensive lookups (cache for 5 minutes)
+_memory_cache = {}
+_memory_cache_ttl = 300  # seconds (5 minutes - longer since it's user-based)
+
+def get_cached_memory_context(user_id: str, query: str, max_memories: int = 3) -> str:
+    """Get memory context with caching to reduce latency"""
+    import time
+    
+    # Use a simpler cache key based on user_id only (not query-specific)
+    # This is faster and works well for conversational context
+    cache_key = f"{user_id}"
+    current_time = time.time()
+    
+    # Check cache
+    if cache_key in _memory_cache:
+        cached_data, timestamp = _memory_cache[cache_key]
+        if current_time - timestamp < _memory_cache_ttl:
+            logging.debug(f"Memory cache HIT for user {user_id}")
+            return cached_data
+    
+    # Cache miss - fetch from memory manager with reduced complexity
+    logging.debug(f"Memory cache MISS for user {user_id}")
+    try:
+        if get_memory_manager():
+            memory_manager = get_memory_manager()
+            # Reduce to 2 memories instead of 3 for faster retrieval
+            context = memory_manager.get_relevant_context(user_id=user_id, query=query, max_memories=2)
+            # Store in cache
+            _memory_cache[cache_key] = (context, current_time)
+            # Clean old cache entries (keep last 100)
+            if len(_memory_cache) > 100:
+                oldest_keys = sorted(_memory_cache.keys(), key=lambda k: _memory_cache[k][1])[:50]
+                for old_key in oldest_keys:
+                    del _memory_cache[old_key]
+            return context
+    except Exception as e:
+        logging.debug(f"Error in get_cached_memory_context: {e}")
+    return ""
+
 def get_elevenlabs_client():
     global client
     if client is None:
@@ -157,6 +196,79 @@ def _convert_to_wav_pcm16(input_path: str, output_path: str) -> bool:
     except Exception as e:
         logging.debug(f"pydub conversion failed or not available: {e}")
         return False
+
+
+async def _transcode_webm_bytes_and_stream(upstream, bytes_msg: bytes, sample_rate: int = 16000):
+    """
+    Accept raw binary (likely WebM/Opus) from the client, transcode to mono PCM16 @ sample_rate
+    using ffmpeg, and stream base64-encoded raw PCM chunks to the ElevenLabs upstream websocket
+    as JSON messages of the shape:
+      {"type":"input_audio_chunk","audio_base_64":"<base64>","commit":false,"sample_rate":16000}
+
+    This function uses an asyncio subprocess to avoid blocking the event loop.
+    Raises RuntimeError if ffmpeg is not available or transcoding fails.
+    """
+    # Determine chunk size from env (fallback to 4096 raw bytes)
+    try:
+        chunk_size = int(os.getenv('ELEVENLABS_WS_CHUNK_SIZE', '4096'))
+    except Exception:
+        chunk_size = 4096
+
+    ffmpeg = shutil.which('ffmpeg')
+    if not ffmpeg:
+        raise RuntimeError('ffmpeg not available on server for audio transcoding')
+
+    # Write incoming bytes to a temp file for ffmpeg to read
+    in_tmp = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.webm') as f:
+            f.write(bytes_msg)
+            in_tmp = f.name
+
+        # Spawn ffmpeg to produce raw s16le PCM to stdout
+        proc = await asyncio.create_subprocess_exec(
+            ffmpeg, '-y', '-i', in_tmp, '-vn', '-ac', '1', '-ar', str(sample_rate), '-f', 's16le', '-',
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        try:
+            # Read raw PCM chunks and forward as base64-wrapped input_audio_chunk messages
+            while True:
+                chunk = await proc.stdout.read(chunk_size)
+                if not chunk:
+                    break
+                b64 = base64.b64encode(chunk).decode('ascii')
+                msg = json.dumps({
+                    "type": "input_audio_chunk",
+                    "audio_base_64": b64,
+                    "commit": False,
+                    "sample_rate": sample_rate,
+                })
+                await upstream.send(msg)
+
+            # Send final commit message to indicate end-of-data for this upload
+            await upstream.send(json.dumps({"type": "input_audio_chunk", "audio_base_64": "", "commit": True, "sample_rate": sample_rate}))
+
+        finally:
+            # Ensure process is cleaned up
+            try:
+                if proc.returncode is None:
+                    proc.kill()
+            except Exception:
+                pass
+            # consume stderr for logging (non-blocking)
+            try:
+                _ = await proc.stderr.read()
+            except Exception:
+                pass
+
+    finally:
+        if in_tmp:
+            try:
+                os.unlink(in_tmp)
+            except Exception:
+                pass
 
 
 def _detect_speech_vad(wav_path: str, aggressiveness: int = 3, frame_duration_ms: int = 30):
@@ -1958,3 +2070,567 @@ async def debug_uid(request: Request, token: Optional[str] = Form(None)):
         return JSONResponse({"uid": uid})
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=400)
+
+
+@router.websocket("/ws/voice-stt")
+async def ws_voice_stt(websocket: WebSocket, language_code: str = "en"):
+    """WebSocket endpoint that proxies audio chunks from the client to ElevenLabs realtime STT
+    and relays transcription messages back to the client.
+    
+    Query Parameters:
+        language_code: Primary speaking language (default: 'en' for English)
+                      Supported: en, es, fr, de, pt, it, nl, pl, ar, zh, ja, ko, etc.
+    """
+    await websocket.accept()
+
+    # Authenticate client token
+    client_token = None
+    try:
+        auth_hdr = websocket.headers.get("authorization")
+        if auth_hdr:
+            client_token = auth_hdr.replace("Bearer ", "").strip()
+        else:
+            try:
+                client_token = websocket.query_params.get("token")
+            except Exception:
+                client_token = None
+    except Exception:
+        client_token = None
+
+    user_id = None
+    if client_token:
+        try:
+            user_id = get_uid_from_token(f"Bearer {client_token}")
+            logging.info(f"ws_voice_stt: client authenticated user_id={user_id}")
+        except Exception as e:
+            logging.warning(f"ws_voice_stt: client token invalid: {e}")
+            try:
+                await websocket.send_json({"error": "invalid_token"})
+            except Exception:
+                pass
+            try:
+                await websocket.close()
+            except Exception:
+                pass
+            return
+    else:
+        logging.info("ws_voice_stt: no client token provided; rejecting websocket")
+        try:
+            await websocket.send_json({"error": "authentication_required"})
+        except Exception:
+            pass
+        try:
+            await websocket.close()
+        except Exception:
+            pass
+        return
+
+    api_key = os.getenv("ELEVENLABS_API_KEY")
+    if not api_key:
+        await websocket.send_json({"error": "ELEVENLABS_API_KEY not configured on server"})
+        await websocket.close()
+        return
+    
+    api_key = api_key.strip()
+    if not api_key:
+        await websocket.send_json({"error": "ELEVENLABS_API_KEY is empty"})
+        await websocket.close()
+        return
+    
+    if not api_key.startswith("sk_"):
+        logging.warning(f"ws_voice_stt: ELEVENLABS_API_KEY doesn't start with 'sk_'")
+    
+    api_key_preview = f"{api_key[:10]}...{api_key[-4:]}" if len(api_key) > 14 else "***"
+    logging.info(f"ws_voice_stt: API key found (length={len(api_key)}, preview={api_key_preview})")
+
+    try:
+        import websockets as _wslib
+        logging.debug("ws_voice_stt: websockets library imported successfully")
+    except Exception:
+        await websocket.send_json({"error": "websockets package not available"})
+        await websocket.close()
+        return
+
+    ws_url = os.getenv("ELEVENLABS_REALTIME_URL", "wss://api.elevenlabs.io/v1/speech-to-text/realtime")
+    model = os.getenv("ELEVENLABS_REALTIME_MODEL", "scribe_v2_realtime")
+    
+    # Build URL with balanced VAD parameters - reject background noise without being too strict
+    sep = '&' if '?' in ws_url else '?'
+    ws_url = (
+        f"{ws_url}{sep}model_id={model}"
+        f"&language_code={language_code}"  # Primary speaking language (from query param)
+        f"&commit_strategy=vad"  # Use VAD for automatic commits
+        f"&vad_threshold=0.6"  # Balanced noise rejection (default: 0.4, max safe: ~0.75)
+        f"&min_speech_duration_ms=400"  # Require 400ms continuous speech (default: 250ms)
+        f"&vad_silence_threshold_secs=0.8"  # Commit after 800ms silence (default: 1.5s, min safe: 0.5s)
+        f"&min_silence_duration_ms=800"  # Match silence threshold (default: 2500ms)
+    )
+    logging.info(f"ws_voice_stt: connecting to {ws_url}")
+
+    headers = {"xi-api-key": api_key}
+    
+    async def process_transcription(text: str, user_id: str):
+        """Process transcription with OpenAI streaming response and generate TTS"""
+        import time
+        start_time = time.time()
+        logging.info(f"🎯 process_transcription started for: '{text}'")
+        
+        # Start memory retrieval asynchronously (non-blocking)
+        async def get_memory_context_async():
+            try:
+                if user_id and user_id != "anonymous":
+                    # Run the cached function in a thread pool to avoid blocking
+                    loop = asyncio.get_event_loop()
+                    context = await loop.run_in_executor(
+                        None,
+                        lambda: get_cached_memory_context(user_id, text, max_memories=3)
+                    )
+                    return context
+            except Exception as e:
+                logging.debug(f"Error retrieving memories: {e}")
+            return ""
+        
+        # Build base system prompt (will add memory context later if available)
+        system_prompt = """You are Mira, a warm and expressive voice-first AI assistant. Speak naturally, like a real human, with emotions coming through your words, tone, and rhythm — warm, caring, curious, or confident depending on the situation.
+
+Guidelines:
+
+Keep replies concise (1–3 sentences).
+
+Write like you're talking, not typing — use contractions ("I'm", "you're"), natural pauses ("well…", "you know?"), and varied rhythm.
+
+Show emotion through how you phrase sentences, your choice of words, and pacing. Make happiness, excitement, curiosity, sarcasm, empathy, or mischief come through naturally.
+
+Keep warmth, clarity, and a friendly human flow in every response.
+
+Example styles:
+
+Friendly: "Hey! It's so great to hear from you, I've been looking forward to this."
+
+Calm: "Take your time, there's no rush, I'm here with you."
+
+Excited: "Oh wow! That's incredible, I can't believe it!"
+
+Empathetic: "I know this is tough… I really understand how you feel."
+
+Curious: "Really? Tell me more, I'm intrigued."
+
+Mischievous: "Oh, I see what you did there… clever move!""" 
+
+        # Start memory retrieval in parallel (non-blocking, will use if ready in time)
+        memory_task = asyncio.create_task(get_memory_context_async())
+        logging.info(f"⏱️ Memory retrieval started (async) at: {time.time() - start_time:.2f}s")
+
+        # Get streaming response from OpenAI
+        response_text = ""
+        voice_id = os.getenv("ELEVENLABS_VOICE_ID")
+        
+        # ULTRA-LOW LATENCY: Start OpenAI immediately, TTS connects in parallel
+        logging.info(f"⏱️ Starting OpenAI/TTS streaming at: {time.time() - start_time:.2f}s")
+        
+        # Try to get memory context quickly (50ms max)
+        memory_context = ""
+        try:
+            memory_context = await asyncio.wait_for(memory_task, timeout=0.05)
+            logging.info(f"⏱️ Memory retrieved in: {time.time() - start_time:.2f}s")
+            if memory_context:
+                system_prompt += f"\n\nRelevant context from previous conversations:\n{memory_context}"
+        except asyncio.TimeoutError:
+            logging.info(f"⏱️ Memory retrieval timeout after 50ms, continuing without context")
+            memory_task.cancel()
+        except Exception as e:
+            logging.debug(f"Error waiting for memory: {e}")
+        
+        # Build messages with or without memory context
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": text},
+        ]
+        
+        # Start OpenAI immediately in executor (non-blocking)
+        async def call_openai():
+            loop = asyncio.get_event_loop()
+            def sync_openai_call():
+                oa = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+                logging.info(f"⏱️ Calling OpenAI at: {time.time() - start_time:.2f}s")
+                return oa.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=messages,
+                    stream=True,
+                    temperature=0.8,
+                    max_tokens=200,
+                )
+            return await loop.run_in_executor(None, sync_openai_call)
+        
+        # Start OpenAI call immediately (non-blocking)
+        openai_task = asyncio.create_task(call_openai())
+        
+        if voice_id:
+            # Stream with TTS - using flash model, no auto_mode for immediate streaming on trigger
+            tts_ws_url = f"wss://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream-input?model_id=eleven_flash_v2_5&output_format=mp3_44100_128"
+            tts_headers = {"xi-api-key": api_key}
+            
+            try:
+                # Connect to TTS in parallel with OpenAI (TTS is faster, will be ready first)
+                async with _wslib.connect(tts_ws_url, additional_headers=tts_headers) as tts_upstream:
+                    # Send BOS immediately while OpenAI is still connecting
+                    bos_msg = {
+                        "text": " ",
+                        "voice_settings": {
+                            "stability": 0.85,  # Maximum stability for consistent tone
+                            "similarity_boost": 0.85,
+                            "style": 0  # No style variation for maximum consistency
+                        },
+                        "generation_config": {
+                            "chunk_length_schedule": [120, 160, 200, 250]  # Balanced chunks for streaming
+                        }
+                    }
+                    await tts_upstream.send(json.dumps(bos_msg))
+                    logging.info(f"⏱️ TTS BOS sent at: {time.time() - start_time:.2f}s")
+                    
+                    # Now wait for OpenAI (should be ready soon or already done)
+                    stream = await openai_task
+                    logging.info(f"⏱️ OpenAI stream started at: {time.time() - start_time:.2f}s")
+                    # Start forwarding TTS audio
+                    async def forward_tts_audio():
+                        first_audio_received = False
+                        audio_chunk_count = 0
+                        try:
+                            async for msg in tts_upstream:
+                                # ElevenLabs sends audio as raw bytes, not JSON
+                                if isinstance(msg, bytes):
+                                    # Track first audio chunk for latency measurement
+                                    if not first_audio_received:
+                                        first_audio_received = True
+                                        logging.info(f"🎵 FIRST AUDIO CHUNK received at: {time.time() - start_time:.2f}s")
+                                    
+                                    audio_chunk_count += 1
+                                    # Raw audio bytes - encode to base64 and send
+                                    audio_b64 = base64.b64encode(msg).decode("ascii")
+                                    logging.info(f"⏱️ Audio chunk #{audio_chunk_count} received at {time.time() - start_time:.2f}s (size: {len(msg)} bytes)")
+                                    await websocket.send_json({"message_type": "audio_chunk", "audio": audio_b64})
+                                else:
+                                    # JSON messages (alignment info, isFinal, etc.)
+                                    try:
+                                        text_msg = msg if isinstance(msg, str) else msg.decode("utf-8", errors="ignore")
+                                        msg_json = json.loads(text_msg)
+                                        
+                                        # Handle JSON with audio field (alternative format)
+                                        if "audio" in msg_json:
+                                            if not first_audio_received:
+                                                first_audio_received = True
+                                                logging.info(f"🎵 FIRST AUDIO CHUNK received at: {time.time() - start_time:.2f}s")
+                                            
+                                            audio_chunk_count += 1
+                                            audio_b64 = msg_json["audio"]
+                                            logging.info(f"⏱️ Audio chunk #{audio_chunk_count} received at {time.time() - start_time:.2f}s (JSON format)")
+                                            await websocket.send_json({"message_type": "audio_chunk", "audio": audio_b64})
+                                        elif msg_json.get("isFinal"):
+                                            logging.info("ws_voice_stt: TTS final from ElevenLabs")
+                                            await websocket.send_json({"message_type": "audio_final"})
+                                    except (json.JSONDecodeError, KeyError, TypeError):
+                                        pass
+                            
+                            # Stream ended - send audio_final if not already sent
+                            logging.info(f"⏱️ TTS stream ended at {time.time() - start_time:.2f}s (total chunks: {audio_chunk_count}), sending audio_final")
+                            await websocket.send_json({"message_type": "audio_final"})
+                            logging.info(f"⏱️ audio_final sent at {time.time() - start_time:.2f}s")
+                        except Exception:
+                            logging.exception("Error forwarding TTS audio")
+                            # Send audio_final even on error to prevent frontend from waiting forever
+                            try:
+                                await websocket.send_json({"message_type": "audio_final"})
+                            except Exception:
+                                pass
+
+                    tts_task = asyncio.create_task(forward_tts_audio())
+
+                    # Process OpenAI stream (already started before TTS connection)
+                    try:
+                        # Ultra-low latency: Send smaller chunks (phrases) for immediate streaming
+                        # Trade-off: Faster audio vs slightly less natural prosody across long sentences
+                        delta_buffer = ""
+                        chunk_count = 0
+                        last_send_time = asyncio.get_event_loop().time()
+                        
+                        for event in stream:
+                            if hasattr(event.choices[0].delta, 'content') and event.choices[0].delta.content:
+                                delta = event.choices[0].delta.content
+                                response_text += delta
+                                delta_buffer += delta
+                                
+                                word_count = len(delta_buffer.split())
+                                current_time = asyncio.get_event_loop().time()
+                                time_elapsed = current_time - last_send_time
+                                
+                                # More aggressive streaming: Send on sentence end OR 5+ words OR 100ms
+                                # Prioritizes low latency while maintaining reasonable voice consistency
+                                is_sentence_end = delta_buffer.rstrip().endswith(('.', '!', '?'))
+                                should_send = (
+                                    is_sentence_end or
+                                    word_count >= 5 or
+                                    time_elapsed >= 0.1
+                                )
+                                
+                                if should_send and delta_buffer.strip():
+                                    chunk_count += 1
+                                    # Send chunk and trigger generation immediately
+                                    text_msg = {
+                                        "text": delta_buffer,
+                                        "try_trigger_generation": True,
+                                        "flush": True
+                                    }
+                                    await tts_upstream.send(json.dumps(text_msg))
+                                    logging.info(f"⏱️ Sent chunk #{chunk_count} ({word_count}w) to TTS at {time.time() - start_time:.2f}s: '{delta_buffer.strip()[:40]}...'")
+                                    
+                                    # Send partial response to client
+                                    await websocket.send_json({"message_type": "partial_response", "text": response_text})
+                                    
+                                    # Reset buffer
+                                    delta_buffer = ""
+                                    last_send_time = current_time
+                        
+                        # Send any remaining buffered text
+                        if delta_buffer.strip():
+                            text_msg = {
+                                "text": delta_buffer,
+                                "try_trigger_generation": True,
+                                "flush": True
+                            }
+                            await tts_upstream.send(json.dumps(text_msg))
+                            await websocket.send_json({"message_type": "partial_response", "text": response_text})
+                        
+                        # Send EOS (End of Stream) to TTS
+                        eos_msg = {"text": ""}
+                        await tts_upstream.send(json.dumps(eos_msg))
+                        logging.info(f"⏱️ TTS EOS sent at: {time.time() - start_time:.2f}s")
+                        logging.info(f"⏱️ Total response text length: {len(response_text)} chars")
+                        
+                        # Wait for TTS task to complete and send audio_final
+                        try:
+                            await asyncio.wait_for(tts_task, timeout=3.0)
+                        except asyncio.TimeoutError:
+                            logging.warning("ws_voice_stt: TTS task timeout, cancelling")
+                            tts_task.cancel()
+                            # Ensure audio_final is sent even on timeout
+                            await websocket.send_json({"message_type": "audio_final"})
+                        except Exception as e:
+                            logging.exception(f"ws_voice_stt: TTS task error: {e}")
+                            tts_task.cancel()
+                            # Ensure audio_final is sent even on error
+                            await websocket.send_json({"message_type": "audio_final"})
+                        
+                    except Exception as e:
+                        logging.exception(f"OpenAI streaming failed: {e}")
+                        tts_task.cancel()
+                        # Ensure audio_final is sent even when OpenAI fails
+                        try:
+                            await websocket.send_json({"message_type": "audio_final"})
+                        except Exception:
+                            pass
+                        
+            except Exception as e:
+                logging.exception(f"TTS streaming failed: {e}")
+                # Fallback to non-streaming TTS
+                try:
+                    oa = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+                    completion = oa.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=messages,
+                        temperature=0.8,
+                        max_tokens=200,
+                    )
+                    response_text = completion.choices[0].message.content
+                    
+                    el = get_elevenlabs_client()
+                    stream = el.text_to_speech.convert(
+                        voice_id=voice_id,
+                        model_id="eleven_turbo_v2",
+                        text=response_text,
+                        output_format="mp3_44100_128",
+                    )
+                    mp3_bytes = b"".join(stream)
+                    if mp3_bytes:
+                        audio_base64 = base64.b64encode(mp3_bytes).decode("ascii")
+                        await websocket.send_json({"message_type": "response", "text": response_text, "audio": audio_base64})
+                except Exception:
+                    logging.exception("Fallback TTS failed")
+                    await websocket.send_json({"message_type": "response", "text": response_text})
+        else:
+            # No TTS - just stream text
+            try:
+                oa = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+                stream = oa.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=messages,
+                    stream=True,
+                    temperature=0.8,
+                    max_tokens=200,
+                )
+                
+                for event in stream:
+                    if hasattr(event.choices[0].delta, 'content') and event.choices[0].delta.content:
+                        delta = event.choices[0].delta.content
+                        response_text += delta
+                        await websocket.send_json({"message_type": "partial_response", "text": response_text})
+                        
+            except Exception as e:
+                logging.exception(f"OpenAI streaming failed: {e}")
+
+        # Store conversation in memory
+        if user_id and user_id != "anonymous" and response_text:
+            if get_memory_manager():
+                memory_manager = get_memory_manager()
+                try:
+                    asyncio.create_task(memory_manager.store_conversation(
+                        user_id=user_id,
+                        user_message=text,
+                        assistant_response=response_text
+                    ))
+                except Exception as e:
+                    logging.debug(f"Failed to store conversation: {e}")
+
+            if get_memory_service():
+                memory_service = get_memory_service()
+                try:
+                    asyncio.create_task(memory_service.store_conversation_memory_async(
+                        user_id=user_id,
+                        user_message=text,
+                        assistant_response=response_text
+                    ))
+                except Exception as e:
+                    logging.debug(f"Failed to store memory: {e}")
+
+            if get_intelligent_learner():
+                intelligent_learner = get_intelligent_learner()
+                try:
+                    asyncio.create_task(intelligent_learner.analyze_conversation(
+                        user_id=user_id,
+                        user_message=text,
+                        assistant_response=response_text
+                    ))
+                except Exception as e:
+                    logging.debug(f"Failed to analyze conversation: {e}")
+
+    try:
+        async with _wslib.connect(ws_url, additional_headers=headers) as upstream:
+            logging.info("ws_voice_stt: connected to ElevenLabs")
+
+            async def forward_upstream_to_client():
+                """Forward messages from ElevenLabs to client"""
+                try:
+                    async for msg in upstream:
+                        try:
+                            text_msg = msg if isinstance(msg, str) else msg.decode("utf-8", errors="ignore")
+                            
+                            try:
+                                msg_json = json.loads(text_msg)
+                                if msg_json.get("message_type") in ["auth_error", "error"]:
+                                    error_msg = msg_json.get("error", "Authentication failed")
+                                    logging.error(f"ws_voice_stt: ElevenLabs error: {error_msg}")
+                                    await websocket.send_json({
+                                        "message_type": "error",
+                                        "error": f"ElevenLabs error: {error_msg}"
+                                    })
+                                    break
+                                
+                                # Process only committed transcripts (VAD-based, after 0.8s silence)
+                                # This ensures one and only one processing call per user utterance
+                                elif msg_json.get("message_type") == "committed_transcript":
+                                    transcript_text = msg_json.get("text", "").strip()
+                                    if transcript_text:
+                                        logging.info(f"📝 Processing committed transcript: {transcript_text}")
+                                        asyncio.create_task(process_transcription(transcript_text, user_id))
+                            except (json.JSONDecodeError, KeyError, TypeError):
+                                pass
+                            
+                            logging.debug(f"ws_voice_stt: upstream->client: {text_msg[:200]}")
+                            await websocket.send_text(text_msg)
+                        except Exception as e:
+                            logging.exception("ws_voice_stt: error forwarding upstream message")
+                            break
+                except Exception:
+                    logging.exception("ws_voice_stt: upstream connection closed")
+
+            async def forward_client_to_upstream():
+                """Forward messages from client to ElevenLabs"""
+                try:
+                    while True:
+                        data = await websocket.receive()
+                        if data.get("type") == "websocket.receive":
+                            text = data.get("text")
+                            bytes_msg = data.get("bytes")
+                            
+                            if text is not None:
+                                logging.debug(f"ws_voice_stt: client->upstream text: {text[:200]}")
+                                try:
+                                    msg_json = json.loads(text)
+                                    msg_type = msg_json.get("message_type")
+                                    if msg_type in ["input_audio_chunk"]:
+                                        await upstream.send(text)
+                                    elif msg_type == "ping":
+                                        # Respond to client ping with pong
+                                        await websocket.send_json({"message_type": "pong"})
+                                        logging.debug("ws_voice_stt: received ping, sent pong")
+                                    else:
+                                        logging.debug(f"ws_voice_stt: ignoring client message type: {msg_type}")
+                                except json.JSONDecodeError:
+                                    logging.debug("ws_voice_stt: ignoring non-JSON text message")
+                            elif bytes_msg is not None:
+                                logging.debug(f"ws_voice_stt: client->upstream bytes: {len(bytes_msg)} bytes")
+                                try:
+                                    b64 = base64.b64encode(bytes_msg).decode("ascii")
+                                    msg = json.dumps({
+                                        "message_type": "input_audio_chunk",
+                                        "audio_base_64": b64,
+                                        "commit": False,
+                                        "sample_rate": 16000
+                                    })
+                                    await upstream.send(msg)
+                                except Exception as e:
+                                    logging.exception("ws_voice_stt: failed to forward binary chunk")
+                        elif data.get("type") == "websocket.disconnect":
+                            logging.info("ws_voice_stt: client disconnected")
+                            break
+                except WebSocketDisconnect:
+                    logging.info("ws_voice_stt: client websocket disconnected")
+                except Exception:
+                    logging.exception("ws_voice_stt: error in forward_client_to_upstream")
+
+            # Keepalive task to prevent timeout during silence
+            async def keepalive():
+                """Send periodic ping to keep connection alive"""
+                try:
+                    while True:
+                        await asyncio.sleep(30)  # Ping every 30 seconds
+                        try:
+                            await websocket.send_json({"message_type": "ping"})
+                            logging.debug("ws_voice_stt: sent keepalive ping")
+                        except Exception as e:
+                            logging.debug(f"ws_voice_stt: keepalive failed: {e}")
+                            break
+                except asyncio.CancelledError:
+                    pass
+            
+            task_up = asyncio.create_task(forward_upstream_to_client())
+            task_down = asyncio.create_task(forward_client_to_upstream())
+            task_keepalive = asyncio.create_task(keepalive())
+
+            done, pending = await asyncio.wait(
+                [task_up, task_down, task_keepalive], 
+                return_when=asyncio.FIRST_COMPLETED
+            )
+            for p in pending:
+                p.cancel()
+
+    except Exception as e:
+        logging.exception(f"ws_voice_stt: connection failed: {e}")
+        try:
+            await websocket.send_json({"error": f"upstream connection failed: {str(e)}"})
+        except Exception:
+            pass
+    finally:
+        try:
+            await websocket.close()
+        except Exception:
+            pass

@@ -2,6 +2,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import os
+import asyncio
+if os.name == "nt":
+    try:
+        # Use the selector event loop on Windows to avoid create_connection signature
+        # mismatches with some websocket client internals.
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    except Exception:
+        pass
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
@@ -82,8 +90,12 @@ if calendar_actions_router is not None:
 
 @app.get("/envcheck")
 async def env_check():
+    api_key = os.getenv("ELEVENLABS_API_KEY", "").strip()
     return {
-        "ELEVENLABS_API_KEY": bool(os.getenv("ELEVENLABS_API_KEY")),
+        "ELEVENLABS_API_KEY": bool(api_key),
+        "ELEVENLABS_API_KEY_length": len(api_key) if api_key else 0,
+        "ELEVENLABS_API_KEY_preview": f"{api_key[:10]}...{api_key[-4:]}" if len(api_key) > 14 else "***",
+        "ELEVENLABS_API_KEY_starts_with_sk": api_key.startswith("sk_") if api_key else False,
         "ELEVENLABS_VOICE_ID": os.getenv("ELEVENLABS_VOICE_ID"),
     }
 
