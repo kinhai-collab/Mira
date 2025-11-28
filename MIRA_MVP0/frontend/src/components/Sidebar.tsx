@@ -60,7 +60,7 @@ function MobileProfileMenu() {
 			{/* Profile Icon */}
 			<button
 				onClick={() => setOpen(!open)}
-				className={`flex items-center justify-center w-11 h-11 rounded-lg border border-gray-100 shadow-sm bg-white transition-all ${
+				className={`flex items-center justify-center w-9 h-9 rounded-lg border border-gray-100 shadow-sm bg-white transition-all ${
 					open ? "bg-gray-100" : "hover:shadow-md"
 				}`}
 			>
@@ -68,13 +68,13 @@ function MobileProfileMenu() {
 					<Image
 						src={userData.picture}
 						alt="Profile"
-						width={32}
-						height={32}
-						className="w-8 h-8 rounded-full object-cover"
+						width={28}
+						height={28}
+						className="w-7 h-7 rounded-full object-cover"
 						unoptimized
 					/>
 				) : (
-					<Icon name="Profile" size={22} />
+					<Icon name="Profile" size={16} />
 				)}
 			</button>
 			{/* Popup */}
@@ -176,53 +176,8 @@ export default function Sidebar() {
 				</div>
 			</div>
 
-			{/* MOBILE BOTTOM NAV */}
-			<div className="md:hidden fixed bottom-0 left-0 right-0 bg-[#F0ECF8] border-t border-gray-200 py-3 z-[999] shadow-lg">
-				<div className="flex justify-around items-center w-full">
-					{/* ORB — smaller */}
-					<button
-						onClick={() => router.push("/")}
-						className="
-                w-6 h-6 
-                rounded-full 
-                bg-gradient-to-br from-pink-300 to-purple-400 
-                shadow-md 
-                hover:scale-110 
-                hover:shadow-[0_0_12px_3px_rgba(200,150,255,0.4)] 
-                transition
-            "
-					/>
-
-					{/* Navigation buttons (reduced size) */}
-					{["Dashboard", "Settings", "Reminder"].map((name, i) => (
-						<button
-							key={i}
-							onClick={() => {
-								if (name === "Dashboard") router.push("/dashboard");
-								else router.push(`/dashboard/${name.toLowerCase()}`);
-							}}
-							className="
-                    w-9 h-9                   /* smaller button */
-                    flex items-center justify-center
-                    rounded-lg
-                    bg-white border border-gray-100
-                    shadow-sm 
-                    hover:bg-gray-100 
-                    hover:shadow-md 
-                    transition
-                "
-						>
-							<Icon name={name} size={16} className="opacity-80" />{" "}
-							{/* smaller icon */}
-						</button>
-					))}
-
-					{/* Profile (kept small) */}
-					<div className="scale-90">
-						<MobileProfileMenu />
-					</div>
-				</div>
-			</div>
+			{/* MOBILE BOTTOM NAV - Hidden since MobileBottomNav is in layout */}
+			{/* Mobile navigation is handled by MobileBottomNav component in layout.tsx */}
 		</>
 	);
 }

@@ -27,90 +27,9 @@ import {
 } from "@/utils/dashboardApi";
 import { getWeather } from "@/utils/weather";
 import HeaderBar from "@/components/HeaderBar";
+import { getReverseGeocode } from "../actions";
 
-function MobileProfileMenu() {
-	const [open, setOpen] = useState(false);
-	const router = useRouter();
 
-	// Close when clicking outside
-	useEffect(() => {
-		const handleClickOutside = (e: MouseEvent) => {
-			const target = e.target as HTMLElement;
-			if (!target.closest(".mobile-profile-menu")) setOpen(false);
-		};
-		document.addEventListener("mousedown", handleClickOutside);
-		return () => document.removeEventListener("mousedown", handleClickOutside);
-	}, []);
-
-	const handleLogout = () => {
-		console.log("Logout initiated from Dashboard");
-		clearAuthTokens();
-
-		// Dispatch event to notify other components
-		window.dispatchEvent(new CustomEvent("userDataUpdated"));
-
-		console.log("User logged out from Dashboard, redirecting to login...");
-		router.push("/login");
-	};
-
-	// Note: Greeting is now handled by the backend API in the sendSystemTime function
-	// This hardcoded greeting has been removed to prevent conflicts
-
-	return (
-		<div className="relative mobile-profile-menu flex flex-col items-center">
-			{/* Profile Icon */}
-			<button
-				onClick={() => setOpen(!open)}
-				className={`flex items-center justify-center w-11 h-11 rounded-lg border border-gray-100 shadow-sm bg-white transition-all ${
-					open ? "bg-gray-100" : "hover:shadow-md"
-				}`}
-			>
-				<Icon name="Profile" size={22} />
-			</button>
-			{/* Popup */}
-			{open && (
-				<div
-					className="absolute bottom-[70px] right-[-60px] w-56 bg-white border border-gray-200 rounded-2xl shadow-xl py-2 animate-fadeIn z-50"
-					style={{ transform: "translateX(-20%)" }}
-				>
-					<div className="px-4 pb-2 border-b border-gray-200">
-						<div className="flex flex-col gap-0.5 text-gray-700 text-sm">
-							<div className="flex items-center gap-2">
-								<Image
-									src="/Icons/Property 1=Profile.svg"
-									alt="User"
-									width={16}
-									height={16}
-									className="w-4 h-4 opacity-80"
-								/>
-								<span>miraisthbest@gmail.com</span>
-							</div>
-							<span className="pl-6 text-gray-500 text-xs">User Name</span>
-						</div>
-					</div>
-
-					<button
-						onClick={() => alert("Switch account coming soon!")}
-						className="flex items-center gap-3 w-full px-4 py-2 text-sm rounded-md hover:bg-[#f7f4fb] transition text-gray-700"
-					>
-						<Icon name="SwitchAccount" size={18} />
-						Switch account
-					</button>
-
-					<hr className="my-1 border-gray-200" />
-
-					<button
-						onClick={handleLogout}
-						className="flex items-center gap-3 w-full px-4 py-2 text-sm text-grey-600 hover:bg-grey-50 rounded-md transition"
-					>
-						<Icon name="Logout" size={18} />
-						Log out
-					</button>
-				</div>
-			)}
-		</div>
-	);
-}
 export default function Dashboard() {
 	const router = useRouter();
 	const [currentTime, setCurrentTime] = useState(new Date());
@@ -172,8 +91,8 @@ export default function Dashboard() {
 		temperatureC != null
 			? `${Math.round(temperatureC)}°C`
 			: isWeatherLoading
-			? "Loading..."
-			: "--";
+				? "Loading..."
+				: "--";
 	const displayWeatherDescription =
 		weatherDescription ??
 		(isWeatherLoading ? "Loading..." : "Weather unavailable");
@@ -339,16 +258,15 @@ export default function Dashboard() {
 			try {
 				const { latitude: lat, longitude: lon } = pos.coords;
 
-				// Use OpenStreetMap Nominatim reverse geocoding (no key required)
-				const res = await fetch(
-					`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}`
-				);
-				if (!res.ok) {
+				// Use server action for reverse geocoding to handle User-Agent and CORS
+				const data = await getReverseGeocode(lat, lon);
+
+				if (!data) {
 					// If reverse geocoding fails, fall back to IP-based lookup
 					await ipFallback();
 					return;
 				}
-				const data = await res.json();
+
 				const city =
 					data?.address?.city ||
 					data?.address?.town ||
@@ -382,7 +300,7 @@ export default function Dashboard() {
 		setIsLoadingEvents(true);
 		setIsLoadingTasks(true);
 		setIsLoadingReminders(true);
-		
+
 		try {
 			// Load all stats in parallel instead of sequentially
 			const [emailData, eventData, taskData, reminderData] = await Promise.all([
@@ -452,8 +370,8 @@ export default function Dashboard() {
 	}, []);
 
 	return (
-		<div className="flex flex-col md:flex-row h-screen bg-[#F8F8FB] text-gray-800">
-			<div className="absolute pt-0 top-4 left-0 w-full px-4 md:pl-[90px]">
+		<div className="flex flex-col md:flex-row min-h-screen md:h-screen bg-[#F8F8FB] text-gray-800">
+			<div className="flex-1 px-4 sm:px-6 md:px-12 py-6 md:py-10 pb-24 md:pb-10 md:overflow-y-auto">
 				<HeaderBar
 					dateLabel={new Date().toLocaleDateString("en-US", {
 						weekday: "short",
@@ -465,10 +383,8 @@ export default function Dashboard() {
 					isLocationLoading={isLocationLoading}
 					isWeatherLoading={isWeatherLoading}
 				/>
-			</div>
-			<main className="flex-1 px-4 sm:px-6 md:px-12 py-6 md:py-10 overflow-y-auto">
-				{/* SCALE WRAPPER */}
-				<div className="scale-[1] flex flex-col">
+				{/* SCALE WRAPPER REMOVED */}
+				<div className="flex flex-col">
 					{/* Header Section - Styled like Figma */}
 					<div className="mb-1 md:mb-12 pt-10 text-center md:text-left space-y-3">
 						{/* Greeting */}
@@ -779,7 +695,7 @@ export default function Dashboard() {
 						</div>
 
 						{/* Events */}
-						<div className="bg-white border border-gray-200 rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.04)] p-5 flex flex-col justify-between hover:shadow-md transition-all duration-200">
+						<div className="bg-white border border-gray-200 rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.04)] p-5 flex flex-col justify-between hover:shadow-md transition-all duration-200 relative">
 							<div>
 								{/* Header */}
 								<div className="flex items-center justify-between mb-4">
@@ -819,8 +735,8 @@ export default function Dashboard() {
 														eventStats.busy_level === "busy"
 															? "#FDF0EF"
 															: eventStats.busy_level === "moderate"
-															? "#FFF9E6"
-															: "#F0F9FF",
+																? "#FFF9E6"
+																: "#F0F9FF",
 													border: "0.5px solid #C4C7CC",
 													borderRadius: "8px",
 												}}
@@ -836,8 +752,8 @@ export default function Dashboard() {
 															eventStats.busy_level === "busy"
 																? "#F16A6A"
 																: eventStats.busy_level === "moderate"
-																? "#FABA2E"
-																: "#95D6A4"
+																	? "#FABA2E"
+																	: "#95D6A4"
 														}
 														strokeWidth="2"
 														strokeLinecap="round"
@@ -851,8 +767,8 @@ export default function Dashboard() {
 														{eventStats.busy_level === "busy"
 															? "Busy Day"
 															: eventStats.busy_level === "moderate"
-															? "Moderate Day"
-															: "Light Day"}
+																? "Moderate Day"
+																: "Light Day"}
 													</span>
 												</div>
 												<p className="text-[14px] text-[#000000] leading-[1.2] ml-[22px]">
@@ -911,18 +827,18 @@ export default function Dashboard() {
 													{/* Location/Conference */}
 													{(eventStats.next_event.conference_data ||
 														eventStats.next_event.location) && (
-														<div className="flex items-center gap-2 text-[14px] text-gray-600 mb-1">
-															<Image
-																src="/Icons/qlementine-icons_camera-16.svg"
-																alt="Location"
-																width={14}
-																height={14}
-															/>
-															{eventStats.next_event.conference_data
-																? "Video call"
-																: eventStats.next_event.location}
-														</div>
-													)}
+															<div className="flex items-center gap-2 text-[14px] text-gray-600 mb-1">
+																<Image
+																	src="/Icons/qlementine-icons_camera-16.svg"
+																	alt="Location"
+																	width={14}
+																	height={14}
+																/>
+																{eventStats.next_event.conference_data
+																	? "Video call"
+																	: eventStats.next_event.location}
+															</div>
+														)}
 
 													{/* Attendees */}
 													{eventStats.next_event.attendees_count > 0 && (
@@ -998,8 +914,12 @@ export default function Dashboard() {
 
 							{/* View All Button */}
 							<button
-								onClick={() => router.push("/dashboard/calendar")}
-								className="mt-5 w-full rounded-full text-[15px] font-medium text-[#1E1E1E] tracking-[0.01em] transition-all duration-150 hover:bg-[#F8F8F8] active:scale-[0.99]"
+								onClick={(e) => {
+									e.preventDefault();
+									e.stopPropagation();
+									router.push("/dashboard/calendar");
+								}}
+								className="mt-5 w-full rounded-full text-[15px] font-medium text-[#1E1E1E] tracking-[0.01em] transition-all duration-150 hover:bg-[#F8F8F8] active:scale-[0.99] relative z-10"
 								style={{
 									border: "1px solid #1E1E1E",
 									padding: "4px 0",
@@ -1055,11 +975,10 @@ export default function Dashboard() {
 												</p>
 												{task.source && (
 													<span
-														className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
-															task.source === "google"
-																? "bg-blue-100 text-blue-700"
-																: "bg-purple-100 text-purple-700"
-														}`}
+														className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${task.source === "google"
+															? "bg-blue-100 text-blue-700"
+															: "bg-purple-100 text-purple-700"
+															}`}
 													>
 														{task.source === "google" ? "Google" : "MIRA"}
 													</span>
@@ -1166,27 +1085,8 @@ export default function Dashboard() {
 						</div>
 					</div>
 				</div>
-			</main>
-
-			{/* Bottom Nav (Mobile only) */}
-
-			<div className="md:hidden fixed bottom-0 left-0 right-0 bg-[#F0ECF8] border-t border-gray-200 flex justify-around items-center py-3 z-50">
-				{["Dashboard", "Settings", "Reminder"].map((name, i) => (
-					<button
-						key={i}
-						onClick={() => {
-							if (name === "Dashboard") router.push("/dashboard");
-							else router.push(`/dashboard/${name.toLowerCase()}`);
-						}}
-						className="flex items-center justify-center w-11 h-11 rounded-xl bg-white shadow-sm hover:bg-gray-100 transition-all active:bg-gray-200"
-					>
-						<Icon name={name} size={22} className="text-gray-700" />
-					</button>
-				))}
-
-				{/* ✅ Profile icon with same style */}
-				<MobileProfileMenu />
 			</div>
 		</div>
+
 	);
 }
