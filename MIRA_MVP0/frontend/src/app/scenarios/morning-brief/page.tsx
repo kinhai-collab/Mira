@@ -16,6 +16,7 @@ import {
 import { getValidToken, requireAuth } from "@/utils/auth";
 import { getWeather } from "@/utils/weather";
 import HeaderBar from "@/components/HeaderBar";
+import Sidebar from "@/components/Sidebar";
 
 interface MorningBriefData {
 	text: string;
@@ -52,6 +53,8 @@ export default function MorningBrief() {
 
 	const [isListening, setIsListening] = useState(true);
 	const [isConversationActive, setIsConversationActive] = useState(false);
+	const [isTextMode, setIsTextMode] = useState(false);
+
 	const [isMuted, setIsMuted] = useState(false);
 	const [briefData, setBriefData] = useState<MorningBriefData | null>(null);
 	const [loading, setLoading] = useState(true);
@@ -458,37 +461,9 @@ export default function MorningBrief() {
 	}, []);
 
 	return (
-		<div className=" flex min-h-screen bg-[#F8F8FB] text-gray-800 overflow-hidden">
-			{/* Sidebar */}
-			<aside
-				className="fixed left-0 top-0 h-full w-[70px] bg-white
-				flex-col items-center py-8 gap-8 border-r border-gray-100 
-				shadow-[2px_0_10px_rgba(0,0,0,0.03)] hidden md:flex"
-			>
-				<div className="w-5 h-5 rounded-full bg-gradient-to-b from-[#F9C8E4] to-[#B5A6F7]" />
-				{["Dashboard", "Settings"].map((icon) => (
-					<button
-						key={icon}
-						className="p-2 rounded-xl hover:bg-[#F6F0FF] transition"
-					>
-						<Image
-							src={`/Icons/Property 1=${icon}.svg`}
-							alt={icon}
-							width={20}
-							height={20}
-						/>
-					</button>
-				))}
-				<button className="mt-auto mb-6 p-2 rounded-xl hover:bg-[#F6F0FF] transition">
-					<Image
-						src="/Icons/Property 1=Reminder.svg"
-						alt="Reminder"
-						width={20}
-						height={20}
-					/>
-				</button>
-			</aside>
-			<div className=" absolute top-6 left-0 w-full pl-[70px] md:pl-[90px]">
+		<div className="flex flex-col min-h-screen bg-[#F8F8FB] text-gray-800">
+			{/* Global Header Bar */}
+			<div className="fixed top-0 left-0 w-full bg-[#F8F8FB] pl-[70px] md:pl-[90px]">
 				<HeaderBar
 					dateLabel={new Date().toLocaleDateString("en-US", {
 						weekday: "short",
@@ -503,12 +478,9 @@ export default function MorningBrief() {
 			</div>
 
 			{/* Main */}
-			<main
-				className="flex-1 flex flex-col items-center relative 
-px-4 sm:px-6 md:px-10 lg:px-16 pt-28"
-			>
+			<main className="max-sm:mt-6 flex-1 flex flex-col items-center px-2 sm:px-4 md:px-6">
 				{/* SCALE CONTAINER */}
-				<div className="scale-[0.85] flex flex-col items-center">
+				<div className="scale-[0.85] flex flex-col items-center w-full max-w-[900px] mx-auto px-4">
 					<audio
 						ref={audioRef}
 						autoPlay={false}
@@ -516,46 +488,23 @@ px-4 sm:px-6 md:px-10 lg:px-16 pt-28"
 						style={{ display: "none" }}
 					/>
 
-					{/* Orb */}
-					<div className="flex flex-col items-center justify-center">
-						<Orb />
-					</div>
-
-					{/* Panel */}
-					<div className="w-full flex justify-center mt-10 transition-all duration-700">
+					{/* ORB (must NOT be fixed) */}
+					<div className="mt-4 relative flex flex-col items-center">
 						<div
-							className="w-[92%] sm:w-[85%] md:w-[80%] lg:w-[720px] 
-						transition-all duration-700 ease-in-out"
-						>
+							className="w-32 h-32 sm:w-44 sm:h-44 rounded-full bg-gradient-to-br 
+        from-[#C4A0FF] via-[#E1B5FF] to-[#F5C5E5]
+        shadow-[0_0_80px_15px_rgba(210,180,255,0.45)] animate-pulse"
+						></div>
+					</div>
+					{/* PANEL exactly like conversation feed */}
+					<div className="w-full flex justify-center">
+						<div className="w-full max-w-2xl">
 							{loading && stage === "thinking" && <ThinkingPanel />}
-							{error && (
-								<div className="bg-white text-sm rounded-2xl border border-red-200 shadow-lg p-6">
-									<p className="text-red-600 mb-2">
-										Error loading morning brief
-									</p>
-									<p className="text-gray-600 text-sm">{error}</p>
-									<button
-										onClick={() => window.location.reload()}
-										className="mt-4 px-4 py-2 bg-black text-white rounded-full text-sm hover:bg-gray-800"
-									>
-										Retry
-									</button>
-								</div>
-							)}
+
 							{!loading && !error && briefData && (
 								<>
-									{/* Play Audio Button */}
-									{(briefData.audio_base64 || briefData.audio_url) && (
-										<div className="mb-4 flex justify-center"></div>
-									)}
 									{stage === "recommendation" && (
-										<div
-											className="
-		recommendation-scroll
-		relative max-w-[900px] mx-auto h-[75vh]
-		overflow-y-auto scroll-smooth backdrop-blur-[6px]
-	"
-										>
+										<div className="mt-14 max-h-[58vh] overflow-y-auto scroll-smooth">
 											<RecommendationPanel
 												briefText={briefData.text}
 												temperatureC={temperatureC}
@@ -572,6 +521,7 @@ px-4 sm:px-6 md:px-10 lg:px-16 pt-28"
 											/>
 										</div>
 									)}
+
 									{stage === "confirmation" && (
 										<ConfirmationPanel briefText={briefData.text} />
 									)}
@@ -581,79 +531,73 @@ px-4 sm:px-6 md:px-10 lg:px-16 pt-28"
 					</div>
 
 					{/* Mic & Keyboard Toggle */}
-					<div className="mt-10 sm:mt-12 flex items-center justify-center">
-						<div
-							className="relative w-[130px] sm:w-[150px] h-[36px] 
-						border border-[#000] bg-white rounded-full px-[6px] 
-						shadow-[0_1px_4px_rgba(0,0,0,0.08)] 
-						flex items-center justify-between"
-						>
-							{/* Mic Button */}
-							<button
-								onClick={() => {
-									const newState = !isListening;
-									setIsListening(newState);
-									if (newState) {
-										// Only start voice when user explicitly clicks mic
+					<div
+						className="
+    fixed
+    -bottom-20
+    left-1/2
+    -translate-x-1/2
+    z-50
+  "
+					>
+						<div className="relative w-[130px] sm:w-[130px]">
+							{" "}
+							<div className="relative w-[130px] sm:w-[150px] h-[36px] border border-[#000] bg-white rounded-full px-[6px] shadow-[0_1px_4px_rgba(0,0,0,0.08)] flex items-center justify-between">
+								{/* Mic Button */}
+								<button
+									onClick={() => {
+										setIsListening(true);
+										setIsTextMode(false);
+
 										setIsConversationActive(true);
 										startMiraVoice();
-									} else {
+									}}
+									className={`flex items-center justify-center w-[60px] h-[28px] rounded-full border border-gray-200 transition-all duration-300 ${
+										isListening ? "bg-black" : "bg-white"
+									}`}
+								>
+									<Image
+										src={
+											isListening
+												? "/Icons/Property 1=Mic.svg"
+												: "/Icons/Property 1=MicOff.svg"
+										}
+										alt="Mic"
+										width={16}
+										height={16}
+										className={isListening ? "invert" : "brightness-0"}
+									/>
+								</button>
+
+								{/* Keyboard Button */}
+								<button
+									onClick={() => {
+										setIsTextMode(true);
+										setIsListening(false);
+
 										setIsConversationActive(false);
 										stopMiraVoice();
 										setIsMuted(false);
 										setMiraMute(false);
-									}
-								}}
-								className={`flex items-center justify-center w-[60px] h-[28px] rounded-full border border-gray-200 transition-all duration-300 ${
-									isListening
-										? "bg-black hover:bg-gray-800"
-										: "bg-white hover:bg-gray-50"
-								}`}
-							>
-								<Image
-									src={
-										isListening
-											? "/Icons/Property 1=Mic.svg"
-											: "/Icons/Property 1=MicOff.svg"
-									}
-									alt={isListening ? "Mic On" : "Mic Off"}
-									width={16}
-									height={16}
-									className={`transition-all duration-300 ${
-										isListening ? "invert" : "brightness-0"
+									}}
+									className={`flex items-center justify-center w-[60px] h-[28px] rounded-full border border-gray-200 transition-all duration-300 ${
+										isTextMode ? "bg-black" : "bg-white"
 									}`}
-								/>
-							</button>
-
-							{/* Keyboard Button */}
-							<button
-								onClick={() => {
-									setIsListening(false);
-									setIsConversationActive(false);
-									stopMiraVoice();
-									setIsMuted(false);
-									setMiraMute(false);
-								}}
-								className={`flex items-center justify-center w-[60px] h-[28px] rounded-full border border-gray-200 transition-all duration-300 ${
-									!isListening
-										? "bg-black hover:bg-gray-800"
-										: "bg-white hover:bg-gray-50"
-								}`}
-							>
-								<Image
-									src="/Icons/Property 1=Keyboard.svg"
-									alt="Keyboard Icon"
-									width={16}
-									height={16}
-									className={`transition-all duration-300 ${
-										!isListening ? "invert" : "brightness-0"
-									}`}
-								/>
-							</button>
+								>
+									<Image
+										src="/Icons/Property 1=Keyboard.svg"
+										alt="Keyboard Icon"
+										width={16}
+										height={16}
+										className={isTextMode ? "invert" : "brightness-0"}
+									/>
+								</button>
+							</div>
 						</div>
 					</div>
 				</div>
 			</main>
+			<Sidebar />
 		</div>
 	);
 }

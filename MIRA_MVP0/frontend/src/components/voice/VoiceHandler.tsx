@@ -3,6 +3,7 @@
 "use client";
 import { useState, useRef } from "react";
 import { getValidToken } from "@/utils/auth";
+import { sendBlobOnce } from "@/utils/voice/wsVoiceStt";
 
 export default function VoiceHandler() {
 	const [isRecording, setIsRecording] = useState(false);
@@ -35,15 +36,34 @@ export default function VoiceHandler() {
 				console.warn('Could not get auth token for voice request', e);
 			}
 
-			const res = await fetch(`${apiBase}/api/voice`, {
-				method: "POST",
-				headers,
-				body: formData,
-			});
-			const audio = await res.blob();
-			const url = URL.createObjectURL(audio);
-			const audioEl = new Audio(url);
-			audioEl.play();
+			try {
+				const token = await (async () => { try { return await getValidToken(); } catch { return null; } })();
+				const result = await sendBlobOnce(audioBlob, {
+					wsUrl: (process.env.NEXT_PUBLIC_WS_URL as string) || 'ws://127.0.0.1:8000/api/ws/voice-stt',
+					token,
+					chunkSize: 4096,
+					timeoutMs: 30000,
+				});
+				// If server returned base64 audio, play it; otherwise log transcript
+				if (result && result.audio) {
+					try {
+						const audioBinary = atob(result.audio);
+						const arrayBuffer = new ArrayBuffer(audioBinary.length);
+						const view = new Uint8Array(arrayBuffer);
+						for (let i = 0; i < audioBinary.length; i++) view[i] = audioBinary.charCodeAt(i);
+						const blob = new Blob([view], { type: 'audio/mpeg' });
+						const url = URL.createObjectURL(blob);
+						const audioEl = new Audio(url);
+						audioEl.play().catch((e) => console.warn('Audio play failed', e));
+					} catch (e) {
+						console.warn('Failed to decode/play audio from server', e, result);
+					}
+				} else {
+					console.log('WS result:', result);
+				}
+			} catch (e) {
+				console.error('Voice WS upload failed', e);
+			}
 
 			audioChunks.current = [];
 			setIsRecording(false);

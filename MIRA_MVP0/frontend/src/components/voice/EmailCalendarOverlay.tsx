@@ -96,8 +96,14 @@ function StepBullet({ status }: { status: VoiceSummaryStepStatus }) {
 	);
 }
 
-const GMAIL_ICON = { src: "/Icons/Email/skill-icons_gmail-light.png", alt: "Gmail" };
-const OUTLOOK_ICON = { src: "/Icons/Email/vscode-icons_file-type-outlook.png", alt: "Outlook" };
+const GMAIL_ICON = {
+	src: "/Icons/Email/skill-icons_gmail-light.png",
+	alt: "Gmail",
+};
+const OUTLOOK_ICON = {
+	src: "/Icons/Email/vscode-icons_file-type-outlook.png",
+	alt: "Outlook",
+};
 const DEFAULT_EMAIL_ICON = { src: "/Icons/Property 1=Email.svg", alt: "Email" };
 const GOOGLE_MEET_PROVIDER = {
 	type: "meet" as const,
@@ -155,7 +161,7 @@ function resolveCalendarEventProvider(
 ): CalendarProvider {
 	// ✅ First, check the meetingLink to determine provider
 	const meetingLink = (event.meetingLink || "").toLowerCase();
-	
+
 	// Check for Google Meet links
 	if (
 		meetingLink.includes("meet.google.com") ||
@@ -164,7 +170,7 @@ function resolveCalendarEventProvider(
 	) {
 		return GOOGLE_MEET_PROVIDER;
 	}
-	
+
 	// Check for Microsoft Teams links
 	if (
 		meetingLink.includes("teams.microsoft.com") ||
@@ -174,12 +180,12 @@ function resolveCalendarEventProvider(
 	) {
 		return MICROSOFT_TEAMS_PROVIDER;
 	}
-	
+
 	// ✅ If there's a meeting link but it's not Google or Microsoft, use default icon
 	if (meetingLink && meetingLink.trim() !== "") {
 		return DEFAULT_EVENT_PROVIDER;
 	}
-	
+
 	// Check explicit provider field
 	const explicit = (event.provider ?? "").toString().toLowerCase();
 	if (explicit.includes("team")) {
@@ -252,8 +258,10 @@ function SummaryCard({
 		if (!isNaN(Number(receivedAtValue))) {
 			const numValue = Number(receivedAtValue);
 			// If it looks like seconds (less than year 2000 in ms), convert to ms
-			receivedAt = new Date(numValue > 946684800000 ? numValue : numValue * 1000);
-		} else if (typeof receivedAtValue === 'string') {
+			receivedAt = new Date(
+				numValue > 946684800000 ? numValue : numValue * 1000
+			);
+		} else if (typeof receivedAtValue === "string") {
 			// Handle ISO string or other date formats
 			const parsed = Date.parse(receivedAtValue);
 			if (!isNaN(parsed)) {
@@ -269,7 +277,7 @@ function SummaryCard({
 		// Check if email is within the last 7 days
 		return receivedAt > sevenDaysAgo && receivedAt <= now;
 	});
-	
+
 	// If filtering removed all emails, show all emails as fallback (safety measure)
 	const emailsToShow = recentEmails.length > 0 ? recentEmails : safeEmails;
 
@@ -286,7 +294,10 @@ function SummaryCard({
 			// Fallback: if provider is not set, try to infer from sender's email domain
 			const from = email.from || "";
 			const normalized = from.toLowerCase();
-			if (normalized.includes("@gmail.") || normalized.includes("@googlemail.")) {
+			if (
+				normalized.includes("@gmail.") ||
+				normalized.includes("@googlemail.")
+			) {
 				gmailCount++;
 			} else if (
 				normalized.includes("@outlook.") ||
@@ -637,7 +648,9 @@ function SummaryCard({
 																	: "bg-purple-100 text-purple-700"
 															}`}
 														>
-															{event.calendar_provider === "google" ? "Google Calendar" : "Outlook Calendar"}
+															{event.calendar_provider === "google"
+																? "Google Calendar"
+																: "Outlook Calendar"}
 														</span>
 													)}
 												</div>
@@ -650,7 +663,12 @@ function SummaryCard({
 													className="shrink-0 inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-white bg-[#382099] rounded-md hover:bg-[#2d1a7a] transition-colors"
 												>
 													Join
-													<svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+													<svg
+														xmlns="http://www.w3.org/2000/svg"
+														className="h-3 w-3"
+														viewBox="0 0 20 20"
+														fill="currentColor"
+													>
 														<path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z" />
 														<path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z" />
 													</svg>
@@ -832,9 +850,14 @@ export function EmailCalendarOverlay({
 						const safeEmails: VoiceSummaryEmail[] = Array.isArray(emails)
 							? emails.map((e: VoiceSummaryEmail | EmailBackendRecord) => {
 									const backend = e as EmailBackendRecord;
-									const fromVal = backend.from ?? backend.sender_name ?? backend.sender_email ?? "Unknown";
+									const fromVal =
+										backend.from ??
+										backend.sender_name ??
+										backend.sender_email ??
+										"Unknown";
 									const subjectVal = backend.subject ?? "No Subject";
-									const receivedAtVal = backend.timestamp ?? backend.receivedAt ?? "";
+									const receivedAtVal =
+										backend.timestamp ?? backend.receivedAt ?? "";
 									const idVal = backend.id ?? "";
 									const senderEmailVal = backend.sender_email ?? "";
 									const summaryVal = backend.snippet ?? backend.body ?? "";
@@ -848,7 +871,7 @@ export function EmailCalendarOverlay({
 										summary: String(summaryVal),
 										provider: providerVal, // ✅ Include provider field
 									} as VoiceSummaryEmail;
-								})
+							  })
 							: [];
 
 						const safeCalendarEvents: VoiceSummaryCalendarEvent[] =

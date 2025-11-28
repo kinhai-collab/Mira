@@ -9,6 +9,8 @@ body {
 	height: 100%;
 	font-family: "Inter", sans-serif;
 	background-color: #f9f9fb;
+	overflow-x: hidden;
+	overflow-y: auto;
 }
 @keyframes fadeIn {
 	from {
