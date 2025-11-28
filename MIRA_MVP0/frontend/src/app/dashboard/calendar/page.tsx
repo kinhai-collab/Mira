@@ -160,6 +160,25 @@ export default function CalendarPage() {
 	const [temp, setTemp] = useState<number | null>(null);
 	const [isWeatherLoading, setIsWeatherLoading] = useState<boolean>(false);
 	const [temperatureC, setTemperatureC] = useState<number | null>(null);
+	const [hourHeight, setHourHeight] = useState<number>(81);
+	
+	// Calculate hour height based on screen size
+	useEffect(() => {
+		const updateHourHeight = () => {
+			if (window.innerWidth < 640) {
+				setHourHeight(60);
+			} else if (window.innerWidth < 768) {
+				setHourHeight(70);
+			} else {
+				setHourHeight(81);
+			}
+		};
+		
+		updateHourHeight();
+		window.addEventListener('resize', updateHourHeight);
+		return () => window.removeEventListener('resize', updateHourHeight);
+	}, []);
+	
 	// Load events
 	const loadEvents = async () => {
 		setIsLoading(true);
@@ -274,16 +293,16 @@ export default function CalendarPage() {
 			try {
 				const { latitude: lat, longitude: lon } = pos.coords;
 
-				// Use OpenStreetMap Nominatim reverse geocoding (no key required)
-				const res = await fetch(
-					`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}`
-				);
-				if (!res.ok) {
+				// Use server action for reverse geocoding to handle User-Agent and CORS
+				const { getReverseGeocode } = await import("../actions");
+				const data = await getReverseGeocode(lat, lon);
+
+				if (!data) {
 					// If reverse geocoding fails, fall back to IP-based lookup
 					await ipFallback();
 					return;
 				}
-				const data = await res.json();
+
 				const city =
 					data?.address?.city ||
 					data?.address?.town ||
@@ -480,7 +499,7 @@ export default function CalendarPage() {
 	const monthGrid = getMonthGrid();
 
 	return (
-		<div className="flex flex-col h-screen bg-[#F8F8FB] text-gray-800 overflow-hidden font-['Outfit']">
+		<div className="flex flex-col min-h-screen md:h-screen bg-[#F8F8FB] text-gray-800 overflow-hidden font-['Outfit']">
 			<CalendarModal
 				isOpen={isModalOpen}
 				onClose={() => setIsModalOpen(false)}
@@ -489,7 +508,7 @@ export default function CalendarPage() {
 			/>
 
 			{/* Global Header Bar */}
-			<div className="fixed top-0 left-0 w-full bg-[#F8F8FB] pl-[70px] md:pl-[90px]">
+			<div className="fixed top-0 left-0 w-full bg-[#F8F8FB] pl-0 md:pl-[70px] lg:pl-[90px] z-20">
 				<HeaderBar
 					dateLabel={new Date().toLocaleDateString("en-US", {
 						weekday: "short",
@@ -504,18 +523,17 @@ export default function CalendarPage() {
 			</div>
 
 			{/* Events Header - Full Width */}
-			<div className="bg-[#F8F8FB] mt-10 px-10 pt-6 pb-2 flex-shrink-0">
-				<h1 className="text-[30px] font-normal text-[#282829] tracking-[0.2px] leading-none mb-2">
+			<div className="bg-[#F8F8FB] mt-10 sm:mt-12 md:mt-10 px-4 sm:px-6 md:px-10 pt-4 sm:pt-6 pb-2 flex-shrink-0">
+				<h1 className="text-2xl sm:text-[26px] md:text-[30px] font-normal text-[#282829] tracking-[0.2px] leading-none mb-2">
 					Events
 				</h1>
-				<p className="text-[18px] pt-2 font-normal text-black tracking-[0.1px] leading-none">
+				<p className="text-base sm:text-[16px] md:text-[18px] pt-2 font-normal text-black tracking-[0.1px] leading-none">
 					Check your schedule
 				</p>
 			</div>
 
 			{/* Breadcrumb - Full Width */}
-			{/* Breadcrumb - Full Width */}
-			<div className="bg-[#F8F8FB] px-10 pb-3 flex-shrink-0">
+			<div className="bg-[#F8F8FB] px-4 sm:px-6 md:px-10 pb-3 flex-shrink-0">
 				<button
 					onClick={() => router.push("/dashboard")}
 					className="flex items-center gap-2 hover:opacity-70 transition"
@@ -523,22 +541,22 @@ export default function CalendarPage() {
 					<Image
 						src="/Icons/left arrow.png"
 						alt="Back"
-						width={20}
-						height={20}
-						className="object-contain"
+						width={18}
+						height={18}
+						className="object-contain sm:w-5 sm:h-5"
 					/>
 
-					<span className="text-[16px] font-normal text-[#282829] tracking-[0.1px]">
+					<span className="text-sm sm:text-[15px] md:text-[16px] font-normal text-[#282829] tracking-[0.1px]">
 						Dashboard
 					</span>
 				</button>
 			</div>
 
 			{/* Main Content Area: Sidebar + Calendar */}
-			<div className="flex flex-1 min-h-0 px-10 pb-10 gap-0 justify-center">
-				<div className="flex flex-1 max-w-[1440px] gap-0">
+			<div className="flex flex-col md:flex-row flex-1 min-h-0 px-2 sm:px-4 md:px-10 pb-4 md:pb-10 gap-2 md:gap-0 justify-center overflow-auto">
+				<div className="flex flex-col md:flex-row flex-1 max-w-[1440px] gap-2 md:gap-0">
 					{/* Sidebar Panel */}
-					<div className="w-[306px] flex-shrink-0 bg-white border-r border-[#dadce0] flex flex-col border border-gray-200 rounded-l-lg shadow-sm">
+					<div className="w-full md:w-[280px] lg:w-[306px] flex-shrink-0 bg-white border-r border-[#dadce0] flex flex-col border border-gray-200 rounded-lg md:rounded-l-lg md:rounded-r-none shadow-sm max-h-[400px] md:max-h-none overflow-auto">
 						{/* Mini Calendar */}
 						<div className="p-2 flex justify-start">
 							<MiniCalendar
@@ -734,9 +752,9 @@ export default function CalendarPage() {
 					{/* Calendar Section */}
 					<div className="flex-1 flex flex-col min-w-0">
 						{/* Calendar Container */}
-						<div className="flex-1 flex flex-col bg-white rounded-r-lg shadow-sm border border-gray-200 border-l-0 overflow-hidden">
+						<div className="flex-1 flex flex-col bg-white rounded-lg md:rounded-r-lg md:rounded-l-none shadow-sm border border-gray-200 md:border-l-0 overflow-hidden">
 							{/* Top Bar - Date Navigation and Controls */}
-							<div className="bg-white border-b border-[rgba(218,220,224,0.6)] px-4 py-4 flex items-center justify-between flex-shrink-0">
+							<div className="bg-white border-b border-[rgba(218,220,224,0.6)] px-2 sm:px-3 md:px-4 py-3 sm:py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-0 flex-shrink-0">
 								<div className="flex items-center gap-4">
 									{viewMode === "year" && (
 										<button
@@ -798,16 +816,17 @@ export default function CalendarPage() {
 									<div className="relative">
 										<button
 											onClick={() => setShowDropdown((prev) => !prev)}
-											className="flex items-center gap-2 border border-[#7b83eb] rounded-[3px] px-3 py-1.5 h-[35px] hover:bg-[#7b83eb]/5 transition"
+											className="flex items-center gap-1.5 sm:gap-2 border border-[#7b83eb] rounded-[3px] px-2 sm:px-3 py-1 sm:py-1.5 h-[32px] sm:h-[35px] hover:bg-[#7b83eb]/5 transition"
 										>
-											<span className="text-[12px] font-normal text-[#7b83eb] capitalize">
+											<span className="text-[11px] sm:text-[12px] font-normal text-[#7b83eb] capitalize">
 												{viewMode}
 											</span>
 											<svg
-												width="16"
-												height="16"
+												width="14"
+												height="14"
 												viewBox="0 0 16 16"
 												fill="none"
+												className="sm:w-4 sm:h-4"
 											>
 												<path
 													d="M4 6L8 10L12 6"
@@ -837,13 +856,14 @@ export default function CalendarPage() {
 									</div>
 								</div>
 
-								<div className="flex items-center gap-4">
-									<button className="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full">
+								<div className="flex items-center gap-2 sm:gap-4">
+									<button className="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center bg-gray-100 rounded-full">
 										<Image
 											src="/Icons/search.svg"
 											alt="Search"
-											width={16}
-											height={16}
+											width={14}
+											height={14}
+											className="sm:w-4 sm:h-4"
 										/>
 									</button>
 									<button
@@ -851,10 +871,10 @@ export default function CalendarPage() {
 											setModalDate(new Date());
 											setIsModalOpen(true);
 										}}
-										className="flex items-center gap-1 px-2 py-1.5 h-[35px] bg-[#7b83eb] text-white rounded-[3px]"
+										className="flex items-center gap-1 px-2 sm:px-2 py-1 sm:py-1.5 h-[32px] sm:h-[35px] bg-[#7b83eb] text-white rounded-[3px]"
 									>
-										<span className="text-[12px] font-normal">Add event</span>
-										<svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+										<span className="text-[11px] sm:text-[12px] font-normal">Add event</span>
+										<svg width="14" height="14" viewBox="0 0 16 16" fill="none" className="sm:w-4 sm:h-4">
 											<circle
 												cx="8"
 												cy="8"
@@ -875,8 +895,8 @@ export default function CalendarPage() {
 
 							{/* Day Headers */}
 							{viewMode === "week" && (
-								<div className="bg-white border-b border-[#dadce0] flex flex-shrink-0">
-									<div className="w-[54px] bg-white flex-shrink-0" />{" "}
+								<div className="bg-white border-b border-[#dadce0] flex flex-shrink-0 overflow-x-auto">
+									<div className="w-[40px] sm:w-[50px] md:w-[54px] bg-white flex-shrink-0" />{" "}
 									{/* Time axis spacer */}
 									{weekDays.map((d, i) => {
 										const isToday =
@@ -887,18 +907,18 @@ export default function CalendarPage() {
 										return (
 											<div
 												key={i}
-												className="flex-1 flex flex-col items-center justify-center gap-2 py-3"
+												className="flex-1 min-w-[60px] sm:min-w-[80px] flex flex-col items-center justify-center gap-1 sm:gap-2 py-2 sm:py-3"
 											>
-												<span className="text-sm font-normal text-[#333333]">
+												<span className="text-xs sm:text-sm font-normal text-[#333333]">
 													{dayName}
 												</span>
 												<div
-													className={`min-w-[32px] h-[32px] px-2 flex items-center justify-center rounded-full ${
+													className={`min-w-[28px] sm:min-w-[32px] h-[28px] sm:h-[32px] px-1 sm:px-2 flex items-center justify-center rounded-full ${
 														isToday ? "bg-[#917CF4]" : ""
 													}`}
 												>
 													<span
-														className={`text-lg font-normal ${
+														className={`text-sm sm:text-base md:text-lg font-normal ${
 															isToday ? "text-white" : "text-[#333333]"
 														}`}
 													>
@@ -912,14 +932,14 @@ export default function CalendarPage() {
 							)}
 
 							{viewMode === "month" && (
-								<div className="bg-white border-b border-[#dadce0] flex flex-shrink-0">
+								<div className="bg-white border-b border-[#dadce0] flex flex-shrink-0 overflow-x-auto">
 									{["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(
 										(day, i) => (
 											<div
 												key={i}
-												className="flex-1 flex items-center justify-center py-3 border-r border-[#dadce0] last:border-r-0"
+												className="flex-1 min-w-[60px] sm:min-w-0 flex items-center justify-center py-2 sm:py-3 border-r border-[#dadce0] last:border-r-0"
 											>
-												<span className="text-[14px] font-normal text-[#333333]">
+												<span className="text-xs sm:text-sm md:text-[14px] font-normal text-[#333333]">
 													{day}
 												</span>
 											</div>
@@ -932,8 +952,8 @@ export default function CalendarPage() {
 							<div className="flex-1 overflow-y-auto bg-white relative">
 								{viewMode === "year" ? (
 									/* Year View Grid - 3x4 grid of mini months */
-									<div className="p-8">
-										<div className="grid grid-cols-3 gap-6">
+									<div className="p-4 sm:p-6 md:p-8">
+										<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
 											{Array.from({ length: 12 }, (_, monthIdx) => {
 												const monthDate = new Date(
 													selectedDate.getFullYear(),
@@ -1124,17 +1144,17 @@ export default function CalendarPage() {
 								) : (
 									/* Day/Week View - Time Grid */
 									<div
-										className="flex relative"
-										style={{ minHeight: `${displayHours.length * 81}px` }}
+										className="flex relative overflow-x-auto"
+										style={{ minHeight: `${displayHours.length * 60}px` }}
 									>
 										{/* Time Axis */}
-										<div className="w-[54px] flex-shrink-0 border-r border-[#dadce0] bg-white z-10">
+										<div className="w-[40px] sm:w-[50px] md:w-[54px] flex-shrink-0 border-r border-[#dadce0] bg-white z-10">
 											{displayHours.map((h, idx) => (
 												<div
 													key={idx}
-													className="h-[81px] flex items-start justify-center pt-0 relative"
+													className="h-[60px] sm:h-[70px] md:h-[81px] flex items-start justify-center pt-0 relative"
 												>
-													<span className="text-[12px] font-normal text-[#333333] mt-[-7px]">
+													<span className="text-[10px] sm:text-[11px] md:text-[12px] font-normal text-[#333333] mt-[-5px] sm:mt-[-7px]">
 														{h === 0
 															? "00:00"
 															: `${h.toString().padStart(2, "0")}:00`}
@@ -1152,7 +1172,7 @@ export default function CalendarPage() {
 														<div
 															key={idx}
 															onClick={() => handleSlotClick(selectedDate, h)}
-															className="h-[81px] border-b border-[#dadce0] bg-white hover:bg-gray-50 transition cursor-pointer"
+															className="h-[60px] sm:h-[70px] md:h-[81px] border-b border-[#dadce0] bg-white hover:bg-gray-50 transition cursor-pointer"
 														/>
 													))}
 												</div>
@@ -1176,8 +1196,9 @@ export default function CalendarPage() {
 													const durationMinutes =
 														(end.getTime() - start.getTime()) / (1000 * 60);
 
-													const top = hourIndex * 81 + (startMinutes / 60) * 81;
-													const height = (durationMinutes / 60) * 81;
+													// Responsive height calculation
+													const top = hourIndex * hourHeight + (startMinutes / 60) * hourHeight;
+													const height = (durationMinutes / 60) * hourHeight;
 
 													return (
 														<div
@@ -1251,8 +1272,9 @@ export default function CalendarPage() {
 													const durationMinutes =
 														(end.getTime() - start.getTime()) / (1000 * 60);
 
-													const top = hourIndex * 81 + (startMinutes / 60) * 81;
-													const height = (durationMinutes / 60) * 81;
+													// Responsive height calculation
+													const top = hourIndex * hourHeight + (startMinutes / 60) * hourHeight;
+													const height = (durationMinutes / 60) * hourHeight;
 
 													return (
 														<div
