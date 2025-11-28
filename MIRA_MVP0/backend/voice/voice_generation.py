@@ -1014,6 +1014,26 @@ async def _call_calendar_action_endpoint(
         resp = await client.post(f"{base_url}{endpoint}", headers=headers, json=payload)
 
     if resp.status_code >= 400:
+        # Try to parse error detail for better error messages
+        try:
+            error_data = resp.json()
+            if isinstance(error_data, dict) and "detail" in error_data:
+                detail = error_data["detail"]
+                # If detail is a dict (like our conflict errors), extract the message
+                if isinstance(detail, dict):
+                    raise HTTPException(
+                        status_code=resp.status_code,
+                        detail=detail,
+                    )
+                else:
+                    raise HTTPException(
+                        status_code=resp.status_code,
+                        detail=detail,
+                    )
+        except (ValueError, KeyError):
+            pass
+        
+        # Fallback to text response
         raise HTTPException(
             status_code=resp.status_code,
             detail=f"Calendar action failed: {resp.text}",
@@ -1396,7 +1416,32 @@ async def _handle_calendar_voice_command(
             return None
 
     except HTTPException as he:
-        natural_response = f"I tried to update your calendar but got an error: {he.detail}"
+        # Handle conflict errors (409) with user-friendly messages
+        if he.status_code == 409:
+            try:
+                # Try to parse the detail if it's a dict (our conflict error format)
+                if isinstance(he.detail, dict):
+                    conflict_count = he.detail.get("conflict_count", 0)
+                    conflicts = he.detail.get("conflicts", [])
+                    message = he.detail.get("message", "Schedule conflict detected")
+                    
+                    # Build a user-friendly message
+                    if conflicts:
+                        conflict_names = [c.get("summary", "an event") for c in conflicts[:3]]  # Show up to 3
+                        if len(conflicts) > 3:
+                            conflict_names.append(f"and {len(conflicts) - 3} more")
+                        conflict_list = ", ".join(conflict_names)
+                        natural_response = f"I can't schedule that time because you already have {conflict_count} conflicting event{'s' if conflict_count > 1 else ''}: {conflict_list}. Please choose a different time."
+                    else:
+                        natural_response = f"I can't schedule that time because it conflicts with an existing event. Please choose a different time."
+                else:
+                    # Fallback for string detail
+                    natural_response = f"I can't schedule that time because it conflicts with an existing event. Please choose a different time."
+            except Exception:
+                natural_response = f"I can't schedule that time because it conflicts with an existing event. Please choose a different time."
+        else:
+            # Other errors
+            natural_response = f"I tried to update your calendar but got an error: {he.detail}"
         result = None
     except Exception as e:
         logging.exception(f"Calendar action execution failed: {e}")

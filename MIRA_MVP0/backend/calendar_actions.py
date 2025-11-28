@@ -1,7 +1,8 @@
 from datetime import datetime, timedelta, timezone
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import os
 import requests
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Request, Header
 from pydantic import BaseModel, Field
@@ -17,6 +18,7 @@ router = APIRouter(prefix="/assistant/calendar", tags=["assistant-calendar"])
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+GRAPH_API_URL = "https://graph.microsoft.com/v1.0"
 
 
 def _current_user(request: Request, authorization: Optional[str] = None) -> dict:
@@ -109,8 +111,252 @@ class RescheduleRequest(BaseModel):
     new_end: datetime
 
 
+def _normalize_datetime(dt: datetime) -> datetime:
+    """
+    Normalize a datetime to UTC for consistent comparison.
+    Handles both timezone-aware and timezone-naive datetimes.
+    """
+    if dt.tzinfo is None:
+        # Assume UTC if no timezone info
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _parse_event_datetime(dt_str: str) -> Optional[datetime]:
+    """
+    Parse a datetime string from calendar events (Google or Outlook format).
+    Returns None if parsing fails.
+    """
+    if not dt_str:
+        return None
+    
+    try:
+        # Handle date-only format (all-day events)
+        if len(dt_str) == 10:
+            dt = datetime.fromisoformat(dt_str)
+            return dt.replace(tzinfo=timezone.utc)
+        
+        # Parse ISO format datetime
+        dt = datetime.fromisoformat(dt_str.replace('Z', '+00:00'))
+        return _normalize_datetime(dt)
+    except (ValueError, AttributeError) as e:
+        print(f"⚠️ Error parsing datetime '{dt_str}': {e}")
+        return None
+
+
 def _overlaps(a_start: datetime, a_end: datetime, b_start: datetime, b_end: datetime) -> bool:
+    """
+    Check if two time intervals overlap.
+    Returns True if intervals overlap (including exact matches at boundaries).
+    Adjacent events (e.g., 3-4pm and 4-5pm) do NOT overlap.
+    
+    Test Cases Handled:
+    1. Exact match: 4pm-5pm vs 4pm-5pm -> CONFLICT ✅
+    2. Partial overlap: 3:30pm-4:30pm vs 4pm-5pm -> CONFLICT ✅
+    3. Adjacent (no overlap): 3pm-4pm vs 4pm-5pm -> NO CONFLICT ✅
+    4. One contains other: 2pm-6pm vs 3pm-4pm -> CONFLICT ✅
+    5. Same start, different end: 4pm-5pm vs 4pm-6pm -> CONFLICT ✅
+    6. Different start, same end: 3pm-5pm vs 4pm-5pm -> CONFLICT ✅
+    
+    Args:
+        a_start, a_end: First interval (new event being scheduled)
+        b_start, b_end: Second interval (existing event)
+    
+    Returns:
+        True if intervals overlap, False otherwise
+    """
+    # Normalize all times to UTC for comparison
+    a_start = _normalize_datetime(a_start)
+    a_end = _normalize_datetime(a_end)
+    b_start = _normalize_datetime(b_start)
+    b_end = _normalize_datetime(b_end)
+    
+    # Two intervals overlap if: a_start < b_end AND b_start < a_end
+    # This handles all cases:
+    # - Exact match: a_start=b_start, a_end=b_end -> overlaps
+    # - Partial overlap: a_start < b_start < a_end < b_end -> overlaps
+    # - One contains the other: a_start < b_start < b_end < a_end -> overlaps
+    # - Adjacent (no overlap): a_end = b_start -> does NOT overlap (a_start < b_end is true, but b_start < a_end is false)
     return a_start < b_end and b_start < a_end
+
+
+def _get_outlook_token(uid: str) -> Optional[str]:
+    """
+    Get Outlook access token from database and refresh if expired.
+    Returns None if Outlook is not connected.
+    """
+    try:
+        from supabase import create_client
+        SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+            return None
+        
+        supabase_db = create_client(SUPABASE_URL.rstrip('/'), SUPABASE_SERVICE_ROLE_KEY)
+        
+        # Get Outlook token from database
+        res = supabase_db.table("outlook_credentials").select("*").eq("uid", uid).execute()
+        if not res.data or len(res.data) == 0:
+            return None
+        
+        creds = res.data[0]
+        access_token = creds.get("access_token")
+        expiry_str = creds.get("expiry")
+        
+        # Check if token is expired (with 5 minute buffer)
+        if expiry_str:
+            try:
+                expiry = datetime.fromisoformat(expiry_str.replace("Z", "+00:00"))
+                now = datetime.now(timezone.utc)
+                # Refresh if expires within 5 minutes
+                if expiry <= (now + timedelta(minutes=5)):
+                    refresh_token = creds.get("refresh_token")
+                    if refresh_token:
+                        try:
+                            # Refresh the token
+                            MICROSOFT_CLIENT_ID = os.getenv("MICROSOFT_CLIENT_ID")
+                            MICROSOFT_CLIENT_SECRET = os.getenv("MICROSOFT_CLIENT_SECRET")
+                            MICROSOFT_TOKEN_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
+                            
+                            data = {
+                                "client_id": MICROSOFT_CLIENT_ID,
+                                "scope": "offline_access User.Read Calendars.ReadWrite Mail.Read",
+                                "refresh_token": refresh_token,
+                                "grant_type": "refresh_token",
+                                "client_secret": MICROSOFT_CLIENT_SECRET
+                            }
+                            headers = {"Content-Type": "application/x-www-form-urlencoded"}
+                            refresh_res = requests.post(MICROSOFT_TOKEN_URL, data=data, headers=headers, timeout=10)
+                            new_token_data = refresh_res.json()
+                            
+                            if "access_token" in new_token_data:
+                                # Update database with new tokens
+                                expires_in = new_token_data.get("expires_in", 3600)
+                                new_expiry = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+                                update_payload = {
+                                    "access_token": new_token_data.get("access_token"),
+                                    "refresh_token": new_token_data.get("refresh_token", refresh_token),
+                                    "expiry": new_expiry.isoformat(),
+                                    "updated_at": datetime.now(timezone.utc).isoformat()
+                                }
+                                supabase_db.table("outlook_credentials").update(update_payload).eq("uid", uid).execute()
+                                access_token = new_token_data.get("access_token")
+                                print(f"✅ Calendar Actions: Outlook token refreshed for user {uid}")
+                            else:
+                                print(f"⚠️ Calendar Actions: Failed to refresh Outlook token: {new_token_data.get('error_description')}")
+                                access_token = None
+                        except Exception as e:
+                            print(f"⚠️ Calendar Actions: Error refreshing Outlook token: {e}")
+                            access_token = None
+                    else:
+                        access_token = None
+                else:
+                    # Token is still valid
+                    access_token = creds.get("access_token")
+            except Exception as e:
+                print(f"⚠️ Calendar Actions: Error parsing expiry date: {e}")
+                access_token = creds.get("access_token")
+        else:
+            access_token = creds.get("access_token")
+        
+        return access_token
+    except Exception as e:
+        print(f"⚠️ Calendar Actions: Error getting Outlook token: {e}")
+        return None
+
+
+def _fetch_outlook_events(uid: str, time_min: datetime, time_max: datetime) -> List[Dict[str, Any]]:
+    """
+    Fetch Outlook calendar events for a given time window.
+    Returns a list of events in Google Calendar format for consistency.
+    """
+    access_token = _get_outlook_token(uid)
+    if not access_token:
+        return []
+    
+    try:
+        headers = {"Authorization": f"Bearer {access_token}"}
+        # Convert to ISO format for Microsoft Graph API
+        start_iso = time_min.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        end_iso = time_max.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        
+        outlook_url = (
+            f"{GRAPH_API_URL}/me/calendar/calendarView?"
+            f"startDateTime={start_iso}&"
+            f"endDateTime={end_iso}&"
+            f"$top=250&"
+            f"$select=id,subject,start,end,location,bodyPreview,body,onlineMeeting"
+        )
+        
+        response = requests.get(outlook_url, headers=headers, timeout=10)
+        if response.status_code != 200:
+            print(f"⚠️ Calendar Actions: Failed to fetch Outlook events (status {response.status_code})")
+            return []
+        
+        outlook_events = response.json().get("value", [])
+        # Transform Outlook events to Google Calendar format for consistency
+        transformed_events = []
+        for o_event in outlook_events:
+            # Transform to Google Calendar format
+            start_data = o_event.get("start", {})
+            end_data = o_event.get("end", {})
+            
+            # Outlook uses dateTime field, Google uses dateTime or date
+            start_dt = start_data.get("dateTime")
+            end_dt = end_data.get("dateTime")
+            
+            if not start_dt or not end_dt:
+                continue
+            
+            # Create event in Google Calendar format
+            transformed_event = {
+                "id": o_event.get("id", ""),
+                "summary": o_event.get("subject", "No title"),
+                "start": {"dateTime": start_dt},
+                "end": {"dateTime": end_dt},
+                "location": o_event.get("location", {}).get("displayName", ""),
+                "description": o_event.get("bodyPreview", ""),
+                "_provider": "outlook"  # Mark as Outlook event
+            }
+            transformed_events.append(transformed_event)
+        
+        print(f"✅ Calendar Actions: Found {len(transformed_events)} Outlook events")
+        return transformed_events
+    except Exception as e:
+        print(f"⚠️ Calendar Actions: Error fetching Outlook events: {e}")
+        return []
+
+
+def _get_all_events_for_window(uid: str, time_min: datetime, time_max: datetime) -> List[Dict[str, Any]]:
+    """
+    Fetch events from both Google Calendar and Outlook for a given time window.
+    Returns a unified list of events in Google Calendar format.
+    """
+    all_events = []
+    
+    # Fetch from Google Calendar
+    try:
+        events_resp = list_events(
+            uid,
+            time_min.astimezone(timezone.utc).isoformat(),
+            time_max.astimezone(timezone.utc).isoformat(),
+            None,
+        )
+        items = events_resp.get("items") if isinstance(events_resp, dict) else events_resp
+        if items:
+            # Mark Google Calendar events
+            for item in items:
+                item["_provider"] = "google"
+            all_events.extend(items)
+            print(f"✅ Calendar Actions: Found {len(items)} Google Calendar events")
+    except Exception as e:
+        print(f"⚠️ Calendar Actions: Error fetching Google Calendar events: {e}")
+    
+    # Fetch from Outlook
+    outlook_events = _fetch_outlook_events(uid, time_min, time_max)
+    all_events.extend(outlook_events)
+    
+    print(f"📅 Calendar Actions: Total events found: {len(all_events)} (Google: {len([e for e in all_events if e.get('_provider') == 'google'])}, Outlook: {len([e for e in all_events if e.get('_provider') == 'outlook'])})")
+    return all_events
 
 
 @router.post("/check-conflicts")
@@ -122,25 +368,18 @@ def check_conflicts(
     """
     Backend for: "Hey Mira, check for conflicts."
 
+    Checks for conflicts in BOTH Google Calendar and Outlook calendars.
     The frontend / LLM should convert natural language into a concrete
     time window and call this endpoint.
     """
     user = _current_user(request, authorization)
     uid = user["id"]
 
-    events_resp = list_events(
-        uid,
-        window.start.astimezone(timezone.utc).isoformat(),
-        window.end.astimezone(timezone.utc).isoformat(),
-        None,
-    )
-
-    items = events_resp.get("items") if isinstance(events_resp, dict) else events_resp
-    if items is None:
-        items = []
+    # Fetch events from both Google Calendar and Outlook
+    all_events = _get_all_events_for_window(uid, window.start, window.end)
 
     conflicts = []
-    for e in items:
+    for e in all_events:
         start_str = (
             e.get("start", {}).get("dateTime")
             or e.get("start", {}).get("date")  # all-day
@@ -152,17 +391,32 @@ def check_conflicts(
         if not start_str or not end_str:
             continue
 
-        # All-day events (date-only)
-        if len(start_str) == 10:
-            s = datetime.fromisoformat(start_str).replace(tzinfo=timezone.utc)
-            e_end = datetime.fromisoformat(end_str).replace(tzinfo=timezone.utc)
+        # Parse event times
+        s = _parse_event_datetime(start_str)
+        e_end = _parse_event_datetime(end_str)
+        
+        if s is None or e_end is None:
+            print(f"⚠️ Skipping event '{e.get('summary', 'Unknown')}' due to invalid datetime")
+            continue
+        
+        # For all-day events, we need special handling
+        # An all-day event conflicts if the window overlaps with the entire day
+        if len(start_str) == 10:  # All-day event (date-only)
+            # All-day events span the entire day in UTC
+            # Check if the window overlaps with this day
+            day_start = s.replace(hour=0, minute=0, second=0, microsecond=0)
+            day_end = day_start + timedelta(days=1)
+            if _overlaps(window.start, window.end, day_start, day_end):
+                conflicts.append(e)
+                print(f"  ⚠️ Conflict detected: All-day event '{e.get('summary', 'Unknown')}' on {start_str}")
         else:
-            s = datetime.fromisoformat(start_str)
-            e_end = datetime.fromisoformat(end_str)
+            # Regular timed event
+            if _overlaps(window.start, window.end, s, e_end):
+                conflicts.append(e)
+                provider = e.get("_provider", "unknown")
+                print(f"  ⚠️ Conflict detected: Event '{e.get('summary', 'Unknown')}' ({provider}) from {s} to {e_end}")
 
-        if _overlaps(window.start, window.end, s, e_end):
-            conflicts.append(e)
-
+    print(f"🔍 Conflict check: Found {len(conflicts)} conflicts in window {window.start} to {window.end}")
     return {
         "has_conflict": len(conflicts) > 0,
         "conflicts": conflicts,
@@ -177,6 +431,18 @@ def schedule_event(
 ):
     """
     Create a new Google Calendar event (invite).
+    
+    Automatically checks for conflicts in BOTH Google Calendar and Outlook
+    before creating the event. BLOCKS the operation if conflicts are detected.
+    
+    Use Cases Tested:
+    1. Outlook event at 4pm, schedule Google event at 4pm -> BLOCKED ✅
+    2. Google event at 4pm, schedule Google event at 4pm -> BLOCKED ✅
+    3. BOTH Outlook event at 4pm AND Google event at 4pm, schedule new event at 4pm -> BLOCKED (detects both) ✅
+    4. Outlook event at 4pm, schedule Google event at 3:30pm (overlaps) -> BLOCKED ✅
+    5. No conflicts -> Event created ✅
+    6. All-day events -> Properly handled ✅
+    7. Timezone differences -> Normalized to UTC for comparison ✅
 
     Maps to: "Hey Mira, schedule a meeting at 9PM with Tony"
     once the LLM has turned that into times + emails.
@@ -184,6 +450,67 @@ def schedule_event(
     user = _current_user(request, authorization)
     uid = user["id"]
 
+    # ✅ Check for conflicts BEFORE creating the event
+    # Expand the window slightly to catch events that might overlap but start/end outside the window
+    # e.g., an event from 3:30pm-4:30pm should be detected when scheduling 4pm-5pm
+    buffer = timedelta(minutes=1)  # Small buffer to ensure we catch all overlapping events
+    fetch_start = payload.start - buffer
+    fetch_end = payload.end + buffer
+    
+    print(f"🔍 Checking for conflicts before scheduling event...")
+    print(f"   Event window: {payload.start} to {payload.end}")
+    print(f"   Fetch window: {fetch_start} to {fetch_end} (with buffer)")
+    all_events = _get_all_events_for_window(uid, fetch_start, fetch_end)
+    
+    conflicts = []
+    google_events_count = len([e for e in all_events if e.get("_provider") == "google"])
+    outlook_events_count = len([e for e in all_events if e.get("_provider") == "outlook"])
+    
+    print(f"🔍 Checking {len(all_events)} events for conflicts with new event: {payload.start} to {payload.end}")
+    print(f"   Events breakdown: {google_events_count} from Google Calendar, {outlook_events_count} from Outlook")
+    
+    # ✅ IMPORTANT: This loop checks ALL events from BOTH calendars
+    # If you have:
+    #   - Outlook event at 4pm
+    #   - Google Calendar event at 4pm
+    #   - Try to schedule new event at 4pm
+    # Both existing events will be detected as conflicts and the operation will be BLOCKED
+    for e in all_events:
+        start_str = (
+            e.get("start", {}).get("dateTime")
+            or e.get("start", {}).get("date")  # all-day
+        )
+        end_str = (
+            e.get("end", {}).get("dateTime")
+            or e.get("end", {}).get("date")
+        )
+        if not start_str or not end_str:
+            continue
+
+        # Parse event times
+        s = _parse_event_datetime(start_str)
+        e_end = _parse_event_datetime(end_str)
+        
+        if s is None or e_end is None:
+            print(f"⚠️ Skipping event '{e.get('summary', 'Unknown')}' due to invalid datetime")
+            continue
+        
+        # For all-day events, we need special handling
+        if len(start_str) == 10:  # All-day event (date-only)
+            day_start = s.replace(hour=0, minute=0, second=0, microsecond=0)
+            day_end = day_start + timedelta(days=1)
+            if _overlaps(payload.start, payload.end, day_start, day_end):
+                conflicts.append(e)
+                provider = e.get("_provider", "unknown")
+                print(f"  ⚠️ Conflict: All-day event '{e.get('summary', 'Unknown')}' ({provider}) on {start_str}")
+        else:
+            # Regular timed event
+            if _overlaps(payload.start, payload.end, s, e_end):
+                conflicts.append(e)
+                provider = e.get("_provider", "unknown")
+                print(f"  ⚠️ Conflict: Event '{e.get('summary', 'Unknown')}' ({provider}) from {s} to {e_end}")
+    
+    # Prepare event body
     attendees = [{"email": a} for a in payload.attendees] if payload.attendees else None
 
     body = {
@@ -203,12 +530,65 @@ def schedule_event(
     print(f"   Start: {body.get('start', {}).get('dateTime')}")
     print(f"   End: {body.get('end', {}).get('dateTime')}")
     print(f"   Attendees: {body.get('attendees', [])}")
-
+    
+    if conflicts:
+        conflict_summaries = [c.get("summary", "Untitled event") for c in conflicts]
+        conflict_details = []
+        google_conflicts = 0
+        outlook_conflicts = 0
+        
+        for c in conflicts:
+            start_str = c.get("start", {}).get("dateTime") or c.get("start", {}).get("date", "")
+            end_str = c.get("end", {}).get("dateTime") or c.get("end", {}).get("date", "")
+            provider = c.get("_provider", "unknown")
+            
+            if provider == "google":
+                google_conflicts += 1
+            elif provider == "outlook":
+                outlook_conflicts += 1
+            
+            conflict_details.append({
+                "summary": c.get("summary", "Untitled event"),
+                "start": start_str,
+                "end": end_str,
+                "provider": provider,
+                "calendar": "Google Calendar" if provider == "google" else "Outlook" if provider == "outlook" else "Unknown"
+            })
+        
+        # Build detailed conflict message
+        conflict_sources = []
+        if google_conflicts > 0:
+            conflict_sources.append(f"{google_conflicts} from Google Calendar")
+        if outlook_conflicts > 0:
+            conflict_sources.append(f"{outlook_conflicts} from Outlook")
+        
+        conflict_source_msg = " and ".join(conflict_sources) if conflict_sources else "existing events"
+        
+        # Detailed logging
+        print(f"❌ BLOCKED: Found {len(conflicts)} conflict(s) ({conflict_source_msg})")
+        for i, c in enumerate(conflicts, 1):
+            provider = c.get("_provider", "unknown")
+            calendar_name = "Google Calendar" if provider == "google" else "Outlook" if provider == "outlook" else "Unknown"
+            print(f"   Conflict {i}: '{c.get('summary', 'Unknown')}' in {calendar_name}")
+        print(f"   All conflicts: {', '.join(conflict_summaries)}")
+        raise HTTPException(
+            status_code=409,  # Conflict status code
+            detail={
+                "error": "Schedule conflict detected",
+                "message": f"Cannot schedule event: conflicts with {len(conflicts)} existing event(s) ({conflict_source_msg})",
+                "conflicts": conflict_details,
+                "conflict_count": len(conflicts),
+                "google_conflicts": google_conflicts,
+                "outlook_conflicts": outlook_conflicts
+            }
+        )
+    
+    print(f"✅ No conflicts found, proceeding with event creation")
     try:
         created = create_event(uid, body)
         print(f"✅ Event created successfully: {created.get('id', 'unknown')}")
         print(f"   Event link: {created.get('htmlLink', 'N/A')}")
-        return {"status": "scheduled", "event": created}
+        return {"status": "scheduled", "event": created, "has_conflict": False}
     except Exception as e:
         print(f"❌ Failed to create event: {e}")
         import traceback
@@ -375,6 +755,9 @@ def reschedule_event(
 ):
     """
     Reschedule an existing event by updating start/end.
+    
+    Automatically checks for conflicts in BOTH Google Calendar and Outlook
+    before rescheduling the event.
 
     Maps to: "Hey Mira, move my 3PM with Tony to 4PM."
     """
@@ -391,10 +774,116 @@ def reschedule_event(
             )
         eid = _find_single_event_by_time(uid, payload.old_start, payload.summary)
 
+    # ✅ Check for conflicts BEFORE rescheduling the event
+    # Expand the window slightly to catch events that might overlap but start/end outside the window
+    buffer = timedelta(minutes=1)  # Small buffer to ensure we catch all overlapping events
+    fetch_start = payload.new_start - buffer
+    fetch_end = payload.new_end + buffer
+    
+    print(f"🔍 Checking for conflicts before rescheduling event...")
+    print(f"   New event window: {payload.new_start} to {payload.new_end}")
+    print(f"   Fetch window: {fetch_start} to {fetch_end} (with buffer)")
+    all_events = _get_all_events_for_window(uid, fetch_start, fetch_end)
+    
+    conflicts = []
+    print(f"🔍 Checking {len(all_events)} events for conflicts with rescheduled event: {payload.new_start} to {payload.new_end}")
+    
+    for e in all_events:
+        # Skip the event we're rescheduling (if we have its ID)
+        if payload.event_id and e.get("id") == payload.event_id:
+            print(f"  ⏭️ Skipping event being rescheduled: {e.get('summary', 'Unknown')}")
+            continue
+            
+        start_str = (
+            e.get("start", {}).get("dateTime")
+            or e.get("start", {}).get("date")  # all-day
+        )
+        end_str = (
+            e.get("end", {}).get("dateTime")
+            or e.get("end", {}).get("date")
+        )
+        if not start_str or not end_str:
+            continue
+
+        # Parse event times
+        s = _parse_event_datetime(start_str)
+        e_end = _parse_event_datetime(end_str)
+        
+        if s is None or e_end is None:
+            print(f"⚠️ Skipping event '{e.get('summary', 'Unknown')}' due to invalid datetime")
+            continue
+        
+        # For all-day events, we need special handling
+        if len(start_str) == 10:  # All-day event (date-only)
+            day_start = s.replace(hour=0, minute=0, second=0, microsecond=0)
+            day_end = day_start + timedelta(days=1)
+            if _overlaps(payload.new_start, payload.new_end, day_start, day_end):
+                conflicts.append(e)
+                provider = e.get("_provider", "unknown")
+                print(f"  ⚠️ Conflict: All-day event '{e.get('summary', 'Unknown')}' ({provider}) on {start_str}")
+        else:
+            # Regular timed event
+            if _overlaps(payload.new_start, payload.new_end, s, e_end):
+                conflicts.append(e)
+                provider = e.get("_provider", "unknown")
+                print(f"  ⚠️ Conflict: Event '{e.get('summary', 'Unknown')}' ({provider}) from {s} to {e_end}")
+
     body = {
         "start": {"dateTime": payload.new_start.astimezone(timezone.utc).isoformat()},
         "end": {"dateTime": payload.new_end.astimezone(timezone.utc).isoformat()},
     }
 
+    if conflicts:
+        conflict_summaries = [c.get("summary", "Untitled event") for c in conflicts]
+        conflict_details = []
+        google_conflicts = 0
+        outlook_conflicts = 0
+        
+        for c in conflicts:
+            start_str = c.get("start", {}).get("dateTime") or c.get("start", {}).get("date", "")
+            end_str = c.get("end", {}).get("dateTime") or c.get("end", {}).get("date", "")
+            provider = c.get("_provider", "unknown")
+            
+            if provider == "google":
+                google_conflicts += 1
+            elif provider == "outlook":
+                outlook_conflicts += 1
+            
+            conflict_details.append({
+                "summary": c.get("summary", "Untitled event"),
+                "start": start_str,
+                "end": end_str,
+                "provider": provider,
+                "calendar": "Google Calendar" if provider == "google" else "Outlook" if provider == "outlook" else "Unknown"
+            })
+        
+        # Build detailed conflict message
+        conflict_sources = []
+        if google_conflicts > 0:
+            conflict_sources.append(f"{google_conflicts} from Google Calendar")
+        if outlook_conflicts > 0:
+            conflict_sources.append(f"{outlook_conflicts} from Outlook")
+        
+        conflict_source_msg = " and ".join(conflict_sources) if conflict_sources else "existing events"
+        
+        print(f"❌ BLOCKED: Found {len(conflicts)} conflict(s) at new time ({conflict_source_msg}): {', '.join(conflict_summaries)}")
+        raise HTTPException(
+            status_code=409,  # Conflict status code
+            detail={
+                "error": "Schedule conflict detected",
+                "message": f"Cannot reschedule event: conflicts with {len(conflicts)} existing event(s) ({conflict_source_msg})",
+                "conflicts": conflict_details,
+                "conflict_count": len(conflicts),
+                "google_conflicts": google_conflicts,
+                "outlook_conflicts": outlook_conflicts
+            }
+        )
+    
+    print(f"✅ No conflicts found at new time, proceeding with reschedule")
     updated = patch_event(uid, eid, body)
-    return {"status": "rescheduled", "event_id": eid, "event": updated}
+    return {
+        "status": "rescheduled",
+        "event_id": eid,
+        "event": updated,
+        "has_conflict": False
+    }
