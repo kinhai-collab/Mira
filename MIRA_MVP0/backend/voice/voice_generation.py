@@ -745,8 +745,24 @@ async def fetch_dashboard_data(user_token: str, has_email: bool, has_calendar: b
     # Determine base URL: use API_BASE_URL env var, or derive from request, or use localhost
     base_url = os.getenv("API_BASE_URL")
     
-    if not base_url and request:
-        # Try to get base URL from request
+    # If running locally (not in Lambda), prefer localhost even if API_BASE_URL is set
+    is_lambda = bool(os.getenv("AWS_LAMBDA_FUNCTION_NAME"))
+    if not is_lambda:
+        # For local development, use localhost to avoid network issues with remote endpoints
+        if request:
+            # Try to get base URL from request first
+            scheme = request.url.scheme
+            host = request.url.hostname
+            port = request.url.port
+            if port and port not in [80, 443]:
+                base_url = f"{scheme}://{host}:{port}"
+            else:
+                base_url = f"{scheme}://{host}"
+        else:
+            # Fallback to localhost for same-server calls
+            base_url = "http://127.0.0.1:8000"
+    elif not base_url and request:
+        # In Lambda, try to get base URL from request if API_BASE_URL not set
         scheme = request.url.scheme
         host = request.url.hostname
         port = request.url.port
@@ -755,7 +771,7 @@ async def fetch_dashboard_data(user_token: str, has_email: bool, has_calendar: b
         else:
             base_url = f"{scheme}://{host}"
     
-    # Fallback to localhost if still not set (for same-server calls)
+    # Final fallback to localhost if still not set
     if not base_url:
         base_url = "http://127.0.0.1:8000"
     
@@ -770,7 +786,6 @@ async def fetch_dashboard_data(user_token: str, has_email: bool, has_calendar: b
     calendar_events = []
 
     # Increase timeout for Lambda environments (Lambda self-calls can be slow)
-    is_lambda = bool(os.getenv("AWS_LAMBDA_FUNCTION_NAME"))
     timeout_duration = 30.0 if is_lambda else 10.0
     print(f"⏱️ Using timeout: {timeout_duration}s (Lambda: {is_lambda})")
     
@@ -789,10 +804,16 @@ async def fetch_dashboard_data(user_token: str, has_email: bool, has_calendar: b
                 else:
                     error_text = await res.atext()
                     print(f"⚠️ Email fetch returned {res.status_code}: {error_text}")
+                    emails = []  # Return empty list on error
+            except (httpx.ConnectError, httpx.TimeoutException) as e:
+                print(f"⚠️ Email fetch failed (network error): {e}")
+                print(f"   This is expected if running locally and API_BASE_URL points to a remote endpoint.")
+                emails = []  # Return empty list on network error
             except Exception as e:
                 print(f"⚠️ Email fetch failed: {e}")
                 import traceback
                 traceback.print_exc()
+                emails = []  # Return empty list on any error
 
         if has_calendar:
             try:
@@ -808,6 +829,7 @@ async def fetch_dashboard_data(user_token: str, has_email: bool, has_calendar: b
                 else:
                     error_text = await res.atext()
                     print(f"⚠️ Calendar fetch returned {res.status_code}: {error_text}")
+                    calendar_events = []  # Return empty list on error
             except Exception as e:
                 print("âš ï¸ Calendar fetch failed:", e)
 

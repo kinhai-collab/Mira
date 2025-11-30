@@ -104,7 +104,9 @@ function playNextInQueue() {
 		audioQueue.forEach(audio => {
 			try {
 				URL.revokeObjectURL(audio.src);
-			} catch (err) {}
+			} catch {
+				// Ignore errors when revoking URLs
+			}
 		});
 		audioQueue = [];
 		return;
@@ -139,7 +141,9 @@ function playNextInQueue() {
 		console.log('✅ Chunk complete');
 		try {
 			URL.revokeObjectURL(audio.src);
-		} catch (err) {}
+		} catch {
+			// Ignore errors when revoking URLs
+		}
 		currentPlayingAudio = null;
 		// Don't continue queue if interrupted
 		if (!isAudioInterrupted) {
@@ -149,14 +153,16 @@ function playNextInQueue() {
 		}
 	};
 
-	audio.onerror = (e) => {
+	audio.onerror = () => {
 		// Don't log error if we intentionally cleared the source during interruption
 		if (!isAudioInterrupted) {
-			console.error('❌ Audio error:', e);
+			console.error('❌ Audio error');
 		}
 		try {
 			URL.revokeObjectURL(audio.src);
-		} catch {}
+		} catch {
+			// Ignore errors when revoking URLs
+		}
 		currentPlayingAudio = null;
 		// Don't continue queue if interrupted
 		if (!isAudioInterrupted) {
@@ -225,7 +231,7 @@ function handleAudioChunk(base64: string) {
 		
 		// Immediately trigger load to start decoding in parallel
 		// This starts decoding ASAP, not waiting until play() is called
-		audio.load();
+		void audio.load();
 		
 		console.log('🎵 Created Audio element (preloading started)');
 
@@ -238,8 +244,8 @@ function handleAudioChunk(base64: string) {
 			playNextInQueue();
 		}
 
-	} catch (err) {
-		console.error('❌ Failed to handle audio chunk:', err);
+	} catch (error) {
+		console.error('❌ Failed to handle audio chunk:', error);
 	}
 }
 
@@ -335,9 +341,11 @@ function stopAudioPlayback() {
 			audio.pause();
 			audio.currentTime = 0;
 			audio.src = '';
-			audio.load();
+			void audio.load();
 			URL.revokeObjectURL(audio.src);
-		} catch (e) {}
+		} catch {
+			// Ignore errors when cleaning up audio
+		}
 	});
 	audioQueue = [];
 	isPlayingQueue = false;
@@ -349,8 +357,8 @@ function stopAudioPlayback() {
 			currentAudio.pause();
 			currentAudio.currentTime = 0;
 			console.log('✅ Stopped HTML5 audio');
-		} catch (e) {
-			console.warn('Failed to stop HTML5 audio:', e);
+		} catch (error) {
+			console.warn('Failed to stop HTML5 audio:', error);
 		}
 		currentAudio = null;
 	}
@@ -358,10 +366,10 @@ function stopAudioPlayback() {
 	// Send stop signal to backend if WebSocket is active
 	if (wsController && typeof wsController.send === 'function') {
 		try {
-			wsController.send({ message_type: 'stop_audio' });
+			void wsController.send({ message_type: 'stop_audio' });
 			console.log('📤 Sent stop_audio signal to backend');
-		} catch (e) {
-			console.warn('Failed to send stop_audio signal:', e);
+		} catch (error) {
+			console.warn('Failed to send stop_audio signal:', error);
 		}
 	}
 }
@@ -377,7 +385,9 @@ function resetAudioState() {
 		try {
 			currentPlayingAudio.pause();
 			URL.revokeObjectURL(currentPlayingAudio.src);
-		} catch (e) {}
+		} catch {
+			// Ignore errors when revoking URLs
+		}
 		currentPlayingAudio = null;
 	}
 	
@@ -385,7 +395,9 @@ function resetAudioState() {
 	audioQueue.forEach(audio => {
 		try {
 			URL.revokeObjectURL(audio.src);
-		} catch (e) {}
+		} catch {
+			// Ignore errors when revoking URLs
+		}
 	});
 	
 	audioQueue = [];
@@ -412,11 +424,15 @@ async function playAudio(base64: string) {
 		const url = URL.createObjectURL(blob);
 		const audio = new Audio(url);
 		audio.volume = 1.0;
-		audio.onended = () => URL.revokeObjectURL(url);
-		audio.onerror = () => URL.revokeObjectURL(url);
+		audio.onended = () => {
+			URL.revokeObjectURL(url);
+		};
+		audio.onerror = () => {
+			URL.revokeObjectURL(url);
+		};
 		await audio.play();
-	} catch (e) {
-		console.error('playAudio failed', e);
+	} catch (error) {
+		console.error('playAudio failed', error);
 	}
 }
 
@@ -439,7 +455,9 @@ function playNonStreamingAudio(audioBase64: string) {
 		audioQueue.forEach(audio => {
 			try {
 				URL.revokeObjectURL(audio.src);
-			} catch {}
+			} catch {
+				// Ignore errors when revoking URLs
+			}
 		});
 		audioQueue = [];
 		isPlayingQueue = false;
@@ -449,7 +467,9 @@ function playNonStreamingAudio(audioBase64: string) {
 		try {
 			currentPlayingAudio.pause();
 			URL.revokeObjectURL(currentPlayingAudio.src);
-		} catch (e) {}
+		} catch {
+			// Ignore errors when revoking URLs
+		}
 		currentPlayingAudio = null;
 	}
 
@@ -1004,7 +1024,7 @@ export async function startMiraVoice() {
 
 			// Make wsController globally accessible for manual reconnection
 			if (typeof window !== 'undefined') {
-				(window as any).wsController = wsController;
+				(window as Window & { wsController?: RealtimeSttController }).wsController = wsController;
 			}
 
 			await wsController.start();

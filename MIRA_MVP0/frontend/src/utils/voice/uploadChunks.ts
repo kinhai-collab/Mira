@@ -11,12 +11,12 @@ export async function uploadAudioInChunks(
 		endpoint?: string;
 		chunkSize?: number;
 		token?: string | null;
-		metadata?: Record<string, any>;
-		history?: any[];
+		metadata?: Record<string, unknown>;
+		history?: unknown[];
 		sendMetaOnFirstChunk?: boolean;
 		onProgress?: (sentBytes: number, totalBytes: number) => void;
 	} = {}
-): Promise<any> {
+): Promise<unknown> {
 	const {
 		endpoint,
 		chunkSize = 4096,
@@ -47,7 +47,7 @@ export async function uploadAudioInChunks(
 	const totalSize = file.size;
 	const totalChunks = Math.max(1, Math.ceil(totalSize / chunkSize));
 	let offset = 0;
-	let lastJson: any = null;
+	let lastJson: unknown = null;
 	let sentBytes = 0;
 
 	for (let idx = 0; offset < totalSize; idx++) {
@@ -88,7 +88,7 @@ export async function uploadAudioInChunks(
 
 			try {
 				lastJson = await res.json();
-			} catch (e) {
+			} catch {
 				lastJson = null;
 			}
 
