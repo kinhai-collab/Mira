@@ -95,6 +95,7 @@ class MemoryService:
 
         if to_compute:
             try:
+                logging.info(f"💾 MemoryService: Creating {len(to_compute)} embedding(s) via OpenAI")
                 resp = self.openai.embeddings.create(model=self.embedding_model, input=to_compute)
                 computed = [d.embedding for d in resp.data]
             except Exception as e:

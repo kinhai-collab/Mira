@@ -10,6 +10,48 @@ export let isMiraMuted = false;
 export function setMiraMute(mute: boolean) {
 	isMiraMuted = mute;
 	console.log(`Mira mute state set to: ${mute}`);
+	
+	// If muting, stop any currently playing audio
+	if (mute) {
+		// Stop current playing audio
+		if (currentPlayingAudio) {
+			try {
+				currentPlayingAudio.pause();
+				currentPlayingAudio.currentTime = 0;
+				currentPlayingAudio.volume = 0;
+				currentPlayingAudio.muted = true;
+			} catch (e) {
+				console.debug('Failed to stop audio when muting:', e);
+			}
+		}
+		
+		// Clear audio queue
+		audioQueue.forEach(audio => {
+			try {
+				audio.pause();
+				audio.currentTime = 0;
+				audio.volume = 0;
+				audio.muted = true;
+				URL.revokeObjectURL(audio.src);
+			} catch (e) {}
+		});
+		audioQueue = [];
+		isPlayingQueue = false;
+		isAudioPlaying = false;
+		
+		// Also stop the legacy currentAudio if it exists
+		if (currentAudio) {
+			try {
+				currentAudio.pause();
+				currentAudio.currentTime = 0;
+			} catch (e) {}
+		}
+		
+		// Stop greeting voice if playing
+		stopVoice();
+		
+		console.log('🔇 Stopped all audio playback due to mute');
+	}
 }
 
 /* ---------------------- Conversation Variables ---------------------- */
@@ -41,6 +83,22 @@ function playNextInQueue() {
 		isPlayingQueue = false;
 		currentPlayingAudio = null;
 		isAudioPlaying = false;
+		return;
+	}
+	
+	// Block playback if muted
+	if (isMiraMuted) {
+		console.log('🔇 Blocked playNextInQueue - Mira is muted');
+		isPlayingQueue = false;
+		currentPlayingAudio = null;
+		isAudioPlaying = false;
+		// Clear the queue when muted
+		audioQueue.forEach(audio => {
+			try {
+				URL.revokeObjectURL(audio.src);
+			} catch (err) {}
+		});
+		audioQueue = [];
 		return;
 	}
 	
@@ -110,6 +168,12 @@ function handleAudioChunk(base64: string) {
 		// Ignore chunks if user has interrupted
 		if (isAudioInterrupted) {
 			console.log('🚫 Ignoring audio chunk - user interrupted');
+			return;
+		}
+		
+		// Ignore chunks if muted
+		if (isMiraMuted) {
+			console.log('🔇 Ignoring audio chunk - Mira is muted');
 			return;
 		}
 		
@@ -306,6 +370,12 @@ function resetAudioState() {
 }
 
 async function playAudio(base64: string) {
+	// Don't play if muted
+	if (isMiraMuted) {
+		console.log('🔇 Skipping playAudio - Mira is muted');
+		return;
+	}
+	
 	try {
 		const binaryString = atob(base64);
 		const bytes = new Uint8Array(binaryString.length);
@@ -486,6 +556,12 @@ async function processServerResponse(data: any) {
 			const audioField = data.audio || data.audio_base_64 || data.audio_base64 || null;
 			if (audioField) {
 				console.log("🔊 Audio received (non-streaming), hasUserInteracted:", hasUserInteracted);
+				
+				// Don't play if muted
+				if (isMiraMuted) {
+					console.log("🔇 Skipping non-streaming audio - Mira is muted");
+					return;
+				}
 				
 				// Don't play if queue is already active
 				if (isPlayingQueue || currentPlayingAudio) {
@@ -696,9 +772,11 @@ export async function startMiraVoice() {
 					try {
 						console.log('Realtime response received:', text);
 						
-						if (audioB64) {
-							// non-streaming audio, play as a single chunk
+						if (audioB64 && !isMiraMuted) {
+							// non-streaming audio, play as a single chunk (only if not muted)
 							void playAudio(audioB64);
+						} else if (audioB64 && isMiraMuted) {
+							console.log('🔇 Skipping audio playback in onResponse - Mira is muted');
 						}
 						// also forward to the usual processor so conversation state updates
 						void processServerResponse({ text, audio: audioB64 });

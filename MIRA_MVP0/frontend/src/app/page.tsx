@@ -17,6 +17,7 @@ import {
 	stopMiraVoice,
 	setMiraMute,
 } from "@/utils/voice/voiceHandler";
+import { playVoice } from "@/utils/voice/voice";
 import { getWeather } from "@/utils/weather";
 import HeaderBar from "@/components/HeaderBar";
 import Sidebar from "@/components/Sidebar";
@@ -192,11 +193,13 @@ export default function Home() {
 	};
 	// Removed unused handleMicToggle
 
-	useEffect(() => {
-		console.log("Initializing Mira...");
-		startMiraVoice();
-		setIsConversationActive(true);
-	}, []);
+	// Don't auto-connect voice on page load - wait for user to click mic button
+	// This prevents unnecessary API calls when user hasn't explicitly started a conversation
+	// useEffect(() => {
+	// 	console.log("Initializing Mira...");
+	// 	startMiraVoice();
+	// 	setIsConversationActive(true);
+	// }, []);
 
 	useEffect(() => {
 		const init = async () => {
@@ -272,12 +275,12 @@ export default function Home() {
 				// Extract first name for personalized greeting
 				const firstName =
 					userName !== "there" ? userName.split(" ")[0] : userName;
-				setGreeting(`${timeGreeting}, ${firstName}!`);
-				// playVoice(`${timeGreeting}, ${firstName}!`); // Temporarily disabled
-				console.info(
-					"Greeting voice is temporarily disabled. Fallback greeting:",
-					`${timeGreeting}, ${firstName}!`
-				);
+				const greetingText = `${timeGreeting}, ${firstName}!`;
+				setGreeting(greetingText);
+				// Play voice greeting when user logs in
+				playVoice(greetingText).catch((err) => {
+					console.warn("Greeting voice playback failed:", err);
+				});
 			}, 300);
 		};
 		init();
@@ -650,7 +653,7 @@ export default function Home() {
 											: "—",
 								}}
 								showContextChips={false}
-								showControls={false}
+								showControls={true}
 							/>
 						</div>
 					)}

@@ -5,6 +5,7 @@ Automatically learns from user interactions to personalize experiences
 
 import os
 import re
+import logging
 from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime, timedelta
 import json
@@ -160,6 +161,7 @@ class IntelligentLearner:
         """
 
         try:
+            logging.info(f"🧠 IntelligentLearner: Calling OpenAI chat completion to extract insights")
             response = self.openai.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[{"role": "user", "content": prompt}],
