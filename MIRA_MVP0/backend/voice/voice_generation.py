@@ -1790,7 +1790,7 @@ Mischievous: "Oh, I see what you did there… clever move!"""
                             "style": 0  # No style variation for maximum consistency
                         },
                         "generation_config": {
-                            "chunk_length_schedule": [120, 160, 200, 250]  # Balanced chunks for streaming
+                            "chunk_length_schedule": [300, 400, 500]  # Larger chunks for smoother, more natural prosody
                         }
                     }
                     await tts_upstream.send(json.dumps(bos_msg))
@@ -1876,8 +1876,9 @@ Mischievous: "Oh, I see what you did there… clever move!"""
                                 is_sentence_end = delta_buffer.rstrip().endswith(('.', '!', '?'))
                                 should_send = (
                                     is_sentence_end or
-                                    word_count >= 5 or
-                                    time_elapsed >= 0.1
+                                    (is_clause_end and word_count >= 12) or
+                                    (word_count >= 15 and time_elapsed >= 0.5) or
+                                    time_elapsed >= 1.5  # Safety timeout
                                 )
                                 
                                 if should_send and delta_buffer.strip():
