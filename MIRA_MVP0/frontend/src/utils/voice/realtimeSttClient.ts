@@ -116,11 +116,12 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
     // New handlers for incremental streaming responses/audio
     if (msgType === 'partial_response') {
       // Skip empty partial responses
-      if (!parsed.text || !parsed.text.trim()) {
+      const text = typeof parsed.text === 'string' ? parsed.text : '';
+      if (!text || !text.trim()) {
         return; // Don't process empty partial responses
       }
       console.log('[realtimeSttClient] 📝 partial_response detected');
-      try { if (onPartialResponse && parsed.text) onPartialResponse(parsed.text); } catch {
+      try { if (onPartialResponse) onPartialResponse(text); } catch {
         // Ignore errors in partial response handler
       }
     } else if (msgType === 'audio_chunk') {
@@ -137,7 +138,8 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
       if (parsed.action || !audioB64) {
         console.log('[realtimeSttClient] 💬 response detected! Has audio:', !!audioB64, 'Has action:', !!parsed.action);
       }
-      try { if (onResponse) onResponse(parsed.text || '', audioB64); } catch (error) { console.error('[realtimeSttClient] onResponse error:', error); }
+      const responseText = typeof parsed.text === 'string' ? parsed.text : '';
+      try { if (onResponse) onResponse(responseText, audioB64); } catch (error) { console.error('[realtimeSttClient] onResponse error:', error); }
       // Note: Full parsed object (with action/actionData) is automatically forwarded to onMessage below
       // since 'response' is not in the alreadyHandled list
     }
@@ -156,7 +158,7 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
         // Ignore errors in message handler
       }
     } else if (msgType === 'committed_transcript' || msgType === 'committed_transcript_with_timestamps' || msgType === 'transcription' || msgType === 'transcribed' || msgType === 'final_transcript') {
-      const transcriptText = parsed.text || parsed.partial || null;
+      const transcriptText = (typeof parsed.text === 'string' ? parsed.text : null) || (typeof parsed.partial === 'string' ? parsed.partial : null) || null;
       // Skip empty/null transcripts to prevent glitches
       if (!transcriptText || !transcriptText.trim()) {
         console.debug('[realtimeSttClient] ⏭️ Skipping empty committed transcript');
@@ -218,9 +220,9 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
   async function ensureWebSocket() {
     if (wsManager && wsManager.isReady()) return;
     
-    // Don't connect if page is unloading (hot-reload or navigation)
-    if (typeof document !== 'undefined' && document.readyState === 'unloading') {
-      console.warn('[realtimeSttClient] Skipping WebSocket connection - page unloading');
+    // Don't connect if document is not ready
+    if (typeof document !== 'undefined' && document.readyState === 'loading') {
+      console.warn('[realtimeSttClient] Skipping WebSocket connection - document still loading');
       return;
     }
     
