@@ -42,7 +42,7 @@ export default function VoiceHandler() {
 					timeoutMs: 30000,
 				});
 				// If server returned base64 audio, play it; otherwise log transcript
-				if (result && result.audio) {
+				if (result && typeof result === 'object' && 'audio' in result && typeof result.audio === 'string') {
 					try {
 						const audioBinary = atob(result.audio);
 						const arrayBuffer = new ArrayBuffer(audioBinary.length);
