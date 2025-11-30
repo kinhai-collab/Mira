@@ -9,11 +9,23 @@ import { useState, useEffect } from "react";
 import ReschedulingPanel from "./components/ReschedulingPanel";
 import MeetingConfirmationUI from "./components/MeetingConfirmationUI";
 import CalendarConflictDetection from "./components/CalendarConflictDetection";
+import FooterBar from "@/components/FooterBar";
+import {
+	startMiraVoice,
+	stopMiraVoice,
+	setMiraMute,
+} from "@/utils/voice/voiceHandler";
 
 export default function CalendarFlowPage() {
 	const [stage, setStage] = useState<
 		"thinking" | "summary" | "conflict" | "rescheduling" | "confirmation"
 	>("thinking");
+	// FooterBar states
+
+	const [isListening, setIsListening] = useState(true); // mic selected by default
+	const [isTextMode, setIsTextMode] = useState(false);
+	const [isConversationActive, setIsConversationActive] = useState(false);
+	const [isMuted, setIsMuted] = useState(false);
 
 	useEffect(() => {
 		const timers: NodeJS.Timeout[] = [];
@@ -76,7 +88,9 @@ export default function CalendarFlowPage() {
 						day: "numeric",
 					})}
 					locationLabel={location}
-					temperatureLabel={temperatureC != null ? `${temperatureC}°` : "—"}
+					temperatureLabel={
+						temperatureC != null ? `${Math.floor(temperatureC)}°` : "--"
+					}
 					isLocationLoading={isLocationLoading}
 					isWeatherLoading={isWeatherLoading}
 				/>
@@ -139,6 +153,17 @@ export default function CalendarFlowPage() {
 					</div>
 				</div>
 			</main>
+			<FooterBar
+				isListening={isListening}
+				isTextMode={isTextMode}
+				setIsListening={setIsListening}
+				setIsTextMode={setIsTextMode}
+				setIsConversationActive={setIsConversationActive}
+				setIsMuted={setIsMuted}
+				startMiraVoice={startMiraVoice}
+				stopMiraVoice={stopMiraVoice}
+				setMiraMute={setMiraMute}
+			/>
 		</div>
 	);
 }

@@ -20,6 +20,8 @@ import {
 import { getWeather } from "@/utils/weather";
 import HeaderBar from "@/components/HeaderBar";
 import Sidebar from "@/components/Sidebar";
+import FooterBar from "@/components/FooterBar";
+import Orb from "@/components/Orb";
 
 const DEFAULT_SUMMARY_STEPS = [
 	{ id: "emails", label: "Checking your inbox for priority emails..." },
@@ -82,6 +84,10 @@ export default function Home() {
 	const [longitude, setLongitude] = useState<number | null>(null);
 	const [temperatureC, setTemperatureC] = useState<number | null>(null);
 	const [isWeatherLoading, setIsWeatherLoading] = useState<boolean>(false);
+	const [weatherCode, setWeatherCode] = useState<number | null>(null);
+	const [weatherDescription, setWeatherDescription] = useState<string | null>(
+		null
+	);
 
 	const greetingCalledRef = useRef(false);
 	const [summaryOverlayVisible, setSummaryOverlayVisible] = useState(false);
@@ -100,6 +106,7 @@ export default function Home() {
 	const [pendingSummaryMessage, setPendingSummaryMessage] = useState<
 		string | null
 	>(null);
+	const [isMovingDown, setIsMovingDown] = useState(false);
 
 	// Added: get system/geolocation and reverse-geocode to a readable place name
 	useEffect(() => {
@@ -415,28 +422,91 @@ export default function Home() {
 			});
 		}
 	};
+	const fetchWeatherForCoords = useCallback(
+		async (lat: number, lon: number) => {
+			// Helper: map Open-Meteo weathercode to simple description
+			const openMeteoCodeToDesc = (code: number) => {
+				// Simplified mapping for common values
+				switch (code) {
+					case 0:
+						return "Clear";
+					case 1:
+					case 2:
+					case 3:
+						return "Partly cloudy";
+					case 45:
+					case 48:
+						return "Fog";
+					case 51:
+					case 53:
+					case 55:
+						return "Drizzle";
+					case 61:
+					case 63:
+					case 65:
+						return "Rain";
+					case 71:
+					case 73:
+					case 75:
+						return "Snow";
+					case 80:
+					case 81:
+					case 82:
+						return "Showers";
+					case 95:
+					case 96:
+					case 99:
+						return "Thunderstorm";
+					default:
+						return "Unknown";
+				}
+			};
+			try {
+				setIsWeatherLoading(true);
+				console.log("Dashboard: fetching weather for coords:", lat, lon);
+				const data = await getWeather(lat, lon);
+				const temp = data?.temperatureC;
+				let desc: string | null = null;
+				// Map weathercode from Open-Meteo payload
+				if (data?.raw?.current_weather?.weathercode !== undefined) {
+					const code = Number(data.raw.current_weather.weathercode);
+					setWeatherCode(code);
+					desc = openMeteoCodeToDesc(code);
+				}
 
-	// Fetch current weather using Open-Meteo API directly
-	const fetchWeatherForCoords = async (lat: number, lon: number) => {
-		try {
-			setIsWeatherLoading(true);
-			console.log("Fetching weather for coords:", lat, lon);
-			const data = await getWeather(lat, lon);
-			const temp = data?.temperatureC;
-			if (typeof temp === "number") setTemperatureC(temp);
-		} catch (err) {
-			console.error("Error fetching weather:", err);
-		} finally {
-			setIsWeatherLoading(false);
-		}
-	};
-
+				if (typeof temp === "number") setTemperatureC(temp);
+				if (desc) setWeatherDescription(desc);
+				if (!desc && temp == null)
+					console.warn(
+						"Dashboard: weather response had no usable fields",
+						data
+					);
+			} catch (err) {
+				console.error("Dashboard: Error fetching weather:", err);
+			} finally {
+				setIsWeatherLoading(false);
+			}
+		},
+		[]
+	);
 	// When coords change, fetch weather
 	useEffect(() => {
 		if (latitude != null && longitude != null) {
 			fetchWeatherForCoords(latitude, longitude).catch((e) => console.error(e));
 		}
 	}, [latitude, longitude]);
+	const animateThenSubmit = (text?: string) => {
+		// Only trigger animation the FIRST time
+		if (textMessages.length === 0) {
+			setIsMovingDown(true);
+
+			setTimeout(() => {
+				handleTextSubmit(text);
+			}, 500); // match animation duration
+		} else {
+			handleTextSubmit(text);
+		}
+	};
 
 	// Handle text input submission
 	const handleTextSubmit = async (text?: string) => {
@@ -568,35 +638,81 @@ export default function Home() {
 	return (
 		<div className="flex flex-col min-h-screen bg-[#F8F8FB] text-gray-800">
 			{/* Global Header Bar */}
-			<div className="fixed top-0 left-0 w-full bg-[#F8F8FB] pl-[70px] md:pl-[90px]">
-				<HeaderBar
-					dateLabel={new Date().toLocaleDateString("en-US", {
-						weekday: "short",
-						month: "short",
-						day: "numeric",
-					})}
-					locationLabel={location}
-					temperatureLabel={temperatureC != null ? `${temperatureC}°` : "—"}
-					isLocationLoading={isLocationLoading}
-					isWeatherLoading={isWeatherLoading}
-				/>
-			</div>
+			<HeaderBar
+				dateLabel={new Date().toLocaleDateString("en-US", {
+					weekday: "short",
+					month: "short",
+					day: "numeric",
+				})}
+				locationLabel={location}
+				temperatureLabel={
+					temperatureC != null ? `${Math.floor(temperatureC)}°` : "--"
+				}
+				weatherCode={weatherCode}
+				isLocationLoading={isLocationLoading}
+				isWeatherLoading={isWeatherLoading}
+			/>
 			<main className="flex-1 flex flex-col items-center px-2 sm:px-4 md:px-6">
 				{/* SCALE CONTAINER */}
 				<div className="scale-[0.85] flex flex-col items-center w-full max-w-[900px] mx-auto px-4">
 					{/* Orb + Greeting */}
-					<div className="relative flex flex-col items-center mt-9 max-sm:mt-8">
-						<div className="w-32 h-32 sm:w-44 sm:h-44 rounded-full bg-gradient-to-br from-[#C4A0FF] via-[#E1B5FF] to-[#F5C5E5] shadow-[0_0_80px_15px_rgba(210,180,255,0.45)] animate-pulse"></div>
+					<div className="orb-wrapper mt-9 max-sm:mt-8">
+						<Orb hasMessages={textMessages.length > 0} />
 					</div>
+
 					{textMessages.length === 0 && (
 						<p className="w-full max-w-[368px] h-[50px] opacity-100 text-[rgba(70,70,71,1)] font-['Outfit'] font-medium text-lg sm:text-2xl md:text-3xl lg:text-[40px] leading-[100%] tracking-[0.5%] mt-6 sm:mt-8 text-center whitespace-nowrap flex items-center justify-center">
 							{greeting}
 						</p>
 					)}
-
-					{/* Conversation Feed for Text Mode */}
-					{isTextMode && textMessages.length > 0 && (
-						<div className="mt-10 sm:mt-14 w-full max-w-2xl space-y-4 max-h-[400px] overflow-y-auto">
+					{/* CENTER TEXT BAR — before conversation */}
+					{(textMessages.length === 0 || isMovingDown) && (
+						<div
+							className={`
+            w-full max-w-[720px] mt-6 mb-4
+            transition-all duration-500 ease-[cubic-bezier(0.25,0.1,0.25,1)]
+            ${
+							isMovingDown
+								? "translate-y-[350px] opacity-0"
+								: "translate-y-0 opacity-100"
+						}
+        `}
+						>
+							<div className="rounded-[10px] bg-gradient-to-r from-[#F4A4D3] to-[#B5A6F7] p-[1.5px] shadow-[0_12px_35px_rgba(181,166,247,0.45)]">
+								<div className="flex items-center rounded-[10px] bg-white px-4 py-2">
+									<input
+										type="text"
+										value={input}
+										onChange={(e) => setInput(e.target.value)}
+										onKeyDown={(e) => {
+											if (e.key === "Enter" && !e.shiftKey) {
+												e.preventDefault();
+												setIsConversationActive(true);
+												animateThenSubmit();
+											}
+										}}
+										placeholder={
+											isListening ? "I'm listening..." : "Type your request..."
+										}
+										className="flex-1 px-3 bg-transparent text-gray-700 placeholder-gray-400 focus:outline-none text-sm"
+									/>
+									<button
+										onClick={() => {
+											setIsConversationActive(true);
+											animateThenSubmit();
+										}}
+										disabled={!input.trim()}
+										className="w-9 h-9 flex items-center justify-center rounded-full border border-gray-200 bg-white shadow-sm disabled:opacity-50"
+									>
+										<Icon name="Send" size={16} />
+									</button>
+								</div>
+							</div>
+						</div>
+					)}
+					{/* Conversation Feed */}
+					{textMessages.length > 0 && (
+						<div className="mt-10 sm:mt-14 w-full max-w-[800px] space-y-4 max-h-[950px] overflow-y-auto px-4">
 							{textMessages.map((msg, idx) => (
 								<div
 									key={idx}
@@ -605,16 +721,17 @@ export default function Home() {
 									}`}
 								>
 									<div
-										className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+										className={`max-w-[80%] rounded-2xl px-4 py-3 shadow-sm ${
 											msg.role === "user"
 												? "bg-gradient-to-r from-[#d9b8ff] to-[#bfa3ff] text-gray-900"
-												: "bg-white border border-gray-200 text-gray-800"
-										} shadow-sm`}
+												: "bg-white border border-gray-200 text-gray-700"
+										}`}
 									>
-										<p className="text-sm leading-relaxed">{msg.content}</p>
+										{msg.content}
 									</div>
 								</div>
 							))}
+
 							{isLoadingResponse && (
 								<div className="flex justify-start">
 									<div className="max-w-[80%] rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
@@ -628,6 +745,41 @@ export default function Home() {
 							)}
 						</div>
 					)}
+
+					{/* Example Prompts — Visible until first user message */}
+					{textMessages.length === 0 && (
+						<div className="w-full max-w-[724px] min-h-[198px] text-left opacity-100 mt-6 sm:mt-8 px-4">
+							<p className="w-full max-w-[724px] h-auto min-h-[23px] opacity-100 text-[rgba(40,40,41,1)] font-['Outfit'] font-normal text-base sm:text-[18px] leading-[100%] tracking-[0.5%] mb-3">
+								Or start with an example below
+							</p>
+							<div className="flex flex-wrap gap-2 sm:gap-2.5">
+								{[
+									"give me my morning brief",
+									"How's my day looking?",
+									"Summarize today's tasks.",
+									"What meetings do I have today?",
+									"Show me my emails",
+									"Show me my emails and calendar",
+									"Show my calender events",
+									"Wrap up my day.",
+								].map((example, i) => (
+									<button
+										key={i}
+										onClick={() => {
+											setIsConversationActive(true);
+											animateThenSubmit(example);
+										}}
+										disabled={isLoadingResponse}
+										className="px-3 sm:px-3.5 py-1 sm:py-1.5 bg-white border border-gray-200 rounded-full shadow-sm hover:shadow-md transition text-gray-700 text-[12.5px] sm:text-[13.5px] font-normal disabled:opacity-50 disabled:cursor-not-allowed"
+									>
+										{example}
+									</button>
+								))}
+							</div>
+						</div>
+					)}
+
+					{/* Email & calendar thinking panel */}
 					{summaryOverlayVisible && (
 						<div className="mt-10 flex w-full justify-center px-4">
 							<EmailCalendarOverlay
@@ -654,145 +806,28 @@ export default function Home() {
 							/>
 						</div>
 					)}
-					{/* Input Bar — Always Visible */}
-					<div className="relative mt-6 sm:mt-14 w-full max-w-[700px] flex flex-col items-center">
-						<div className="w-full rounded-[10px] bg-gradient-to-r from-[#F4A4D3] to-[#B5A6F7] p-[1.5px] shadow-[0_12px_35px_rgba(181,166,247,0.45)]">
-							<div className="flex items-center rounded-[10px] bg-white px-4 sm:px-5 py-2 sm:py-2.5 w-full">
-								<input
-									type="text"
-									value={input}
-									onChange={(e) => setInput(e.target.value)}
-									onKeyDown={(e) => {
-										if (e.key === "Enter" && !e.shiftKey) {
-											e.preventDefault();
-											setIsConversationActive(true);
-											handleTextSubmit();
-										}
-									}}
-									placeholder={
-										isListening ? "I'm listening..." : "Type your request..."
-									}
-									className="flex-1 px-3 sm:px-4 py-1.5 sm:py-2 bg-transparent text-gray-700 placeholder-gray-400 rounded-l-xl focus:outline-none font-medium text-sm sm:text-base"
-									disabled={isLoadingResponse}
-								/>
-								<button
-									type="button"
-									onClick={() => {
-										setIsConversationActive(true);
-										handleTextSubmit();
-									}}
-									disabled={isLoadingResponse || !input.trim()}
-									className="flex items-center justify-center w-9 sm:w-10 h-9 sm:h-10 rounded-full bg-white border border-gray-200 shadow-sm hover:shadow-md transition disabled:opacity-50 disabled:cursor-not-allowed"
-								>
-									<Icon name="Send" size={16} />
-								</button>
-							</div>
-						</div>
-					</div>
-
-					{/* Example Prompts — Visible until first user message */}
-					{textMessages.length === 0 && (
-						<div className="w-full max-w-[724px] min-h-[198px] text-left opacity-100 mt-6 sm:mt-8 px-4">
-							<p className="w-full max-w-[724px] h-auto min-h-[23px] opacity-100 text-[rgba(40,40,41,1)] font-['Outfit'] font-normal text-base sm:text-[18px] leading-[100%] tracking-[0.5%] mb-3">
-								Or start with an example below
-							</p>
-							<div className="flex flex-wrap gap-2 sm:gap-2.5">
-								{[
-									"give me my morning brief",
-									"How's my day looking?",
-									"Summarize today's tasks.",
-									"What meetings do I have today?",
-									"Show me my emails",
-									"Show me my emails and calendar",
-									"Show my calender events",
-									"Wrap up my day.",
-								].map((example, i) => (
-									<button
-										key={i}
-										onClick={() => {
-											setIsConversationActive(true);
-											handleTextSubmit(example);
-										}}
-										disabled={isLoadingResponse}
-										className="px-3 sm:px-3.5 py-1 sm:py-1.5 bg-white border border-gray-200 rounded-full shadow-sm hover:shadow-md transition text-gray-700 text-[12.5px] sm:text-[13.5px] font-normal disabled:opacity-50 disabled:cursor-not-allowed"
-									>
-										{example}
-									</button>
-								))}
-							</div>
-						</div>
-					)}
-
-					{/* Mic & Keyboard Toggle */}
-					<div
-						className="
-    w-full 
-    flex 
-    justify-center 
-    mt-6            
-    max-sm:mt-4
-	   max-sm:mb-6
-"
-					>
-						<div className="relative w-[130px] sm:w-[150px] …">
-							{" "}
-							<div className="relative w-[130px] sm:w-[150px] h-[36px] border border-[#000] bg-white rounded-full px-[6px] shadow-[0_1px_4px_rgba(0,0,0,0.08)] flex items-center justify-between">
-								{/* Mic Button */}
-								<button
-									onClick={() => {
-										setIsListening(true);
-										setIsTextMode(false);
-
-										setIsConversationActive(true);
-										startMiraVoice();
-									}}
-									className={`flex items-center justify-center w-[60px] h-[28px] rounded-full border border-gray-200 transition-all duration-300 ${
-										isListening ? "bg-black" : "bg-white"
-									}`}
-								>
-									<Image
-										src={
-											isListening
-												? "/Icons/Property 1=Mic.svg"
-												: "/Icons/Property 1=MicOff.svg"
-										}
-										alt="Mic"
-										width={16}
-										height={16}
-										className={isListening ? "invert" : "brightness-0"}
-									/>
-								</button>
-
-								{/* Keyboard Button */}
-								<button
-									onClick={() => {
-										setIsTextMode(true);
-										setIsListening(false);
-
-										setIsConversationActive(false);
-										stopMiraVoice();
-										setIsMuted(false);
-										setMiraMute(false);
-									}}
-									className={`flex items-center justify-center w-[60px] h-[28px] rounded-full border border-gray-200 transition-all duration-300 ${
-										isTextMode ? "bg-black" : "bg-white"
-									}`}
-								>
-									<Image
-										src="/Icons/Property 1=Keyboard.svg"
-										alt="Keyboard Icon"
-										width={16}
-										height={16}
-										className={isTextMode ? "invert" : "brightness-0"}
-									/>
-								</button>
-							</div>
-						</div>
-					</div>
-					{/* Email & calendar thinking panel */}
 				</div>
 			</main>
 			<Sidebar />
+			{/* FooterBar only AFTER conversation starts */}
+			<div className="fixed bottom-4 left-0 w-full flex justify-center z-50">
+				<FooterBar
+					isListening={isListening}
+					isTextMode={isTextMode}
+					setIsListening={setIsListening}
+					setIsTextMode={setIsTextMode}
+					setIsConversationActive={setIsConversationActive}
+					setIsMuted={setIsMuted}
+					startMiraVoice={startMiraVoice}
+					stopMiraVoice={stopMiraVoice}
+					setMiraMute={setMiraMute}
+					input={input}
+					setInput={setInput}
+					handleTextSubmit={handleTextSubmit}
+					isLoadingResponse={isLoadingResponse}
+					textMessages={textMessages}
+				/>
+			</div>
 		</div>
 	);
 }

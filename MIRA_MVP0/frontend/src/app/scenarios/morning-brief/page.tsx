@@ -17,6 +17,7 @@ import { getValidToken, requireAuth } from "@/utils/auth";
 import { getWeather } from "@/utils/weather";
 import HeaderBar from "@/components/HeaderBar";
 import Sidebar from "@/components/Sidebar";
+import FooterBar from "@/components/FooterBar";
 
 interface MorningBriefData {
 	text: string;
@@ -72,6 +73,36 @@ export default function MorningBrief() {
 	const [timezone, setTimezone] = useState<string>(
 		Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
 	);
+
+	// TEXT MODE STATES
+
+	const [input, setInput] = useState("");
+	const [textMessages, setTextMessages] = useState<
+		{ role: "user" | "assistant"; content: string }[]
+	>([]);
+
+	const [isLoadingResponse, setIsLoadingResponse] = useState(false);
+
+	const handleTextSubmit = () => {
+		if (!input.trim()) return;
+
+		setIsLoadingResponse(true);
+
+		// Add user message
+		setTextMessages((prev) => [...prev, { role: "user", content: input }]);
+
+		// Clear input
+		setInput("");
+
+		// Fake assistant response for now
+		setTimeout(() => {
+			setTextMessages((prev) => [
+				...prev,
+				{ role: "assistant", content: "Working on that…" },
+			]);
+			setIsLoadingResponse(false);
+		}, 1200);
+	};
 
 	const fetchWeatherForCoords = async (lat: number, lon: number) => {
 		try {
@@ -406,14 +437,12 @@ export default function MorningBrief() {
 	}, [briefData, isListening, isMuted]);
 
 	// Auto-advance from thinking stage after loading completes
+	// Auto-advance immediately after loading completes
 	useEffect(() => {
-		if (stage === "thinking" && !loading && briefData) {
-			const timer = setTimeout(() => {
-				setStage("recommendation");
-			}, 2000);
-			return () => clearTimeout(timer);
+		if (!loading && briefData) {
+			setStage("recommendation");
 		}
-	}, [stage, loading, briefData]);
+	}, [loading, briefData]);
 
 	// 🎙 Voice is not auto-started on morning brief page
 	// User can manually start it via the mic button
@@ -471,7 +500,9 @@ export default function MorningBrief() {
 						day: "numeric",
 					})}
 					locationLabel={location}
-					temperatureLabel={temperatureC != null ? `${temperatureC}°` : "—"}
+					temperatureLabel={
+						temperatureC != null ? `${Math.floor(temperatureC)}°` : "--"
+					}
 					isLocationLoading={isLocationLoading}
 					isWeatherLoading={isWeatherLoading}
 				/>
@@ -498,27 +529,48 @@ export default function MorningBrief() {
 					</div>
 					{/* PANEL exactly like conversation feed */}
 					<div className="w-full flex justify-center">
-						<div className="w-full max-w-2xl">
-							{loading && stage === "thinking" && <ThinkingPanel />}
+						<div className="w-full max-w-[800px] mx-auto">
+							{loading && stage === "thinking" && (
+								<div className="max-w-[800px] bg-[#F8F8FB] rounded-xl">
+									<ThinkingPanel />
+								</div>
+							)}
 
 							{!loading && !error && briefData && (
 								<>
 									{stage === "recommendation" && (
-										<div className="mt-14 max-h-[58vh] overflow-y-auto scroll-smooth">
-											<RecommendationPanel
-												briefText={briefData.text}
-												temperatureC={temperatureC}
-												isWeatherLoading={isWeatherLoading}
-												onAccept={() => setStage("confirmation")}
-												events={briefData.events}
-												totalEvents={briefData.total_events}
-												totalTeams={briefData.total_teams}
-												nextEvent={briefData.next_event}
-												emailImportant={briefData.email_important}
-												gmailCount={briefData.gmail_count}
-												outlookCount={briefData.outlook_count}
-												totalUnread={briefData.total_unread}
-											/>
+										<div className="relative mt-14 w-full max-w-[800px]">
+											{/* SCROLLABLE CONTENT */}
+											<div
+												className="max-h-[58vh] overflow-y-scroll no-scrollbar bg-white border border-gray-200 rounded-[25px] relative z-10 w-full"
+												onScroll={(e) => {
+													const frame = document.querySelector(
+														".scroll-frame"
+													) as HTMLElement;
+													if (!frame) return;
+
+													if (e.currentTarget.scrollTop > 2) {
+														frame.style.opacity = "1";
+													} else {
+														frame.style.opacity = "0";
+													}
+												}}
+											>
+												<RecommendationPanel
+													briefText={briefData.text}
+													temperatureC={temperatureC}
+													isWeatherLoading={isWeatherLoading}
+													onAccept={() => setStage("confirmation")}
+													events={briefData.events}
+													totalEvents={briefData.total_events}
+													totalTeams={briefData.total_teams}
+													nextEvent={briefData.next_event}
+													emailImportant={briefData.email_important}
+													gmailCount={briefData.gmail_count}
+													outlookCount={briefData.outlook_count}
+													totalUnread={briefData.total_unread}
+												/>
+											</div>
 										</div>
 									)}
 
@@ -529,75 +581,29 @@ export default function MorningBrief() {
 							)}
 						</div>
 					</div>
-
-					{/* Mic & Keyboard Toggle */}
-					<div
-						className="
-    fixed
-    -bottom-20
-    left-1/2
-    -translate-x-1/2
-    z-50
-  "
-					>
-						<div className="relative w-[130px] sm:w-[130px]">
-							{" "}
-							<div className="relative w-[130px] sm:w-[150px] h-[36px] border border-[#000] bg-white rounded-full px-[6px] shadow-[0_1px_4px_rgba(0,0,0,0.08)] flex items-center justify-between">
-								{/* Mic Button */}
-								<button
-									onClick={() => {
-										setIsListening(true);
-										setIsTextMode(false);
-
-										setIsConversationActive(true);
-										startMiraVoice();
-									}}
-									className={`flex items-center justify-center w-[60px] h-[28px] rounded-full border border-gray-200 transition-all duration-300 ${
-										isListening ? "bg-black" : "bg-white"
-									}`}
-								>
-									<Image
-										src={
-											isListening
-												? "/Icons/Property 1=Mic.svg"
-												: "/Icons/Property 1=MicOff.svg"
-										}
-										alt="Mic"
-										width={16}
-										height={16}
-										className={isListening ? "invert" : "brightness-0"}
-									/>
-								</button>
-
-								{/* Keyboard Button */}
-								<button
-									onClick={() => {
-										setIsTextMode(true);
-										setIsListening(false);
-
-										setIsConversationActive(false);
-										stopMiraVoice();
-										setIsMuted(false);
-										setMiraMute(false);
-									}}
-									className={`flex items-center justify-center w-[60px] h-[28px] rounded-full border border-gray-200 transition-all duration-300 ${
-										isTextMode ? "bg-black" : "bg-white"
-									}`}
-								>
-									<Image
-										src="/Icons/Property 1=Keyboard.svg"
-										alt="Keyboard Icon"
-										width={16}
-										height={16}
-										className={isTextMode ? "invert" : "brightness-0"}
-									/>
-								</button>
-							</div>
-						</div>
-					</div>
 				</div>
 			</main>
 			<Sidebar />
+			{/* FooterBar only AFTER conversation starts */}
+			<div className="fixed bottom-4 left-0 w-full flex justify-center z-50">
+				<FooterBar
+					alwaysShowInput={true}
+					isListening={isListening}
+					isTextMode={isTextMode}
+					setIsListening={setIsListening}
+					setIsTextMode={setIsTextMode}
+					setIsConversationActive={setIsConversationActive}
+					setIsMuted={setIsMuted}
+					startMiraVoice={startMiraVoice}
+					stopMiraVoice={stopMiraVoice}
+					setMiraMute={setMiraMute}
+					input={input}
+					setInput={setInput}
+					handleTextSubmit={handleTextSubmit}
+					isLoadingResponse={isLoadingResponse}
+					textMessages={textMessages}
+				/>
+			</div>
 		</div>
 	);
 }

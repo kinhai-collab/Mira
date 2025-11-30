@@ -222,7 +222,9 @@ export default function EmailsPage() {
 						day: "numeric",
 					})}
 					locationLabel={location}
-					temperatureLabel={temperatureC != null ? `${temperatureC}°` : "—"}
+					temperatureLabel={
+						temperatureC != null ? `${Math.floor(temperatureC)}°` : "--"
+					}
 					isLocationLoading={isLocationLoading}
 					isWeatherLoading={isWeatherLoading}
 				/>

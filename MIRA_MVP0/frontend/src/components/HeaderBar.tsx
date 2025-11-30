@@ -5,11 +5,13 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/components/Icon";
 import { setMiraMute } from "@/utils/voice/voiceHandler";
+import Image from "next/image";
 
 interface HeaderBarProps {
 	dateLabel: string;
 	locationLabel: string;
 	temperatureLabel: string;
+	weatherCode?: number | null;
 	isLocationLoading?: boolean;
 	isWeatherLoading?: boolean;
 }
@@ -18,6 +20,7 @@ export default function HeaderBar({
 	dateLabel,
 	locationLabel,
 	temperatureLabel,
+	weatherCode,
 	isLocationLoading = false,
 	isWeatherLoading = false,
 }: HeaderBarProps) {
@@ -30,24 +33,64 @@ export default function HeaderBar({
 		setIsMuted(next);
 		setMiraMute(next);
 	};
+	function getWeatherIconPath(code: number, isNight: boolean) {
+		const base = "/Icons/Weather icons/";
+
+		// NIGHT
+		if (isNight) {
+			if (code === 0) return `${base}Property 1=Night.png`;
+			if (code === 1 || code === 2 || code === 3)
+				return `${base}Property 1=Cloudy.png`;
+
+			if (code === 45 || code === 48) return `${base}Property 1=Fog.png`;
+			if (code >= 51 && code <= 67) return `${base}Property 1=Rain.png`;
+			if (code >= 71 && code <= 77) return `${base}Property 1=Snow.png`;
+			if (code >= 80 && code <= 82) return `${base}Property 1=Rain.png`;
+			if (code >= 95) return `${base}Property 1=Thunderstorm.png`;
+
+			return `${base}Property 1=Cloudy.png`;
+		}
+
+		// DAY
+		if (code === 0) return `${base}Property 1=Sunny.png`;
+		if (code === 1 || code === 2) return `${base}Property 1=Partly Cloudy.png`;
+		if (code === 3) return `${base}Property 1=Cloudy.png`;
+
+		if (code === 45 || code === 48) return `${base}Property 1=Fog.png`;
+		if (code >= 51 && code <= 67) return `${base}Property 1=Rain.png`;
+		if (code >= 71 && code <= 77) return `${base}Property 1=Snow.png`;
+		if (code >= 80 && code <= 82) return `${base}Property 1=Rain.png`;
+		if (code >= 95) return `${base}Property 1=Thunderstorm.png`;
+
+		return `${base}Property 1=Cloudy.png`;
+	}
 
 	return (
-		<div className="sticky top-0 z-20 w-full bg-[#F8F8FB]/90 backdrop-blur-sm px-4 py-3 flex items-center justify-between">
+		<div className="fixed top-0 z-20 w-[94vw] bg-[#F8F8FB]/90 backdrop-blur-sm px-4 py-3 flex items-center justify-between">
 			{/* LEFT SECTION */}
-			<div className="flex items-center gap-2 text-sm flex-nowrap overflow-hidden">
+			<div className="flex pl-[20] items-center gap-2 text-sm flex-nowrap">
+				{" "}
 				<span className="font-normal text-gray-800 whitespace-nowrap">
 					{dateLabel}
 				</span>
-
 				<div className="flex items-center gap-1 px-2 py-0.5 border border-gray-200 rounded-full bg-white/40 backdrop-blur-sm whitespace-nowrap">
 					<Icon name="Location" size={14} className="text-gray-600" />
 					<span className="text-gray-700 font-normal text-sm">
 						{isLocationLoading ? "..." : locationLabel}
 					</span>
 				</div>
-
 				<div className="flex items-center gap-1 px-2 py-0.5 border border-gray-200 rounded-full bg-white/40 backdrop-blur-sm whitespace-nowrap">
-					<Icon name="Sun" size={14} className="text-yellow-500" />
+					<Image
+						src={getWeatherIconPath(
+							weatherCode ?? 0,
+							new Date().getHours() < 6 || new Date().getHours() >= 19
+						)}
+						alt="Weather"
+						width={14}
+						height={14}
+						className="inline-block"
+					/>
+
 					<span className="text-gray-700 font-normal text-sm">
 						{isWeatherLoading ? "..." : temperatureLabel}
 					</span>
@@ -55,7 +98,7 @@ export default function HeaderBar({
 			</div>
 
 			{/* RIGHT SECTION — DESKTOP */}
-			<div className="hidden md:flex items-center gap-3">
+			<div className="hidden md:flex items-center gap-3 ml-auto">
 				<button
 					onClick={() => router.push("/scenarios/morning-brief")}
 					className="flex items-center gap-1.5 px-4 py-1.5 bg-[#FFF8E7] border border-[#FFE9B5] rounded-full text-sm font-medium text-[#B58B00] shadow-sm hover:shadow-md transition"
