@@ -146,32 +146,6 @@ export default function RecommendationPanel({
 
 			<div className="border-t border-[#E1E2E5]" />
 
-			{/* WEATHER */}
-			<div className="space-y-2">
-				<p className="text-[20px] font-normal text-[#1F1F1F]">Weather</p>
-
-				<div className="flex items-center gap-2">
-					<Image
-						src="/Icons/Property 1=Sun.svg"
-						alt="weather"
-						width={22}
-						height={22}
-						className="min-w-[22px]"
-					/>
-					<p className="text-[15px] text-[#1F1F1F]">
-						{isWeatherLoading
-							? "…"
-							: temperatureC != null && weatherCondition
-							? `${weatherCondition} ${temperatureC}°`
-							: temperatureC != null
-							? `${temperatureC}°`
-							: "—"}
-					</p>
-				</div>
-			</div>
-
-			<div className="border-t border-[#E1E2E5]" />
-
 			{/* EVENTS */}
 			<div className="space-y-3">
 				<p className="text-[20px] font-normal text-[#1F1F1F]">

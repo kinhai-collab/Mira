@@ -127,6 +127,7 @@ export default function Dashboard() {
 		null
 	);
 	const [isWeatherLoading, setIsWeatherLoading] = useState<boolean>(false);
+	const [weatherCode, setWeatherCode] = useState<number | null>(null);
 
 	// Dashboard data state
 	const [emailStats, setEmailStats] = useState<EmailStats | null>(null);
@@ -290,10 +291,11 @@ export default function Dashboard() {
 				let desc: string | null = null;
 				// Map weathercode from Open-Meteo payload
 				if (data?.raw?.current_weather?.weathercode !== undefined) {
-					desc = openMeteoCodeToDesc(
-						Number(data.raw.current_weather.weathercode)
-					);
+					const code = Number(data.raw.current_weather.weathercode);
+					setWeatherCode(code);
+					desc = openMeteoCodeToDesc(code);
 				}
+
 				if (typeof temp === "number") setTemperatureC(temp);
 				if (desc) setWeatherDescription(desc);
 				if (!desc && temp == null)
@@ -382,23 +384,23 @@ export default function Dashboard() {
 		setIsLoadingEvents(true);
 		setIsLoadingTasks(true);
 		setIsLoadingReminders(true);
-		
+
 		try {
 			// Load all stats in parallel instead of sequentially
 			const [emailData, eventData, taskData, reminderData] = await Promise.all([
-				fetchEmailStats().catch(err => {
+				fetchEmailStats().catch((err) => {
 					console.error("Failed to load email stats:", err);
 					return null;
 				}),
-				fetchEventStats().catch(err => {
+				fetchEventStats().catch((err) => {
 					console.error("Failed to load event stats:", err);
 					return null;
 				}),
-				fetchTaskStats().catch(err => {
+				fetchTaskStats().catch((err) => {
 					console.error("Failed to load task stats:", err);
 					return null;
 				}),
-				fetchReminderStats().catch(err => {
+				fetchReminderStats().catch((err) => {
 					console.error("Failed to load reminder stats:", err);
 					return null;
 				}),
@@ -450,6 +452,38 @@ export default function Dashboard() {
 			}
 		};
 	}, []);
+	// Weather icon mapper that does NOT affect other icons
+	function getWeatherIconPath(code: number, isNight: boolean) {
+		const base = "/Icons/Weather icons/";
+
+		// NIGHT LOGIC
+		if (isNight) {
+			if (code === 0) return `${base}Property 1=Night.png`; // clear night
+			if (code === 1 || code === 2 || code === 3)
+				return `${base}Property 1=Cloudy.png`; // night: treat partly cloudy + cloudy all as cloudy
+
+			if (code === 45 || code === 48) return `${base}Property 1=Fog.png`;
+			if (code >= 51 && code <= 67) return `${base}Property 1=Rain.png`;
+			if (code >= 71 && code <= 77) return `${base}Property 1=Snow.png`;
+			if (code >= 80 && code <= 82) return `${base}Property 1=Rain.png`;
+			if (code >= 95) return `${base}Property 1=Thunderstorm.png`;
+
+			return `${base}Property 1=Cloudy.png`;
+		}
+
+		// DAY LOGIC
+		if (code === 0) return `${base}Property 1=Sunny.png`;
+		if (code === 1 || code === 2) return `${base}Property 1=Partly Cloudy.png`;
+		if (code === 3) return `${base}Property 1=Cloudy.png`;
+
+		if (code === 45 || code === 48) return `${base}Property 1=Fog.png`;
+		if (code >= 51 && code <= 67) return `${base}Property 1=Rain.png`;
+		if (code >= 71 && code <= 77) return `${base}Property 1=Snow.png`;
+		if (code >= 80 && code <= 82) return `${base}Property 1=Rain.png`;
+		if (code >= 95) return `${base}Property 1=Thunderstorm.png`;
+
+		return `${base}Property 1=Cloudy.png`;
+	}
 
 	return (
 		<div className="flex flex-col md:flex-row h-screen bg-[#F8F8FB] text-gray-800">
@@ -461,7 +495,10 @@ export default function Dashboard() {
 						day: "numeric",
 					})}
 					locationLabel={location}
-					temperatureLabel={temperatureC != null ? `${temperatureC}°` : "—"}
+					temperatureLabel={
+						temperatureC != null ? `${Math.floor(temperatureC)}°` : "--"
+					}
+					weatherCode={weatherCode}
 					isLocationLoading={isLocationLoading}
 					isWeatherLoading={isWeatherLoading}
 				/>
@@ -495,21 +532,31 @@ export default function Dashboard() {
 								{/* Overview items */}
 								<div className="flex flex-col sm:flex-row flex-wrap items-start md:items-center gap-8 text-[15px] md:text-[15.5px] font-normal text-gray-800">
 									{/* Weather */}
+
 									<div className="flex items-center gap-3">
 										<div className="border border-gray-300 rounded-full p-[6px] flex items-center justify-center">
 											<Image
-												src="/Icons/Property 1=Sun.svg"
+												src={getWeatherIconPath(
+													weatherCode ?? 0,
+													new Date().getHours() < 6 ||
+														new Date().getHours() >= 19
+												)}
 												alt="Weather"
 												width={22}
 												height={22}
+												unoptimized
 											/>
 										</div>
+
 										<div>
 											<p className="text-[15px] leading-tight">
-												{displayWeatherDescription}
+												{weatherDescription ?? "Loading..."}
 											</p>
+
 											<p className="text-gray-500 text-[13.5px]">
-												{displayTemperature}
+												{temperatureC !== null
+													? `${Math.floor(temperatureC)}°C`
+													: "--°C"}
 											</p>
 										</div>
 									</div>

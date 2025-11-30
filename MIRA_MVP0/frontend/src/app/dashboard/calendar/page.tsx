@@ -61,80 +61,93 @@ function MiniCalendar({
 	const year = viewDate.getFullYear();
 	const month = viewDate.getMonth();
 
-	const firstDayOfMonth = new Date(year, month, 1).getDay();
-	const daysInMonth = new Date(year, month + 1, 0).getDate();
-	const lastDayOfPrevMonth = new Date(year, month, 0).getDate();
+	// Build 6×7 matrix
+	const getMatrix = (year: number, month: number) => {
+		const firstOfMonth = new Date(year, month, 1);
+		const startDay = firstOfMonth.getDay(); // Sunday = 0
 
-	const days: { date: Date; isCurrentMonth: boolean }[] = [];
-	// Add previous month's trailing days
-	for (let i = firstDayOfMonth - 1; i >= 0; i--) {
-		days.push({
-			date: new Date(year, month - 1, lastDayOfPrevMonth - i),
-			isCurrentMonth: false,
-		});
-	}
-	// Add current month's days
-	for (let i = 1; i <= daysInMonth; i++) {
-		days.push({ date: new Date(year, month, i), isCurrentMonth: true });
-	}
-	// Add next month's leading days
-	const remainingDays = 35 - days.length; // 5 weeks = 35 days
-	for (let i = 1; i <= remainingDays; i++) {
-		days.push({ date: new Date(year, month + 1, i), isCurrentMonth: false });
-	}
+		// Start from the Sunday before the 1st (or the 1st itself if Sunday)
+		const startDate = new Date(year, month, 1 - startDay);
 
+		const matrix: Date[][] = [];
+		for (let week = 0; week < 6; week++) {
+			const row: Date[] = [];
+			for (let day = 0; day < 7; day++) {
+				const d = new Date(startDate);
+				d.setDate(startDate.getDate() + week * 7 + day);
+				row.push(d);
+			}
+			matrix.push(row);
+		}
+
+		return matrix;
+	};
+
+	const matrix = getMatrix(year, month);
 	const today = new Date();
 
 	return (
 		<div className="w-full px-2 py-2">
-			<div className="flex justify-starts items-center mb-2 py-2">
-				<span className="text-[18px] font-normal text-black tracking-[0.09px]">
+			{/* Header with month navigation */}
+			<div className="flex items-center justify-between mb-2 py-2">
+				<button
+					onClick={() => setViewDate(new Date(year, month - 1, 1))}
+					className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200"
+				>
+					<span className="text-gray-600 text-lg">‹</span>
+				</button>
+
+				<span className="text-[18px] font-normal text-black">
 					{viewDate.toLocaleDateString("en-US", {
 						month: "long",
 						year: "numeric",
 					})}
 				</span>
+
+				<button
+					onClick={() => setViewDate(new Date(year, month + 1, 1))}
+					className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200"
+				>
+					<span className="text-gray-600 text-lg">›</span>
+				</button>
 			</div>
-			<div className="flex justify-start mb-2">
+			{/* Weekday names */}
+			<div className="grid grid-cols-7 w-full mb-2">
 				{["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((d) => (
-					<div
-						key={d}
-						className="w-[47px] h-[30px] flex items-center justify-center"
-					>
-						<span className="text-[14px] font-normal text-black tracking-[0.07px]">
-							{d}
-						</span>
+					<div key={d} className="flex items-center justify-center h-[30px]">
+						<span className="text-[14px] text-black">{d}</span>
 					</div>
 				))}
 			</div>
-			<div className="flex flex-col">
-				{Array.from({ length: Math.ceil(days.length / 7) }, (_, weekIdx) => (
-					<div key={weekIdx} className="flex justify-between">
-						{days.slice(weekIdx * 7, weekIdx * 7 + 7).map((day, i) => {
-							const isSelected =
-								day.date.toDateString() === selectedDate.toDateString();
-							const isToday = day.date.toDateString() === today.toDateString();
-							return (
-								<div key={i} className="flex justify-center">
-									<button
-										onClick={() => onDateSelect(day.date)}
-										className={`w-[47px] h-[30px] flex items-center justify-center rounded-full text-[14px] font-normal tracking-[0.07px] ${
-											isSelected
-												? "bg-[#917CF4] text-[#F5F5F5]"
-												: isToday
-												? "bg-[#E0D9FC] text-[#444444]"
-												: day.isCurrentMonth
-												? "text-[#444444] hover:bg-gray-100"
-												: "text-[#BFBFBF]"
-										}`}
-									>
-										{day.date.getDate()}
-									</button>
-								</div>
-							);
-						})}
-					</div>
-				))}
+
+			{/* Dates grid */}
+			<div className="grid grid-cols-7 w-full">
+				{matrix.flat().map((day, idx) => {
+					const isCurrentMonth = day.getMonth() === month;
+					const isSelected = day.toDateString() === selectedDate.toDateString();
+					const isToday = day.toDateString() === today.toDateString();
+
+					return (
+						<button
+							key={idx}
+							onClick={() => onDateSelect(day)}
+							className={`
+          flex items-center justify-center h-[30px] rounded-full text-[14px]
+          ${
+						isSelected
+							? "bg-[#E0D9FC] text-[#444444]"
+							: isToday
+							? "bg-[#917CF4] text-[#E5E5E5]"
+							: isCurrentMonth
+							? "text-[#444] hover:bg-gray-100"
+							: "text-[#BFBFBF]"
+					}
+        `}
+						>
+							{day.getDate()}
+						</button>
+					);
+				})}
 			</div>
 		</div>
 	);
@@ -497,7 +510,9 @@ export default function CalendarPage() {
 						day: "numeric",
 					})}
 					locationLabel={location}
-					temperatureLabel={temperatureC != null ? `${temperatureC}°` : "—"}
+					temperatureLabel={
+						temperatureC != null ? `${Math.floor(temperatureC)}°` : "--"
+					}
 					isLocationLoading={isLocationLoading}
 					isWeatherLoading={isWeatherLoading}
 				/>

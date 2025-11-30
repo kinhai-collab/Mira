@@ -2,7 +2,7 @@
 "use client";
 
 import Image from "next/image";
-import { EventItem } from "../components/types";
+import { EventItem } from "./types";
 
 function getProviderIcon(provider: string) {
 	switch (provider) {

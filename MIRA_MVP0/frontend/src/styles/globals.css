@@ -9,8 +9,6 @@ body {
 	height: 100%;
 	font-family: "Inter", sans-serif;
 	background-color: #f9f9fb;
-	overflow-x: hidden;
-	overflow-y: auto;
 }
 @keyframes fadeIn {
 	from {
@@ -65,4 +63,31 @@ body {
 	.toggle-bar {
 		transform: scale(0.8);
 	}
+}
+.orb-wrapper {
+	width: 100%;
+	display: flex;
+	justify-content: center;
+	position: relative;
+	left: 50%;
+	transform: translateX(-50%);
+}
+
+@keyframes slideDownToFooter {
+	0% {
+		opacity: 1;
+		transform: translateY(0) scale(1);
+	}
+	40% {
+		opacity: 1;
+		transform: translateY(140px) scale(0.995); /* slight dip */
+	}
+	100% {
+		opacity: 0.98;
+		transform: translateY(200px) scale(1);
+	}
+}
+
+.animate-slideDownToFooter {
+	animation: slideDownToFooter 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
