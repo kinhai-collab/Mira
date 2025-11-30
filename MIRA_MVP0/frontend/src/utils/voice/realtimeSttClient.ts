@@ -185,7 +185,10 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
 
     // Check for errors - distinguish between server errors and ElevenLabs (upstream) errors
     if (parsed.error || msgType === 'auth_error' || parsed.error_message) {
-      const errorMsg = parsed.error || parsed.message || parsed.error_message || 'Unknown error';
+      const errorMsg = typeof parsed.error === 'string' ? parsed.error :
+                       typeof parsed.message === 'string' ? parsed.message :
+                       typeof parsed.error_message === 'string' ? parsed.error_message :
+                       'Unknown error';
 
       if (msgType === 'auth_error' || errorMsg.includes('authenticated') || errorMsg.includes('ElevenLabs')) {
         console.error('[realtimeSttClient] ⚠️ ElevenLabs authentication error (upstream):', errorMsg);
