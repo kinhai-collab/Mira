@@ -90,7 +90,7 @@ export default function Home() {
 	);
 
 	const greetingCalledRef = useRef(false);
-	const [summaryOverlayVisible, setSummaryOverlayVisible] = useState(false);
+	const [summaryOverlayVisible, setSummaryOverlayVisible] = useState(true); // ✅ Changed to true so it's visible on this page
 	const [summarySteps, setSummarySteps] = useState<VoiceSummaryStep[]>(() =>
 		prepareVoiceSteps(DEFAULT_SUMMARY_STEPS)
 	);
@@ -233,6 +233,38 @@ export default function Home() {
 		};
 	}, []);
 
+	// Load data from sessionStorage on mount (for navigation from home page)
+	useEffect(() => {
+		if (typeof window !== "undefined") {
+			const storedData = sessionStorage.getItem("mira_email_calendar_data");
+			if (storedData) {
+				try {
+					const data = JSON.parse(storedData) as VoiceSummaryEventDetail;
+					console.log("📦 Smart Summary: Loading data from sessionStorage", data);
+					
+					const rawSteps = data.steps?.length ? data.steps : DEFAULT_SUMMARY_STEPS;
+					const normalizedCalendarEvents: VoiceSummaryCalendarEvent[] =
+						Array.isArray(data.calendarEvents) ? data.calendarEvents : [];
+
+					setSummarySteps(prepareVoiceSteps(rawSteps));
+					setSummaryEmails(data.emails ?? []);
+					setSummaryEvents(normalizedCalendarEvents);
+					setSummaryFocus(data.focus ?? null);
+					setSummaryStage("thinking");
+					setSummaryOverlayVisible(true);
+					setSummaryRunId((id) => id + 1);
+					
+					// Clear the stored data after loading
+					sessionStorage.removeItem("mira_email_calendar_data");
+					console.log("🗑️ Smart Summary: Cleared sessionStorage");
+				} catch (error) {
+					console.error("❌ Smart Summary: Error parsing stored data", error);
+					sessionStorage.removeItem("mira_email_calendar_data");
+				}
+			}
+		}
+	}, []);
+
 	useEffect(() => {
 		const handler = async (event: Event) => {
 			const customEvent = event as CustomEvent<VoiceSummaryEventDetail>;
@@ -245,6 +277,12 @@ export default function Home() {
 			// in the detail.calendarEvents array, so we can use it directly
 			const normalizedCalendarEvents: VoiceSummaryCalendarEvent[] =
 				Array.isArray(detail.calendarEvents) ? detail.calendarEvents : [];
+
+			console.log("📧 Smart Summary: Received email/calendar data via event:", {
+				emails: detail.emails?.length || 0,
+				events: normalizedCalendarEvents.length || 0,
+				steps: rawSteps.length
+			});
 
 			setSummarySteps(prepareVoiceSteps(rawSteps));
 			setSummaryEmails(detail.emails ?? []);
@@ -260,6 +298,7 @@ export default function Home() {
 				"miraEmailCalendarSummary",
 				handler as EventListener
 			);
+			console.log("✅ Smart Summary: Event listener registered for miraEmailCalendarSummary");
 		}
 
 		return () => {
@@ -268,6 +307,7 @@ export default function Home() {
 					"miraEmailCalendarSummary",
 					handler as EventListener
 				);
+				console.log("🔄 Smart Summary: Event listener cleaned up");
 			}
 		};
 	}, []); // No dependencies needed since we're just using the event detail directly
@@ -408,15 +448,33 @@ export default function Home() {
 
 			// ----- SMART SUMMARY ACTION -----
 			if (data.action === "email_calendar_summary") {
-				if (data.text) setPendingSummaryMessage(data.text);
+				console.log("📧 Smart Summary Page: Received email_calendar_summary action", data.actionData);
+				
+				if (data.text) {
+					setPendingSummaryMessage(data.text);
+				}
 
-				window.dispatchEvent(
-					new CustomEvent("miraEmailCalendarSummary", {
-						detail: data.actionData ?? {},
-					})
-				);
+				// Directly update state since we're already on the smart-summary page
+				if (data.actionData) {
+					const detail = data.actionData;
+					const rawSteps = detail.steps?.length ? detail.steps : DEFAULT_SUMMARY_STEPS;
+					const normalizedCalendarEvents: VoiceSummaryCalendarEvent[] =
+						Array.isArray(detail.calendarEvents) ? detail.calendarEvents : [];
 
-				router.push("/scenarios/smart-summary");
+					console.log("📧 Smart Summary Page: Setting state directly", {
+						emails: detail.emails?.length || 0,
+						events: normalizedCalendarEvents.length || 0,
+					});
+
+					setSummarySteps(prepareVoiceSteps(rawSteps));
+					setSummaryEmails(detail.emails ?? []);
+					setSummaryEvents(normalizedCalendarEvents);
+					setSummaryFocus(detail.focus ?? null);
+					setSummaryStage("thinking");
+					setSummaryOverlayVisible(true);
+					setSummaryRunId((id) => id + 1);
+				}
+
 				return;
 			}
 

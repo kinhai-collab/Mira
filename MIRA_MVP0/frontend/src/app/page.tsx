@@ -582,14 +582,21 @@ export default function Home() {
 
 			// ✅ Handle calendar/email summary
 			if (data.action === "email_calendar_summary") {
+				console.log("📧 Home: Received email_calendar_summary action", data.actionData);
 				if (data.text) setPendingSummaryMessage(data.text);
-				if (typeof window !== "undefined") {
-					window.dispatchEvent(
-						new CustomEvent("miraEmailCalendarSummary", {
-							detail: data.actionData ?? {},
-						})
+				
+				// Store data in sessionStorage for the smart-summary page to pick up
+				if (typeof window !== "undefined" && data.actionData) {
+					sessionStorage.setItem(
+						"mira_email_calendar_data",
+						JSON.stringify(data.actionData)
 					);
+					console.log("💾 Home: Stored email/calendar data in sessionStorage");
 				}
+				
+				// Navigate to the smart-summary page
+				console.log("🔄 Home: Navigating to /scenarios/smart-summary");
+				router.push("/scenarios/smart-summary");
 				return;
 			}
 
