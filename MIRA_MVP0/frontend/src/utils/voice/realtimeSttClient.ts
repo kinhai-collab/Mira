@@ -126,14 +126,20 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
       }
     } else if (msgType === 'audio_chunk') {
       // support both `audio_base_64` and `audio` field names
-      const audioB64 = parsed.audio_base_64 || parsed.audio || parsed.audio_base64 || null;
+      const audioB64 = (typeof parsed.audio_base_64 === 'string' ? parsed.audio_base_64 : null) ||
+                       (typeof parsed.audio === 'string' ? parsed.audio : null) ||
+                       (typeof parsed.audio_base64 === 'string' ? parsed.audio_base64 : null) ||
+                       null;
       console.log('[realtimeSttClient] 🔊 audio_chunk detected! Has audio:', !!audioB64, 'Length:', audioB64?.length || 0);
       try { if (onAudioChunk && audioB64) onAudioChunk(audioB64); } catch (error) { console.error('[realtimeSttClient] onAudioChunk error:', error); }
     } else if (msgType === 'audio_final') {
       console.log('[realtimeSttClient] 🏁 audio_final detected!');
       try { if (onAudioFinal) onAudioFinal(); } catch (error) { console.error('[realtimeSttClient] onAudioFinal error:', error); }
     } else if (msgType === 'response') {
-      const audioB64 = parsed.audio_base_64 || parsed.audio || parsed.audio_base64 || null;
+      const audioB64 = (typeof parsed.audio_base_64 === 'string' ? parsed.audio_base_64 : null) ||
+                       (typeof parsed.audio === 'string' ? parsed.audio : null) ||
+                       (typeof parsed.audio_base64 === 'string' ? parsed.audio_base64 : null) ||
+                       null;
       // Only log response details if it has action or is important
       if (parsed.action || !audioB64) {
         console.log('[realtimeSttClient] 💬 response detected! Has audio:', !!audioB64, 'Has action:', !!parsed.action);
