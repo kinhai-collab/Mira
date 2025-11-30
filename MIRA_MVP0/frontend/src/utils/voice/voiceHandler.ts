@@ -59,6 +59,18 @@ function playNextInQueue() {
 
 	console.log(`▶️ Playing chunk (${audioQueue.length} remaining)`);
 
+	// Pre-buffer next chunk immediately when this one starts playing
+	const preloadNext = () => {
+		if (audioQueue.length > 0 && !isAudioInterrupted) {
+			const nextAudio = audioQueue[0];
+			// Trigger browser to start loading/decoding next chunk
+			if (nextAudio.readyState < 2) { // If not already loaded
+				nextAudio.load();
+				console.log('🔄 Pre-loading next chunk in parallel');
+			}
+		}
+	};
+
 	audio.onended = () => {
 		console.log('✅ Chunk complete');
 		try {
@@ -96,6 +108,8 @@ function playNextInQueue() {
 				const totalLatency = firstAudioPlayTime - firstChunkReceivedTime;
 				console.log(`⏱️ 🎯 TOTAL LATENCY: ${totalLatency.toFixed(1)}ms`);
 			}
+			// Start pre-loading next chunk NOW while this one plays
+			preloadNext();
 		})
 		.catch(err => {
 			console.error('❌ Play failed:', err);
@@ -134,12 +148,16 @@ function handleAudioChunk(base64: string) {
 		const blob = new Blob([bytes], { type: 'audio/mpeg' });
 		const url = URL.createObjectURL(blob);
 
-		// Create audio element
+		// Create audio element with aggressive preloading
 		const audio = new Audio(url);
-		audio.preload = 'auto';
+		audio.preload = 'auto'; // Request browser to preload entire file
 		audio.volume = 1.0;
 		
-		console.log('🎵 Created Audio element');
+		// Immediately trigger load to start decoding in parallel
+		// This starts decoding ASAP, not waiting until play() is called
+		audio.load();
+		
+		console.log('🎵 Created Audio element (preloading started)');
 
 		// Add to queue
 		audioQueue.push(audio);
