@@ -341,13 +341,13 @@ async def get_email_stats(request: Request, authorization: Optional[str] = Heade
                 messages_res = gmail_service.users().messages().list(
                     userId="me",
                     q=query,
-                    maxResults=100
+                    maxResults=50  # ✅ Reduce from 100 to 50 for faster loading
                 ).execute()
                 
                 messages = messages_res.get("messages", [])
                 print(f"📊 Dashboard: Found {len(messages)} Gmail messages in last 24 hours")
                 
-                for msg in messages[:50]:  # Limit detailed analysis to 50 most recent
+                for msg in messages[:30]:  # ✅ Limit detailed analysis to 30 most recent (was 50)
                     try:
                         msg_id = msg["id"]
                         detail_data = gmail_service.users().messages().get(
@@ -400,7 +400,7 @@ async def get_email_stats(request: Request, authorization: Optional[str] = Heade
                 
                 outlook_url = (
                     f"{GRAPH_API_URL}/me/messages?"
-                    f"$top=100&"
+                    f"$top=50&"  # ✅ Reduce from 100 to 50 for faster loading
                     f"$filter=receivedDateTime ge {yesterday_iso}&"
                     f"$select=id,subject,from,isRead,importance,receivedDateTime"
                 )
@@ -420,7 +420,7 @@ async def get_email_stats(request: Request, authorization: Optional[str] = Heade
                     outlook_messages = response_json.get("value", [])
                     print(f"📊 Dashboard: Found {len(outlook_messages)} Outlook messages in last 24 hours")
                     
-                    for msg in outlook_messages[:50]:  # Limit to 50 most recent
+                    for msg in outlook_messages[:30]:  # ✅ Limit to 30 most recent (was 50)
                         try:
                             subject = msg.get("subject", "")
                             from_field = msg.get("from", {}).get("emailAddress", {})
@@ -551,7 +551,7 @@ async def get_event_stats(request: Request, authorization: Optional[str] = Heade
                     timeMax=today_end.isoformat(),
                     singleEvents=True,
                     orderBy="startTime",
-                    maxResults=100
+                    maxResults=50  # ✅ Reduce from 100 to 50 for faster loading (dashboard only needs today's events)
                 ).execute()
                 
                 google_events = events_res.get("items", [])
@@ -578,7 +578,7 @@ async def get_event_stats(request: Request, authorization: Optional[str] = Heade
                     f"{GRAPH_API_URL}/me/calendar/calendarView?"
                     f"startDateTime={today_start_iso}&"
                     f"endDateTime={today_end_iso}&"
-                    f"$top=100"
+                    f"$top=50"  # ✅ Reduce from 100 to 50 for faster loading (dashboard only needs today's events)
                 )
                 
                 # Check what calendars exist
@@ -1005,7 +1005,7 @@ async def get_event_list(
                     timeMax=range_end.isoformat(),
                     singleEvents=True,
                     orderBy="startTime",
-                    maxResults=250
+                    maxResults=100  # ✅ Reduce from 250 to 100 for faster loading
                 ).execute()
                 
                 google_events = events_res.get("items", [])
@@ -1026,7 +1026,7 @@ async def get_event_list(
                     f"{GRAPH_API_URL}/me/calendar/calendarView?"
                     f"startDateTime={start_iso}&"
                     f"endDateTime={end_iso}&"
-                    f"$top=250"
+                    f"$top=100"  # ✅ Reduce from 250 to 100 for faster loading
                 )
                 
                 response = requests.get(outlook_url, headers=headers, timeout=10)
@@ -1466,14 +1466,15 @@ async def get_email_list(
                 messages = messages_res.get("messages", [])
                 print(f"📊 Dashboard: Found {len(messages)} Gmail messages in last {days_back} days")
                 
-                # Fetch detailed info for each Gmail email
+                # Fetch detailed info for each Gmail email (use metadata format for faster loading)
                 for msg in messages:
                     try:
                         msg_id = msg["id"]
                         detail_data = gmail_service.users().messages().get(
                             userId="me",
                             id=msg_id,
-                            format="full"
+                            format="metadata",  # ✅ Use metadata instead of full for faster loading
+                            metadataHeaders=["From", "Subject", "Date"]
                         ).execute()
                         
                         # Extract headers
@@ -1513,40 +1514,12 @@ async def get_email_list(
                             days = int(time_diff.days)
                             time_ago = f"{days}d ago"
                         
-                        # Extract snippet/preview
+                        # Extract snippet/preview (don't fetch full body for list view - lazy load on demand)
                         snippet = detail_data.get("snippet", "")
                         
-                        # Get email body
-                        body = ""
-                        payload = detail_data.get("payload", {})
-                        
-                        # Try to extract HTML or plain text body
-                        def get_body_from_parts(parts):
-                            for part in parts:
-                                if part.get("mimeType") == "text/html":
-                                    data = part.get("body", {}).get("data", "")
-                                    if data:
-                                        import base64
-                                        return base64.urlsafe_b64decode(data).decode("utf-8", errors="ignore")
-                                elif part.get("mimeType") == "text/plain":
-                                    data = part.get("body", {}).get("data", "")
-                                    if data:
-                                        import base64
-                                        return base64.urlsafe_b64decode(data).decode("utf-8", errors="ignore")
-                                elif "parts" in part:
-                                    nested_body = get_body_from_parts(part["parts"])
-                                    if nested_body:
-                                        return nested_body
-                            return ""
-                        
-                        if "parts" in payload:
-                            body = get_body_from_parts(payload["parts"])
-                        elif payload.get("body", {}).get("data"):
-                            import base64
-                            body = base64.urlsafe_b64decode(payload["body"]["data"]).decode("utf-8", errors="ignore")
-                        
-                        if not body:
-                            body = snippet
+                        # ✅ Don't fetch full body for list view - it's slow and not needed
+                        # Body will be fetched on-demand when user clicks "View"
+                        body = ""  # Empty body for list view
                         
                         # Check if unread
                         is_unread = "UNREAD" in labels
@@ -1592,7 +1565,8 @@ async def get_email_list(
                 days_ago_iso = days_ago.strftime("%Y-%m-%dT%H:%M:%SZ")
                 
                 # Fetch Outlook messages (max 50 to match Gmail)
-                outlook_url = f"{GRAPH_API_URL}/me/messages?$top={max_results}&$filter=receivedDateTime ge {days_ago_iso}&$select=id,subject,from,isRead,importance,receivedDateTime,bodyPreview,body&$orderby=receivedDateTime desc"
+                # ✅ Don't fetch body in list view - only fetch bodyPreview for snippet
+                outlook_url = f"{GRAPH_API_URL}/me/messages?$top={max_results}&$filter=receivedDateTime ge {days_ago_iso}&$select=id,subject,from,isRead,importance,receivedDateTime,bodyPreview&$orderby=receivedDateTime desc"
                 print(f"📊 Dashboard: Fetching Outlook emails from URL: {outlook_url}")
                 
                 response = requests.get(outlook_url, headers=headers, timeout=10)
@@ -1638,18 +1612,18 @@ async def get_email_list(
                                 days = int(time_diff.days)
                                 time_ago = f"{days}d ago"
                             
-                            # Extract body and snippet
+                            # Extract snippet (don't fetch full body for list view)
                             snippet = msg.get("bodyPreview", "")
-                            body = msg.get("body", {}).get("content", snippet)
+                            # ✅ Don't fetch full body for list view - it's slow and not needed
+                            # Body will be fetched on-demand when user clicks "View"
+                            body = ""  # Empty body for list view
                             
                             # Check if unread
                             is_unread = not msg.get("isRead", True)
                             
-                            # Only summarize the first 10 Outlook emails
-                            if i < 10 and len(body) > 20:
-                                summary = await summarize_email(body)
-                            else:
-                                summary = ""
+                            # ✅ Remove email summarization from list endpoint - it's too slow
+                            # Summaries will be generated on-demand when user clicks "View"
+                            summary = ""
                             
                             email_info = {
                                 "id": f"outlook_{msg['id']}",  # ✅ Prefix with provider

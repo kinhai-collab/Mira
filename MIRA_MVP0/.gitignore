@@ -70,3 +70,5 @@ out/
 *.njsproj
 *.sln
 *.sw?
+data/autopilot/autopilot_audit.jsonl
+data/autopilot/

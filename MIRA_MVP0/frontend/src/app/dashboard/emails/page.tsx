@@ -9,6 +9,7 @@ import { fetchEmailList, type Email } from "@/utils/dashboardApi";
 import { fetchEmailSummary } from "@/utils/dashboardApi";
 import { getWeather } from "@/utils/weather";
 import Sidebar from "@/components/Sidebar";
+import HeaderBar from "@/components/HeaderBar";
 
 // Helper: Generate days for a given month
 const generateCalendarDays = (year: number, month: number) => {
@@ -212,48 +213,25 @@ export default function EmailsPage() {
 
 	return (
 		<div className="flex flex-col min-h-screen bg-[#F8F8FB] text-gray-800 p-8 relative">
-			{/* Header */}
-			<div className="flex flex-wrap items-center justify-between mb-8">
-				<div className="flex flex-wrap items-center gap-3 text-gray-600 text-sm">
-					<span className="font-normal">
-						{today.toLocaleDateString("en-US", {
-							weekday: "short",
-							month: "short",
-							day: "numeric",
-						})}
-					</span>
-
-					<span className="flex items-center gap-1 bg-white border border-gray-200 rounded-full px-3 py-1 shadow-sm">
-						<Image
-							src="/Icons/Property 1=Location.svg"
-							alt="Location"
-							width={14}
-							height={14}
-						/>
-						<span className="text-gray-700">{displayLocation}</span>
-					</span>
-
-					<span className="flex items-center gap-1 bg-white border border-gray-200 rounded-full px-3 py-1 shadow-sm">
-						<Image
-							src="/Icons/Property 1=Sun.svg"
-							alt="Weather"
-							width={14}
-							height={14}
-						/>
-						<span className="text-gray-700">{displayTemperature}</span>
-					</span>
-				</div>
-
-				<span className="text-gray-400 text-sm font-normal">
-					{today.toLocaleTimeString("en-US", {
-						hour: "2-digit",
-						minute: "2-digit",
+			{/* Global Header Bar */}
+			<div className="fixed top-0  z-50 left-0 w-full bg-[#F8F8FB] pl-[70px] md:pl-[90px]">
+				<HeaderBar
+					dateLabel={new Date().toLocaleDateString("en-US", {
+						weekday: "short",
+						month: "short",
+						day: "numeric",
 					})}
-				</span>
+					locationLabel={location}
+					temperatureLabel={
+						temperatureC != null ? `${Math.floor(temperatureC)}°` : "--"
+					}
+					isLocationLoading={isLocationLoading}
+					isWeatherLoading={isWeatherLoading}
+				/>
 			</div>
 
 			{/* Title */}
-			<div className="mb-8">
+			<div className="mb-8 mt-10">
 				<h1 className="text-[26px] font-normal text-gray-900">Emails</h1>
 				<p className="text-gray-600 mt-1 font-normal">
 					Check your emails Mira is working on.
@@ -275,7 +253,7 @@ export default function EmailsPage() {
 			</div>
 
 			{/* Emails Container */}
-			<div className="bg-white border border-[#E7E7E7] rounded-2xl shadow-sm overflow-hidden relative">
+			<div className="bg-white border border-[#E7E7E7] mb-12 rounded-2xl shadow-sm overflow-hidden relative">
 				{/* Header Row */}
 				<div className="flex justify-between items-center px-6 py-5 border-b border-[#E7E7E7] bg-[#F8F9FB]">
 					<div className="flex items-center gap-4">
