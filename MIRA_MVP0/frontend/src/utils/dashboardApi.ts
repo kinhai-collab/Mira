@@ -8,7 +8,7 @@ import { getValidToken } from "./auth";
 
 const API_BASE_URL = (
 	process.env.NEXT_PUBLIC_API_URL ||
-	"https://xmtg107ehj.execute-api.us-east-2.amazonaws.com"
+	"http://127.0.0.1:8000"
 ).replace(/\/$/, "");
 
 const buildApiUrl = (path: string) => {

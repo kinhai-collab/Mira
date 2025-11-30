@@ -12,9 +12,6 @@ Notes:
 - Provide `token` in options; it will be sent as an initial auth message. If your server expects token in querystring, provide it in wsUrl.
 */
 
-// Type for AudioContext (supports both standard and webkit prefix)
-type AudioContextType = typeof AudioContext;
-
 type Options = {
   wsUrl?: string;
   token?: string | null;

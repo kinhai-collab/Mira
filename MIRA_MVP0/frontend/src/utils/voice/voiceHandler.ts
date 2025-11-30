@@ -3,6 +3,7 @@ import { stopVoice } from "./voice";
 import { getValidToken } from "@/utils/auth";
 import { sendBlobOnce } from "./wsVoiceStt";
 import { createRealtimeSttClient } from "./realtimeSttClient";
+import { ConnectionState } from "./WebSocketManager";
 
 /* ---------------------- Global Mute Control ---------------------- */
 export let isMiraMuted = false;
@@ -33,7 +34,7 @@ export function setMiraMute(mute: boolean) {
 				audio.volume = 0;
 				audio.muted = true;
 				URL.revokeObjectURL(audio.src);
-			} catch (e) {}
+			} catch {}
 		});
 		audioQueue = [];
 		isPlayingQueue = false;
@@ -44,7 +45,7 @@ export function setMiraMute(mute: boolean) {
 			try {
 				currentAudio.pause();
 				currentAudio.currentTime = 0;
-			} catch (e) {}
+			} catch {}
 		}
 		
 		// Stop greeting voice if playing
@@ -59,20 +60,25 @@ let activeRecorder: MediaRecorder | null = null;
 let activeStream: MediaStream | null = null;
 let isConversationActive = false;
 let hasUserInteracted = false; // Track if user has interacted with the page
-let isAudioPlaying = false; // Prevent recording while AI audio is playing
 let currentAudio: HTMLAudioElement | null = null; // Current playing audio for interruption
 
 let conversationHistory: { role: "user" | "assistant"; content: string }[] = [];
 
 // WebSocket STT controller instance (started when realtime conversation begins)
-let wsController: any = null;
+type RealtimeSttController = {
+	start: () => Promise<void>;
+	stop: () => void;
+	getWebSocket: () => unknown;
+	send: (data: unknown) => void;
+	forceReconnect: () => void;
+} | null;
+let wsController: RealtimeSttController = null;
 
 // Simple audio playback with HTML Audio elements
 let audioQueue: HTMLAudioElement[] = [];
 let isPlayingQueue = false;
 let currentPlayingAudio: HTMLAudioElement | null = null;
 let isAudioInterrupted = false; // Track if user interrupted AI audio
-let lastPartialResponseText = '';
 let firstChunkReceivedTime = 0;
 let firstAudioPlayTime = 0;
 
@@ -86,7 +92,6 @@ function playNextInQueue() {
 		console.log('🚫 Blocked playNextInQueue - user interrupted');
 		isPlayingQueue = false;
 		currentPlayingAudio = null;
-		isAudioPlaying = false;
 		return;
 	}
 	
@@ -95,7 +100,6 @@ function playNextInQueue() {
 		console.log('🔇 Blocked playNextInQueue - Mira is muted');
 		isPlayingQueue = false;
 		currentPlayingAudio = null;
-		isAudioPlaying = false;
 		// Clear the queue when muted
 		audioQueue.forEach(audio => {
 			try {
@@ -110,12 +114,10 @@ function playNextInQueue() {
 		console.log('✅ Queue empty');
 		isPlayingQueue = false;
 		currentPlayingAudio = null;
-		isAudioPlaying = false;
 		return;
 	}
 
 	isPlayingQueue = true;
-	isAudioPlaying = true;
 	const audio = audioQueue.shift()!;
 	currentPlayingAudio = audio;
 
@@ -154,7 +156,7 @@ function playNextInQueue() {
 		}
 		try {
 			URL.revokeObjectURL(audio.src);
-		} catch (err) {}
+		} catch {}
 		currentPlayingAudio = null;
 		// Don't continue queue if interrupted
 		if (!isAudioInterrupted) {
@@ -236,12 +238,14 @@ function handleAudioChunk(base64: string) {
 			playNextInQueue();
 		}
 
-	} catch (e) {
-		console.error('❌ Failed to handle audio chunk:', e);
+	} catch (err) {
+		console.error('❌ Failed to handle audio chunk:', err);
 	}
 }
 
 // Convert AudioBuffer to WAV blob
+// Note: This function is defined but currently unused - kept for potential future use
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function audioBufferToWav(audioBuffer: AudioBuffer): Blob {
 	const numChannels = audioBuffer.numberOfChannels;
 	const sampleRate = audioBuffer.sampleRate;
@@ -435,7 +439,7 @@ function playNonStreamingAudio(audioBase64: string) {
 		audioQueue.forEach(audio => {
 			try {
 				URL.revokeObjectURL(audio.src);
-			} catch (e) {}
+			} catch {}
 		});
 		audioQueue = [];
 		isPlayingQueue = false;
@@ -510,7 +514,7 @@ function playNonStreamingAudio(audioBase64: string) {
 // Centralized server response processor used by both the realtime WS flow and
 // the one-shot blob flow. Keeps conversation history, dispatches events,
 // and plays TTS audio when provided.
-async function processServerResponse(data: any) {
+async function processServerResponse(data: Record<string, unknown>) {
 	try {
 		if (!data) return;
 		
@@ -531,7 +535,7 @@ async function processServerResponse(data: any) {
 				} : data;
 				console.log('📥 WS Message (important):', logData);
 			}
-		} catch (e) {
+		} catch {
 			// Silent catch for logging errors
 		}
 		
@@ -844,7 +848,7 @@ async function processServerResponse(data: any) {
 	}
 }
 
-function logDetailedError(prefix: string, err: any) {
+function logDetailedError(prefix: string, err: unknown) {
 	try {
 		if (err instanceof Error) {
 			console.error(prefix, { name: err.name, message: err.message, stack: err.stack });
@@ -943,8 +947,8 @@ export async function startMiraVoice() {
 				wsUrl: (process.env.NEXT_PUBLIC_WS_URL as string) || 'ws://127.0.0.1:8000/api/ws/voice-stt',
 				token,
 				chunkSize: 4096,
-				onMessage: async (msg: any) => {
-					await processServerResponse(msg);
+				onMessage: async (msg: unknown) => {
+					await processServerResponse(msg as Record<string, unknown>);
 				},
 				onPartialResponse: (text: string) => {
 					try {
@@ -952,17 +956,17 @@ export async function startMiraVoice() {
 						if (typeof window !== 'undefined') {
 							window.dispatchEvent(new CustomEvent('miraPartialResponse', { detail: text }));
 						}
-					} catch (e) {}
+					} catch {}
 				},
 				onAudioChunk: (b64: string) => {
 					try { 
 						handleAudioChunk(b64);
-					} catch (e) { console.error('onAudioChunk handler failed', e); }
+					} catch (err) { console.error('onAudioChunk handler failed', err); }
 				},
 				onAudioFinal: () => {
 					try { 
 						handleAudioFinal();
-					} catch (e) { console.error('onAudioFinal failed', e); }
+					} catch (err) { console.error('onAudioFinal failed', err); }
 				},
 				onResponse: (text: string, audioB64?: string | null) => {
 					try {
@@ -976,10 +980,10 @@ export async function startMiraVoice() {
 						}
 						// also forward to the usual processor so conversation state updates
 						void processServerResponse({ text, audio: audioB64 });
-					} catch (e) { console.error('onResponse handler failed', e); }
+					} catch (err) { console.error('onResponse handler failed', err); }
 				},
-				onError: (e: any) => {
-					try { logDetailedError('WS stt error:', e); } catch (logErr) { console.error('WS stt error (logging failed)', logErr, e); }
+				onError: (err: unknown) => {
+					try { logDetailedError('WS stt error:', err); } catch (logErr) { console.error('WS stt error (logging failed)', logErr, err); }
 				},
 				onClose: (ev?: CloseEvent) => {
 					console.log('WS stt closed', ev ? {
@@ -989,7 +993,7 @@ export async function startMiraVoice() {
 					} : '');
 				},
 				onOpen: () => console.log('WS stt open'),
-				onStateChange: (state: any) => {
+				onStateChange: (state: ConnectionState) => {
 					console.log('🔄 WebSocket state changed:', state);
 					// Dispatch event for UI components
 					if (typeof window !== 'undefined') {
@@ -1214,6 +1218,8 @@ async function monitorForInterruption(): Promise<boolean> {
 
 
 /* ---------------------- Record → Send → Play Cycle ---------------------- */
+// Note: This function is defined but currently unused - kept for potential future use
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function recordOnce(): Promise<void> {
 	return new Promise<void>(async (resolve, reject) => {
 		try {
@@ -1276,7 +1282,7 @@ async function recordOnce(): Promise<void> {
 
 				try {
 					// Use WebSocket STT/TTS path instead of HTTP endpoint
-					let data: any = null;
+					let data: Record<string, unknown> | null = null;
 					try {
 						const token = await (async () => {
 							try { return await getValidToken(); } catch { return null; }

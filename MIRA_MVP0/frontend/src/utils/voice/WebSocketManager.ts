@@ -14,9 +14,9 @@ export enum ConnectionState {
 interface WebSocketManagerConfig {
 	wsUrl: string;
 	token: string | null;
-	onMessage: (data: any) => void;
+	onMessage: (data: unknown) => void;
 	onStateChange?: (state: ConnectionState) => void;
-	onError?: (error: any) => void;
+	onError?: (error: unknown) => void;
 	maxReconnectAttempts?: number;
 	initialReconnectDelay?: number;
 	pingInterval?: number;
@@ -32,7 +32,7 @@ export class WebSocketManager {
 	private pingTimer: NodeJS.Timeout | null = null;
 	private pongTimer: NodeJS.Timeout | null = null;
 	private shouldReconnect = true;
-	private messageQueue: any[] = [];
+	private messageQueue: unknown[] = [];
 	
 	// Configuration with defaults
 	private readonly maxReconnectAttempts: number;
@@ -215,7 +215,7 @@ export class WebSocketManager {
 	/**
 	 * Send a message through the WebSocket
 	 */
-	public send(data: any): void {
+	public send(data: unknown): void {
 		if (this.state === ConnectionState.OPEN && this.ws) {
 			try {
 				const message = typeof data === 'string' ? data : JSON.stringify(data);

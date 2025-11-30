@@ -2,7 +2,28 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
-First, run the development server:
+### Environment Variables
+
+Create a `.env.local` file in the frontend directory with the following variables:
+
+```env
+# For LOCAL DEVELOPMENT - leave unset or use localhost (defaults shown)
+# The code automatically uses localhost if these are not set
+
+# REST API URL (optional - defaults to http://127.0.0.1:8000)
+# NEXT_PUBLIC_API_URL=http://127.0.0.1:8000
+
+# WebSocket URL (optional - defaults to ws://127.0.0.1:8000/api/ws/voice-stt)
+# NEXT_PUBLIC_WS_URL=ws://127.0.0.1:8000/api/ws/voice-stt
+
+# REQUIRED: Supabase configuration
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+```
+
+**Important:** For local development, you don't need to set `NEXT_PUBLIC_API_URL` or `NEXT_PUBLIC_WS_URL` - the code will automatically use `localhost` as the default. Only set these when deploying to production.
+
+### Running the Development Server
 
 ```bash
 npm run dev
