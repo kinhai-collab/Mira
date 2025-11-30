@@ -505,6 +505,7 @@ export default function MorningBrief() {
 					}
 					isLocationLoading={isLocationLoading}
 					isWeatherLoading={isWeatherLoading}
+					scenarioTag="morning-brief"
 				/>
 			</div>
 

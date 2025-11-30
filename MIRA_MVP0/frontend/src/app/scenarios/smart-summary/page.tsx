@@ -108,90 +108,6 @@ export default function Home() {
 	>(null);
 	const [isMovingDown, setIsMovingDown] = useState(false);
 
-	// Added: get system/geolocation and reverse-geocode to a readable place name
-	useEffect(() => {
-		// Helper: IP-based fallback when geolocation is unavailable or denied
-		const ipFallback = async () => {
-			try {
-				const res = await fetch("https://ipapi.co/json/");
-				if (!res.ok) return;
-				const data = await res.json();
-				const city =
-					data.city || data.region || data.region_code || data.country_name;
-				// ipapi returns a `timezone` field like 'America/New_York'
-				if (data.timezone) setTimezone(data.timezone);
-				if (city) setLocation(city);
-				// ipapi provides approximate lat/lon which we can use for weather lookup
-				if (data.latitude && data.longitude) {
-					setLatitude(Number(data.latitude));
-					setLongitude(Number(data.longitude));
-				}
-			} catch (err) {
-				console.error("IP geolocation fallback error:", err);
-			} finally {
-				setIsLocationLoading(false);
-			}
-		};
-
-		if (!("geolocation" in navigator)) {
-			// Browser doesn't support navigator.geolocation — try IP fallback
-			ipFallback();
-			return;
-		}
-
-		const success = async (pos: GeolocationPosition) => {
-			try {
-				const { latitude, longitude } = pos.coords;
-				// Use OpenStreetMap Nominatim reverse geocoding (no key required)
-				const res = await fetch(
-					`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}`
-				);
-				if (!res.ok) {
-					// If reverse geocoding fails, fall back to IP-based lookup
-					await ipFallback();
-					return;
-				}
-				const data = await res.json();
-				const city =
-					data?.address?.city ||
-					data?.address?.town ||
-					data?.address?.village ||
-					data?.address?.state ||
-					data?.address?.county;
-				if (city) setLocation(city);
-
-				// If possible, keep the browser's timezone (Intl); this will usually
-				// match the geolocation. If you need absolute timezone-from-coords,
-				// you'd need a timezone lookup service or library (server or heavy client bundle).
-				setTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
-
-				// Save coordinates for weather lookup
-				setLatitude(latitude);
-				setLongitude(longitude);
-
-				// Fetch weather for these coords (via backend proxy)
-				fetchWeatherForCoords(latitude, longitude).catch((e) =>
-					console.error("Weather fetch failed:", e)
-				);
-			} catch (err) {
-				console.error("reverse geocode error:", err);
-				await ipFallback();
-			} finally {
-				setIsLocationLoading(false);
-			}
-		};
-
-		const error = async (err: GeolocationPositionError) => {
-			console.error("geolocation error:", err);
-			// On permission denied or other errors, try IP-based lookup
-			await ipFallback();
-		};
-
-		navigator.geolocation.getCurrentPosition(success, error, {
-			timeout: 10000,
-		});
-	}, []);
-
 	const handleMuteToggle = () => {
 		const muteState = !isMuted;
 		setIsMuted(muteState);
@@ -422,98 +338,13 @@ export default function Home() {
 			});
 		}
 	};
-	const fetchWeatherForCoords = useCallback(
-		async (lat: number, lon: number) => {
-			// Helper: map Open-Meteo weathercode to simple description
-			const openMeteoCodeToDesc = (code: number) => {
-				// Simplified mapping for common values
-				switch (code) {
-					case 0:
-						return "Clear";
-					case 1:
-					case 2:
-					case 3:
-						return "Partly cloudy";
-					case 45:
-					case 48:
-						return "Fog";
-					case 51:
-					case 53:
-					case 55:
-						return "Drizzle";
-					case 61:
-					case 63:
-					case 65:
-						return "Rain";
-					case 71:
-					case 73:
-					case 75:
-						return "Snow";
-					case 80:
-					case 81:
-					case 82:
-						return "Showers";
-					case 95:
-					case 96:
-					case 99:
-						return "Thunderstorm";
-					default:
-						return "Unknown";
-				}
-			};
-			try {
-				setIsWeatherLoading(true);
-				console.log("Dashboard: fetching weather for coords:", lat, lon);
-				const data = await getWeather(lat, lon);
-				const temp = data?.temperatureC;
-				let desc: string | null = null;
-				// Map weathercode from Open-Meteo payload
-				if (data?.raw?.current_weather?.weathercode !== undefined) {
-					const code = Number(data.raw.current_weather.weathercode);
-					setWeatherCode(code);
-					desc = openMeteoCodeToDesc(code);
-				}
-
-				if (typeof temp === "number") setTemperatureC(temp);
-				if (desc) setWeatherDescription(desc);
-				if (!desc && temp == null)
-					console.warn(
-						"Dashboard: weather response had no usable fields",
-						data
-					);
-			} catch (err) {
-				console.error("Dashboard: Error fetching weather:", err);
-			} finally {
-				setIsWeatherLoading(false);
-			}
-		},
-		[]
-	);
-	// When coords change, fetch weather
-	useEffect(() => {
-		if (latitude != null && longitude != null) {
-			fetchWeatherForCoords(latitude, longitude).catch((e) => console.error(e));
-		}
-	}, [latitude, longitude]);
-	const animateThenSubmit = (text?: string) => {
-		// Only trigger animation the FIRST time
-		if (textMessages.length === 0) {
-			setIsMovingDown(true);
-
-			setTimeout(() => {
-				handleTextSubmit(text);
-			}, 500); // match animation duration
-		} else {
-			handleTextSubmit(text);
-		}
-	};
 
 	// Handle text input submission
 	const handleTextSubmit = async (text?: string) => {
 		const queryText = text || input.trim();
 		if (!queryText) return;
 
-		// Add user message to conversation
+		// Add user message
 		setTextMessages((prev) => [...prev, { role: "user", content: queryText }]);
 		setInput("");
 		setIsLoadingResponse(true);
@@ -522,10 +353,10 @@ export default function Home() {
 			const apiBase = (
 				process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
 			).replace(/\/+$/, "");
+
 			const { getValidToken } = await import("@/utils/auth");
 			const token = await getValidToken();
 
-			// Auto-detect timezone from browser
 			const detectedTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 			const response = await fetch(`${apiBase}/api/text-query`, {
@@ -534,101 +365,72 @@ export default function Home() {
 					"Content-Type": "application/json",
 					...(token ? { Authorization: `Bearer ${token}` } : {}),
 				},
-				credentials: "include", // ✅ Include cookies (needed for Outlook ms_access_token)
+				credentials: "include",
 				body: JSON.stringify({
 					query: queryText,
 					history: textMessages,
-					token, // ✅ include token in body for backend
-					timezone: detectedTimezone, // 🌍 Auto-detect and send timezone
+					token,
+					timezone: detectedTimezone,
 				}),
 			});
 
-			// ✅ log backend response status and any text before throwing
 			if (!response.ok) {
-				const errorText = await response.text();
-				console.error("❌ Backend returned error:", response.status, errorText);
-				throw new Error(`Backend returned ${response.status}: ${errorText}`);
+				const err = await response.text();
+				console.error("Backend error:", err);
+				throw new Error(err);
 			}
 
-			let data;
-			try {
-				data = await response.json();
-			} catch (err) {
-				console.error("❌ Failed to parse JSON from backend:", err);
-				throw new Error("Invalid JSON in backend response");
-			}
+			const data = await response.json();
 
-			// ✅ Handle navigation actions
+			// ----- NAVIGATION ACTIONS -----
 			if (data.action === "navigate" && data.actionTarget) {
-				setTimeout(() => router.push(data.actionTarget), 500);
-				setTextMessages((prev) => [
-					...prev,
+				setTimeout(() => router.push(data.actionTarget), 300);
+				setTextMessages((p) => [
+					...p,
 					{ role: "assistant", content: data.text || "Navigating..." },
 				]);
 				return;
 			}
+
 			if (data.action === "calendar_flow") {
 				router.push("/scenarios/smart-scheduling");
 				return;
 			}
 
-			// ✅ Handle calendar/email summary
+			if (data.action === "open_smart_summary") {
+				setTextMessages((p) => [
+					...p,
+					{ role: "assistant", content: data.text || "" },
+				]);
+				router.push("/scenarios/smart-summary");
+				return;
+			}
+
+			// ----- SMART SUMMARY ACTION -----
 			if (data.action === "email_calendar_summary") {
 				if (data.text) setPendingSummaryMessage(data.text);
-				if (typeof window !== "undefined") {
-					window.dispatchEvent(
-						new CustomEvent("miraEmailCalendarSummary", {
-							detail: data.actionData ?? {},
-						})
-					);
-				}
+
+				window.dispatchEvent(
+					new CustomEvent("miraEmailCalendarSummary", {
+						detail: data.actionData ?? {},
+					})
+				);
+
+				router.push("/scenarios/smart-summary");
 				return;
 			}
 
-			// ✅ Handle calendar actions (schedule, cancel, reschedule)
-			if (data.action && data.action.startsWith("calendar_")) {
-				// Display the response text from Mira
-				if (data.text) {
-					setTextMessages((prev) => [
-						...prev,
-						{ role: "assistant", content: data.text },
-					]);
-				}
-				// Log the action result for debugging
-				if (data.actionResult) {
-					console.log(
-						"Calendar action completed:",
-						data.action,
-						data.actionResult
-					);
-				}
-				// ✅ Dispatch event to refresh dashboard and calendar page
-				if (typeof window !== "undefined") {
-					window.dispatchEvent(
-						new CustomEvent("miraCalendarUpdated", {
-							detail: {
-								action: data.action,
-								result: data.actionResult,
-							},
-						})
-					);
-				}
-				return;
-			}
-
-			// ✅ Default case — add assistant text reply
+			// Default assistant reply
 			if (data.text) {
-				setTextMessages((prev) => [
-					...prev,
+				setTextMessages((p) => [
+					...p,
 					{ role: "assistant", content: data.text },
 				]);
-			} else {
-				console.warn("⚠️ No text returned from backend:", data);
 			}
-		} catch (error) {
-			console.error("🚨 Error sending text query:", error);
-			setTextMessages((prev) => [
-				...prev,
+		} catch (err) {
+			console.error("Error:", err);
+			setTextMessages((p) => [
+				...p,
 				{
 					role: "assistant",
 					content: "Sorry, I encountered an error processing your request.",
@@ -655,6 +457,7 @@ export default function Home() {
 				weatherCode={weatherCode}
 				isLocationLoading={isLocationLoading}
 				isWeatherLoading={isWeatherLoading}
+				scenarioTag="smart-summary"
 			/>
 			<main className="flex-1 flex flex-col items-center px-2 sm:px-4 md:px-6">
 				{/* SCALE CONTAINER */}
@@ -664,132 +467,10 @@ export default function Home() {
 						<Orb hasMessages={textMessages.length > 0} />
 					</div>
 
-					{textMessages.length === 0 && (
-						<p className="w-full max-w-[368px] h-[50px] opacity-100 text-[rgba(70,70,71,1)] font-['Outfit'] font-medium text-lg sm:text-2xl md:text-3xl lg:text-[40px] leading-[100%] tracking-[0.5%] mt-6 sm:mt-8 text-center whitespace-nowrap flex items-center justify-center">
-							{greeting}
-						</p>
-					)}
-					{/* CENTER TEXT BAR — before conversation */}
-					{(textMessages.length === 0 || isMovingDown) && (
-						<div
-							className={`
-            w-full max-w-[720px] mt-6 mb-4
-            transition-all duration-500 ease-[cubic-bezier(0.25,0.1,0.25,1)]
-            ${
-							isMovingDown
-								? "translate-y-[350px] opacity-0"
-								: "translate-y-0 opacity-100"
-						}
-        `}
-						>
-							<div className="rounded-[10px] bg-gradient-to-r from-[#F4A4D3] to-[#B5A6F7] p-[1.5px] shadow-[0_12px_35px_rgba(181,166,247,0.45)]">
-								<div className="flex items-center rounded-[10px] bg-white px-4 py-2">
-									<input
-										type="text"
-										value={input}
-										onChange={(e) => setInput(e.target.value)}
-										onKeyDown={(e) => {
-											if (e.key === "Enter" && !e.shiftKey) {
-												e.preventDefault();
-												setIsConversationActive(true);
-												animateThenSubmit();
-											}
-										}}
-										placeholder={
-											isListening ? "I'm listening..." : "Type your request..."
-										}
-										className="flex-1 px-3 bg-transparent text-gray-700 placeholder-gray-400 focus:outline-none text-sm"
-									/>
-									<button
-										onClick={() => {
-											setIsConversationActive(true);
-											animateThenSubmit();
-										}}
-										disabled={!input.trim()}
-										className="w-9 h-9 flex items-center justify-center rounded-full border border-gray-200 bg-white shadow-sm disabled:opacity-50"
-									>
-										<Icon name="Send" size={16} />
-									</button>
-								</div>
-							</div>
-						</div>
-					)}
-					{/* Conversation Feed */}
-					{/* Conversation Feed */}
-					{!summaryOverlayVisible && textMessages.length > 0 && (
-						<div className="mt-10 sm:mt-14 w-full max-w-[800px] space-y-4 max-h-[950px] overflow-y-auto px-4">
-							{textMessages.map((msg, idx) => (
-								<div
-									key={idx}
-									className={`flex ${
-										msg.role === "user" ? "justify-end" : "justify-start"
-									}`}
-								>
-									<div
-										className={`max-w-[80%] rounded-2xl px-4 py-3 shadow-sm ${
-											msg.role === "user"
-												? "bg-gradient-to-r from-[#d9b8ff] to-[#bfa3ff] text-gray-900"
-												: "bg-white border border-gray-200 text-gray-700"
-										}`}
-									>
-										{msg.content}
-									</div>
-								</div>
-							))}
-
-							{isLoadingResponse && (
-								<div className="flex justify-start">
-									<div className="max-w-[80%] rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
-										<div className="flex items-center gap-2">
-											<div className="h-2 w-2 animate-pulse rounded-full bg-purple-500" />
-											<div className="h-2 w-2 animate-pulse rounded-full bg-purple-500 animation-delay-200" />
-											<div className="h-2 w-2 animate-pulse rounded-full bg-purple-500 animation-delay-400" />
-										</div>
-									</div>
-								</div>
-							)}
-						</div>
-					)}
-
-					{/* Example Prompts — Visible until first user message */}
-					{textMessages.length === 0 && (
-						<div className="w-full max-w-[724px] min-h-[198px] text-left opacity-100 mt-6 sm:mt-8 px-4">
-							<p className="w-full max-w-[724px] h-auto min-h-[23px] opacity-100 text-[rgba(40,40,41,1)] font-['Outfit'] font-normal text-base sm:text-[18px] leading-[100%] tracking-[0.5%] mb-3">
-								Or start with an example below
-							</p>
-							<div className="flex flex-wrap gap-2 sm:gap-2.5">
-								{[
-									"give me my morning brief",
-									"How's my day looking?",
-									"Summarize today's tasks.",
-									"What meetings do I have today?",
-									"Show me my emails",
-									"Show me my emails and calendar",
-									"Show my calender events",
-									"Wrap up my day.",
-								].map((example, i) => (
-									<button
-										key={i}
-										onClick={() => {
-											setIsConversationActive(true);
-											animateThenSubmit(example);
-										}}
-										disabled={isLoadingResponse}
-										className="px-3 sm:px-3.5 py-1 sm:py-1.5 bg-white border border-gray-200 rounded-full shadow-sm hover:shadow-md transition text-gray-700 text-[12.5px] sm:text-[13.5px] font-normal disabled:opacity-50 disabled:cursor-not-allowed"
-									>
-										{example}
-									</button>
-								))}
-							</div>
-						</div>
-					)}
-
 					{/* Email & calendar thinking panel */}
-
 					{summaryOverlayVisible && (
 						<div className="mt-10 flex w-full justify-center px-4">
 							<EmailCalendarOverlay
-								visible={summaryOverlayVisible}
 								stage={summaryStage}
 								steps={summarySteps}
 								emails={summaryEmails}
@@ -809,15 +490,18 @@ export default function Home() {
 								}}
 								showContextChips={false}
 								showControls={false}
+								visible={summaryOverlayVisible}
 							/>
 						</div>
 					)}
 				</div>
 			</main>
 			<Sidebar />
+
 			{/* FooterBar only AFTER conversation starts */}
 			<div className="fixed bottom-4 left-0 w-full flex justify-center z-50">
 				<FooterBar
+					alwaysShowInput={true}
 					isListening={isListening}
 					isTextMode={isTextMode}
 					setIsListening={setIsListening}

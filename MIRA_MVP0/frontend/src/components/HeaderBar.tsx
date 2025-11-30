@@ -14,6 +14,12 @@ interface HeaderBarProps {
 	weatherCode?: number | null;
 	isLocationLoading?: boolean;
 	isWeatherLoading?: boolean;
+	scenarioTag?:
+		| "morning-brief"
+		| "smart-summary"
+		| "smart-scheduling"
+		| "rescheduling"
+		| "evening-wrap";
 }
 
 export default function HeaderBar({
@@ -23,6 +29,7 @@ export default function HeaderBar({
 	weatherCode,
 	isLocationLoading = false,
 	isWeatherLoading = false,
+	scenarioTag,
 }: HeaderBarProps) {
 	const router = useRouter();
 	const [isMuted, setIsMuted] = useState(false);
@@ -64,6 +71,13 @@ export default function HeaderBar({
 
 		return `${base}Property 1=Cloudy.png`;
 	}
+	const scenarioIcons: Record<string, string> = {
+		"morning-brief": "/Icons/HeaderPages/Property 1=Sun.png",
+		"smart-summary": "/Icons/HeaderPages/Property 1=Brain.png",
+		"smart-scheduling": "/Icons/HeaderPages/Property 1=Sparkle.png",
+		rescheduling: "/Icons/HeaderPages/Property 1=Refresh.png",
+		"evening-wrap": "/Icons/HeaderPages/Property 1=Moon.png",
+	};
 
 	return (
 		<div className="fixed top-0 z-20 w-[94vw] bg-[#F8F8FB]/90 backdrop-blur-sm px-4 py-3 flex items-center justify-between">
@@ -98,23 +112,41 @@ export default function HeaderBar({
 			</div>
 
 			{/* RIGHT SECTION — DESKTOP */}
+			{/* RIGHT SECTION — DESKTOP */}
 			<div className="hidden md:flex items-center gap-3 ml-auto">
-				<button
-					onClick={() => router.push("/scenarios/morning-brief")}
-					className="flex items-center gap-1.5 px-4 py-1.5 bg-[#FFF8E7] border border-[#FFE9B5] rounded-full text-sm font-medium text-[#B58B00] shadow-sm hover:shadow-md transition"
-				>
-					<Icon name="Sun" size={16} className="text-yellow-500" />
-					<span>Morning Brief</span>
-				</button>
+				{/* Scenario Tag — only if scenarioTag exists */}
+				{scenarioTag && (
+					<div
+						className="flex items-center gap-2 px-4 py-1.5 
+                  rounded-full shadow-sm border 
+                  text-sm font-normal 
+                  bg-[#FDEDF7] border-[#E1E2E5] text-black"
+					>
+						<Image
+							src={scenarioIcons[scenarioTag]}
+							alt="Scenario Icon"
+							width={18}
+							height={18}
+						/>
+						<span>
+							{scenarioTag === "morning-brief" && "Morning Brief"}
+							{scenarioTag === "smart-summary" && "Smart Summary"}
+							{scenarioTag === "smart-scheduling" && "Smart Scheduling"}
+							{scenarioTag === "rescheduling" && "Rescheduling"}
+							{scenarioTag === "evening-wrap" && "Evening Wrap"}
+						</span>
+					</div>
+				)}
 
+				{/* Mute Button */}
 				<button
 					onClick={handleMuteToggle}
 					className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-medium shadow-sm border transition
-          ${
-						isMuted
-							? "bg-[#E8ECF9] border-[#B8C7F2] text-[#5568A2]"
-							: "bg-[#F5F5F5] border-gray-200 text-gray-700"
-					}`}
+      ${
+				isMuted
+					? "bg-[#E8ECF9] border-[#B8C7F2] text-[#5568A2]"
+					: "bg-[#F5F5F5] border-gray-200 text-gray-700"
+			}`}
 				>
 					<Icon
 						name={isMuted ? "VoiceOff" : "VoiceOn"}
