@@ -2496,47 +2496,77 @@ async def ws_voice_stt(websocket: WebSocket, language_code: str = "en"):
                         "actionResult": cal_action_data.get("actionResult"),
                     })
                     
-                    # Generate TTS audio for calendar action (non-streaming since we have full text)
+                    # Generate TTS audio for calendar action using streaming WebSocket for smooth playback
                     voice_id = os.getenv("ELEVENLABS_VOICE_ID")
                     
                     if voice_id and api_key:
                         try:
-                            # Use non-streaming API for calendar actions (more reliable, we have full text)
-                            el = get_elevenlabs_client()
-                            audio_format = os.getenv("ELEVENLABS_AUDIO_FORMAT", "mp3_44100_128")  # High quality
+                            # Use WebSocket streaming for smoother, glitch-free playback
                             response_text = cal_action_data.get("text", "")
+                            tts_ws_url = f"wss://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream-input?model_id=eleven_flash_v2_5&output_format=mp3_44100_128"
+                            tts_headers = {"xi-api-key": api_key}
                             
-                            # Generate audio in background task to avoid blocking
                             async def generate_and_send_audio():
                                 try:
-                                    stream = el.text_to_speech.convert(
-                                        voice_id=voice_id,
-                                        model_id="eleven_flash_v2_5",
-                                        text=response_text,
-                                        output_format=audio_format,
-                                    )
-                                    mp3_bytes = b"".join(stream)
-                                    if mp3_bytes:
-                                        # Send audio in chunks for smooth playback
-                                        chunk_size = 8192  # 8KB chunks
+                                    async with _wslib.connect(tts_ws_url, additional_headers=tts_headers) as tts_ws:
+                                        # Send TTS config
+                                        await tts_ws.send(json.dumps({
+                                            "text": " ",
+                                            "voice_settings": {
+                                                "stability": 0.85,
+                                                "similarity_boost": 0.85,
+                                                "style": 0
+                                            },
+                                            "generation_config": {
+                                                "chunk_length_schedule": [300, 400, 500]  # Larger chunks for smooth prosody
+                                            }
+                                        }))
+                                        
+                                        # Send full text (we have it already from calendar action)
+                                        await tts_ws.send(json.dumps({
+                                            "text": response_text,
+                                            "try_trigger_generation": True
+                                        }))
+                                        
+                                        # Send EOS
+                                        await tts_ws.send(json.dumps({"text": ""}))
+                                        
+                                        # Stream audio chunks back to client
                                         audio_chunk_count = 0
-                                        for i in range(0, len(mp3_bytes), chunk_size):
-                                            chunk = mp3_bytes[i:i + chunk_size]
-                                            audio_b64 = base64.b64encode(chunk).decode("ascii")
-                                            await websocket.send_json({
-                                                "message_type": "audio_chunk",
-                                                "audio": audio_b64
-                                            })
-                                            audio_chunk_count += 1
+                                        async for msg in tts_ws:
+                                            if isinstance(msg, bytes):
+                                                audio_chunk_count += 1
+                                                audio_b64 = base64.b64encode(msg).decode("ascii")
+                                                await websocket.send_json({
+                                                    "message_type": "audio_chunk",
+                                                    "audio": audio_b64
+                                                })
+                                            else:
+                                                try:
+                                                    text_msg = msg if isinstance(msg, str) else msg.decode("utf-8", errors="ignore")
+                                                    msg_json = json.loads(text_msg)
+                                                    if "audio" in msg_json:
+                                                        audio_chunk_count += 1
+                                                        await websocket.send_json({
+                                                            "message_type": "audio_chunk",
+                                                            "audio": msg_json["audio"]
+                                                        })
+                                                except (json.JSONDecodeError, KeyError, TypeError):
+                                                    pass
                                         
                                         # Send audio_final
                                         await websocket.send_json({"message_type": "audio_final"})
-                                        logging.info(f"✅ Sent calendar action audio ({audio_chunk_count} chunks, {len(mp3_bytes)} bytes)")
+                                        logging.info(f"✅ Sent calendar action audio ({audio_chunk_count} chunks) via streaming")
                                 except Exception as e:
-                                    logging.exception(f"Error generating audio in background: {e}")
+                                    logging.exception(f"Error streaming calendar action audio: {e}")
+                                    # Send audio_final even on error
+                                    try:
+                                        await websocket.send_json({"message_type": "audio_final"})
+                                    except Exception:
+                                        pass
                             
-                            # Start audio generation in background
-                            asyncio.create_task(generate_and_send_audio())
+                            # Start audio generation/streaming
+                            await generate_and_send_audio()
                         except Exception as e:
                             logging.exception(f"Failed to generate TTS audio for calendar action: {e}")
                     else:
@@ -2869,7 +2899,7 @@ Mischievous: "Oh, I see what you did there… clever move!"""
             
             try:
                 # Connect to TTS in parallel with OpenAI (TTS is faster, will be ready first)
-                async with _wslib.connect(tts_ws_url, extra_headers=tts_headers) as tts_upstream:
+                async with _wslib.connect(tts_ws_url, additional_headers=tts_headers) as tts_upstream:
                     # Send BOS immediately while OpenAI is still connecting
                     bos_msg = {
                         "text": " ",
@@ -3172,7 +3202,7 @@ Mischievous: "Oh, I see what you did there… clever move!"""
                 logging.debug("🧠 Intelligent learner: disabled via ENABLE_INTELLIGENT_LEARNER env var")
 
     try:
-        async with _wslib.connect(ws_url, extra_headers=headers) as upstream:
+        async with _wslib.connect(ws_url, additional_headers=headers) as upstream:
             logging.info("ws_voice_stt: connected to ElevenLabs")
 
             async def forward_upstream_to_client():
