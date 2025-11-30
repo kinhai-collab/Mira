@@ -4,7 +4,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/components/Icon";
-import { setMiraMute } from "@/utils/voice/voiceHandler";
+// HTTP Polling Voice (Lambda-compatible)
+import { setMiraMute } from "@/utils/voice/simpleVoiceHandler";
 import Image from "next/image";
 
 interface HeaderBarProps {
