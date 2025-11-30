@@ -152,11 +152,7 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
 
     // Existing STT/transcript and server message handling
     if (msgType === 'session_started') {
-      console.log('[realtimeSttClient] ✅ ElevenLabs session started:', {
-        session_id: parsed.session_id,
-        sample_rate: parsed.config?.sample_rate,
-        audio_format: parsed.config?.audio_format,
-      });
+      // Session started - no logging needed
     } else if (msgType === 'partial_transcript' || msgType === 'transcription' || msgType === 'partial_transcription') {
       // support `transcription` message_type forwarded from backend (partial or final)
       // Reduced logging - partial transcripts are noisy
