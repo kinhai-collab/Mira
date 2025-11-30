@@ -4,12 +4,12 @@
   "requiresCompatibilities": ["FARGATE"],
   "cpu": "1024",
   "memory": "2048",
-  "executionRoleArn": "arn:aws:iam::058057616533:role/ecsTaskExecutionRole-mira",
-  "taskRoleArn": "arn:aws:iam::058057616533:role/ecsTaskRole-mira",
+  "executionRoleArn": "arn:aws:iam::YOUR_ACCOUNT_ID:role/ecsTaskExecutionRole-mira",
+  "taskRoleArn": "arn:aws:iam::YOUR_ACCOUNT_ID:role/ecsTaskRole-mira",
   "containerDefinitions": [
     {
       "name": "mira-websocket",
-      "image": "058057616533.dkr.ecr.us-east-2.amazonaws.com/mira-websocket:latest",
+      "image": "YOUR_ACCOUNT_ID.dkr.ecr.us-east-2.amazonaws.com/mira-websocket:latest",
       "portMappings": [
         {
           "containerPort": 8080,
@@ -19,31 +19,31 @@
       "environment": [
         {
           "name": "SUPABASE_URL",
-          "value": "https://oxozhsomntvuyrurfzre.supabase.co/"
+          "value": "https://YOUR_PROJECT.supabase.co/"
         },
         {
           "name": "SUPABASE_KEY",
-          "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im94b3poc29tbnR2dXlydXJmenJlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA0NjczNDAsImV4cCI6MjA3NjA0MzM0MH0.kXO2FS3sTV3jpT1A8dzr0sr8Md2VM80dbG2uzOnG6_c"
+          "value": "REPLACE_WITH_ENV_VAR"
         },
         {
           "name": "SUPABASE_SERVICE_ROLE_KEY",
-          "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im94b3poc29tbnR2dXlydXJmenJlIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MDQ2NzM0MCwiZXhwIjoyMDc2MDQzMzQwfQ.xDiiiOl2DJpBnVDDMPOMSo_hs1dI_JKbDDViWD5XufU"
+          "value": "REPLACE_WITH_ENV_VAR"
         },
         {
           "name": "ELEVENLABS_API_KEY",
-          "value": "sk_51ea0fad38f8a7c13f3572f7885bce862f06285ce62818a5"
+          "value": "REPLACE_WITH_ENV_VAR"
         },
         {
           "name": "ELEVENLABS_VOICE_ID",
-          "value": "jqcCZkN6Knx8BJ5TBdYR"
+          "value": "REPLACE_WITH_ENV_VAR"
         },
         {
           "name": "OPENAI_API_KEY",
-          "value": "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"
+          "value": "REPLACE_WITH_ENV_VAR"
         },
         {
           "name": "FRONTEND_URL",
-          "value": "https://main.dd480r9y8ima.amplifyapp.com"
+          "value": "https://your-frontend.amplifyapp.com"
         },
         {
           "name": "USE_DYNAMODB",
@@ -67,7 +67,7 @@
         },
         {
           "name": "S3_BUCKET",
-          "value": "mira-data-dev-058057616533"
+          "value": "mira-data-dev-YOUR_ACCOUNT_ID"
         }
       ],
       "logConfiguration": {

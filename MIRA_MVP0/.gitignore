@@ -72,3 +72,9 @@ out/
 *.sw?
 data/autopilot/autopilot_audit.jsonl
 data/autopilot/
+
+# Deployment configs with secrets (use .env instead)
+backend/task-definition.json
+backend/fargate-deploy.sh
+backend/ecs-trust-policy.json
+backend/trust-policy.json
