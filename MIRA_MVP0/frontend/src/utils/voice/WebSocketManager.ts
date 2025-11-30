@@ -66,10 +66,9 @@ export class WebSocketManager {
 	 * Create a new WebSocket connection
 	 */
 	private async createConnection(): Promise<void> {
-		// Don't connect if page is unloading (hot-reload or navigation)
-		if (typeof document !== 'undefined' && document.readyState === 'unloading') {
-			console.warn('⚠️ Skipping WebSocket connection - page unloading');
-			this.shouldReconnect = false;
+		// Don't connect if document is not ready
+		if (typeof document !== 'undefined' && document.readyState === 'loading') {
+			console.warn('⚠️ Skipping WebSocket connection - document still loading');
 			return;
 		}
 		
