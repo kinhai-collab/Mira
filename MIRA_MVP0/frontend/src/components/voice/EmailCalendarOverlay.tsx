@@ -732,81 +732,87 @@ export function EmailCalendarOverlay({
 
 	return (
 		<div className="w-full max-w-[840px] space-y-6 text-[#272829]">
-			<div
-				className={`flex flex-wrap items-center gap-3 ${
-					shouldShowChips ? "justify-between" : "justify-end"
-				}`}
-			>
-				{shouldShowChips && chips && (
-					<div className="flex flex-wrap items-center gap-3 text-sm">
-						{chips.dateLabel && (
-							<span className="rounded-full bg-white px-4 py-1 font-medium shadow-[0_2px_8px_rgba(39,40,41,0.04)]">
-								{chips.dateLabel}
-							</span>
+			{/* Only show thinking panel when stage is "thinking" */}
+			{stage === "thinking" && (
+				<>
+					<div
+						className={`flex flex-wrap items-center gap-3 ${
+							shouldShowChips ? "justify-between" : "justify-end"
+						}`}
+					>
+						{shouldShowChips && chips && (
+							<div className="flex flex-wrap items-center gap-3 text-sm">
+								{chips.dateLabel && (
+									<span className="rounded-full bg-white px-4 py-1 font-medium shadow-[0_2px_8px_rgba(39,40,41,0.04)]">
+										{chips.dateLabel}
+									</span>
+								)}
+								{chips.locationLabel && (
+									<span className="flex items-center gap-2 rounded-full border border-[#e6e9f0] bg-white px-4 py-1 shadow-[0_2px_8px_rgba(39,40,41,0.04)]">
+										<Icon name="Location" size={16} />
+										{chips.locationLabel}
+									</span>
+								)}
+								{chips.temperatureLabel && (
+									<span className="flex items-center gap-2 rounded-full border border-[#e6e9f0] bg-white px-4 py-1 shadow-[0_2px_8px_rgba(39,40,41,0.04)]">
+										<Icon name="Sun" size={18} />
+										{chips.temperatureLabel}
+									</span>
+								)}
+							</div>
 						)}
-						{chips.locationLabel && (
-							<span className="flex items-center gap-2 rounded-full border border-[#e6e9f0] bg-white px-4 py-1 shadow-[0_2px_8px_rgba(39,40,41,0.04)]">
-								<Icon name="Location" size={16} />
-								{chips.locationLabel}
-							</span>
-						)}
-						{chips.temperatureLabel && (
-							<span className="flex items-center gap-2 rounded-full border border-[#e6e9f0] bg-white px-4 py-1 shadow-[0_2px_8px_rgba(39,40,41,0.04)]">
-								<Icon name="Sun" size={18} />
-								{chips.temperatureLabel}
-							</span>
+
+						{showControls && (
+							<div className="flex items-center gap-3">
+								<div className="flex items-center gap-2 rounded-full border border-[#e6e9f0] bg-[#fdedf7] px-4 py-1.5 text-sm font-medium text-[#272829] shadow-[0_2px_8px_rgba(39,40,41,0.04)]">
+									<Icon name="Brain" size={18} />
+									Smart Summary
+								</div>
+								<button
+									type="button"
+									onClick={onMuteToggle}
+									disabled={!onMuteToggle}
+									className="flex items-center gap-2 rounded-full border border-[#454547] bg-[#454547] px-4 py-1.5 text-sm font-medium text-white shadow-[0_2px_8px_rgba(39,40,41,0.08)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+								>
+									<Icon
+										name={isMuted ? "VoiceOff" : "VoiceOn"}
+										size={18}
+										className="invert"
+									/>
+									{isMuted ? "Muted" : "Mute"}
+								</button>
+							</div>
 						)}
 					</div>
-				)}
 
-				{showControls && (
-					<div className="flex items-center gap-3">
-						<div className="flex items-center gap-2 rounded-full border border-[#e6e9f0] bg-[#fdedf7] px-4 py-1.5 text-sm font-medium text-[#272829] shadow-[0_2px_8px_rgba(39,40,41,0.04)]">
-							<Icon name="Brain" size={18} />
-							Smart Summary
+					<div className="rounded-[24px] border border-[#e6e9f0] bg-white/80 p-6 shadow-[0_12px_36px_rgba(39,40,41,0.08)] backdrop-blur">
+						<div className="flex items-center gap-3">
+							<span className="flex size-3 rounded-full bg-[#382099]" />
+							<p className="text-lg font-medium">{statusHeading}</p>
 						</div>
-						<button
-							type="button"
-							onClick={onMuteToggle}
-							disabled={!onMuteToggle}
-							className="flex items-center gap-2 rounded-full border border-[#454547] bg-[#454547] px-4 py-1.5 text-sm font-medium text-white shadow-[0_2px_8px_rgba(39,40,41,0.08)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-						>
-							<Icon
-								name={isMuted ? "VoiceOff" : "VoiceOn"}
-								size={18}
-								className="invert"
-							/>
-							{isMuted ? "Muted" : "Mute"}
-						</button>
+
+						<p className="mt-5 text-lg font-semibold">{description}</p>
+
+						<div className="mt-4 border-l border-[#382099] pl-6">
+							<ul className="flex flex-col gap-3">
+								{steps.map((step) => (
+									<li
+										key={step.id}
+										className={`flex items-center gap-3 ${stepTextColor(
+											step.status
+										)}`}
+									>
+										<StepBullet status={step.status} />
+										<span className="text-sm">{step.label}</span>
+									</li>
+								))}
+							</ul>
+						</div>
 					</div>
-				)}
-			</div>
+				</>
+			)}
 
-			<div className="rounded-[24px] border border-[#e6e9f0] bg-white/80 p-6 shadow-[0_12px_36px_rgba(39,40,41,0.08)] backdrop-blur">
-				<div className="flex items-center gap-3">
-					<span className="flex size-3 rounded-full bg-[#382099]" />
-					<p className="text-lg font-medium">{statusHeading}</p>
-				</div>
-
-				<p className="mt-5 text-lg font-semibold">{description}</p>
-
-				<div className="mt-4 border-l border-[#382099] pl-6">
-					<ul className="flex flex-col gap-3">
-						{steps.map((step) => (
-							<li
-								key={step.id}
-								className={`flex items-center gap-3 ${stepTextColor(
-									step.status
-								)}`}
-							>
-								<StepBullet status={step.status} />
-								<span className="text-sm">{step.label}</span>
-							</li>
-						))}
-					</ul>
-				</div>
-			</div>
-
+			{/* Show summary card when stage is "summary" */}
 			{stage === "summary" && (
 				<div className="mt-2">
 					{/* Normalize emails safely before passing */}

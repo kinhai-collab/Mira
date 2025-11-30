@@ -90,7 +90,7 @@ export default function Home() {
 	);
 
 	const greetingCalledRef = useRef(false);
-	const [summaryOverlayVisible, setSummaryOverlayVisible] = useState(false);
+	const [summaryOverlayVisible, setSummaryOverlayVisible] = useState(true); // ✅ Changed to true so it's visible on this page
 	const [summarySteps, setSummarySteps] = useState<VoiceSummaryStep[]>(() =>
 		prepareVoiceSteps(DEFAULT_SUMMARY_STEPS)
 	);
@@ -246,6 +246,12 @@ export default function Home() {
 			const normalizedCalendarEvents: VoiceSummaryCalendarEvent[] =
 				Array.isArray(detail.calendarEvents) ? detail.calendarEvents : [];
 
+			console.log("📧 Smart Summary: Received email/calendar data:", {
+				emails: detail.emails?.length || 0,
+				events: normalizedCalendarEvents.length || 0,
+				steps: rawSteps.length
+			});
+
 			setSummarySteps(prepareVoiceSteps(rawSteps));
 			setSummaryEmails(detail.emails ?? []);
 			setSummaryEvents(normalizedCalendarEvents);
@@ -260,6 +266,7 @@ export default function Home() {
 				"miraEmailCalendarSummary",
 				handler as EventListener
 			);
+			console.log("✅ Smart Summary: Event listener registered for miraEmailCalendarSummary");
 		}
 
 		return () => {
@@ -268,6 +275,7 @@ export default function Home() {
 					"miraEmailCalendarSummary",
 					handler as EventListener
 				);
+				console.log("🔄 Smart Summary: Event listener cleaned up");
 			}
 		};
 	}, []); // No dependencies needed since we're just using the event detail directly
@@ -408,15 +416,22 @@ export default function Home() {
 
 			// ----- SMART SUMMARY ACTION -----
 			if (data.action === "email_calendar_summary") {
-				if (data.text) setPendingSummaryMessage(data.text);
+				console.log("📧 Smart Summary Page: Received email_calendar_summary action", data.actionData);
+				
+				if (data.text) {
+					setPendingSummaryMessage(data.text);
+				}
 
-				window.dispatchEvent(
-					new CustomEvent("miraEmailCalendarSummary", {
-						detail: data.actionData ?? {},
-					})
-				);
+				// Dispatch event to trigger the overlay
+				if (typeof window !== "undefined") {
+					window.dispatchEvent(
+						new CustomEvent("miraEmailCalendarSummary", {
+							detail: data.actionData ?? {},
+						})
+					);
+					console.log("✅ Smart Summary Page: Dispatched miraEmailCalendarSummary event with data");
+				}
 
-				router.push("/scenarios/smart-summary");
 				return;
 			}
 
