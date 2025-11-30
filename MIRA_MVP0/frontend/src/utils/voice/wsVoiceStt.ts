@@ -13,7 +13,7 @@ Notes:
 */
 
 // Type for AudioContext (supports both standard and webkit prefix)
-type AudioContextType = typeof AudioContext | typeof (window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+type AudioContextType = typeof AudioContext;
 
 type Options = {
   wsUrl?: string;
