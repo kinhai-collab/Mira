@@ -547,7 +547,7 @@ function SummaryCard({
 				<div className="rounded-2xl border border-dashed border-[#d6d9e1] bg-white/60 p-6 text-center text-sm text-[#5a5c61]">
 					<p className="font-medium text-[#272829] mb-2">No priority items found</p>
 					<p className="text-xs text-[#5a5c61]">
-						Try asking "Show me my emails and calendar" to get your latest updates.
+						Try asking &quot;Show me my emails and calendar&quot; to get your latest updates.
 					</p>
 				</div>
 			)}

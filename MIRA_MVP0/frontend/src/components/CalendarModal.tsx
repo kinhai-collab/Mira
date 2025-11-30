@@ -1,7 +1,6 @@
 /** @format */
 
 import React, { useState, useEffect } from "react";
-import { Icon } from "./Icon";
 
 interface CalendarModalProps {
 	isOpen: boolean;

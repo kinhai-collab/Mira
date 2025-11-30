@@ -3,7 +3,6 @@
 
 import Image from "next/image";
 import { Icon } from "@/components/Icon";
-import { useState } from "react";
 
 export default function FooterBar({
 	alwaysShowInput = false,
@@ -19,9 +18,23 @@ export default function FooterBar({
 	input,
 	setInput,
 	handleTextSubmit,
-	isLoadingResponse,
 	textMessages,
-}: any) {
+}: {
+	alwaysShowInput?: boolean;
+	isListening: boolean;
+	isTextMode: boolean;
+	setIsListening: (value: boolean) => void;
+	setIsTextMode: (value: boolean) => void;
+	setIsConversationActive: (value: boolean) => void;
+	setIsMuted: (value: boolean) => void;
+	startMiraVoice: () => void;
+	stopMiraVoice: () => void;
+	setMiraMute: (value: boolean) => void;
+	input: string;
+	setInput: (value: string) => void;
+	handleTextSubmit: () => void;
+	textMessages: unknown[];
+}) {
 	const hasStarted = alwaysShowInput || textMessages.length > 0;
 
 	return (

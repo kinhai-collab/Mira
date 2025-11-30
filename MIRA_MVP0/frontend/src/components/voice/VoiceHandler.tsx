@@ -23,9 +23,6 @@ export default function VoiceHandler() {
 			const formData = new FormData();
 			formData.append("audio", audioBlob, "user_input.webm");
 
-			const apiBase =
-				process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
-
 			// Try to get a valid token and send it in the Authorization header if available
 			const headers: Record<string, string> = {};
 			try {

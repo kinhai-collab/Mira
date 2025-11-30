@@ -67,7 +67,6 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
     chunkSize = 4096,
     onMessage,
     onOpen,
-    onClose,
     onError,
     onStateChange,
   } = opts;
@@ -121,22 +120,24 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
         return; // Don't process empty partial responses
       }
       console.log('[realtimeSttClient] 📝 partial_response detected');
-      try { if (onPartialResponse && parsed.text) onPartialResponse(parsed.text); } catch (e) {}
+      try { if (onPartialResponse && parsed.text) onPartialResponse(parsed.text); } catch {
+        // Ignore errors in partial response handler
+      }
     } else if (msgType === 'audio_chunk') {
       // support both `audio_base_64` and `audio` field names
       const audioB64 = parsed.audio_base_64 || parsed.audio || parsed.audio_base64 || null;
       console.log('[realtimeSttClient] 🔊 audio_chunk detected! Has audio:', !!audioB64, 'Length:', audioB64?.length || 0);
-      try { if (onAudioChunk && audioB64) onAudioChunk(audioB64); } catch (e) { console.error('[realtimeSttClient] onAudioChunk error:', e); }
+      try { if (onAudioChunk && audioB64) onAudioChunk(audioB64); } catch (error) { console.error('[realtimeSttClient] onAudioChunk error:', error); }
     } else if (msgType === 'audio_final') {
       console.log('[realtimeSttClient] 🏁 audio_final detected!');
-      try { if (onAudioFinal) onAudioFinal(); } catch (e) { console.error('[realtimeSttClient] onAudioFinal error:', e); }
+      try { if (onAudioFinal) onAudioFinal(); } catch (error) { console.error('[realtimeSttClient] onAudioFinal error:', error); }
     } else if (msgType === 'response') {
       const audioB64 = parsed.audio_base_64 || parsed.audio || parsed.audio_base64 || null;
       // Only log response details if it has action or is important
       if (parsed.action || !audioB64) {
         console.log('[realtimeSttClient] 💬 response detected! Has audio:', !!audioB64, 'Has action:', !!parsed.action);
       }
-      try { if (onResponse) onResponse(parsed.text || '', audioB64); } catch (e) { console.error('[realtimeSttClient] onResponse error:', e); }
+      try { if (onResponse) onResponse(parsed.text || '', audioB64); } catch (error) { console.error('[realtimeSttClient] onResponse error:', error); }
       // Note: Full parsed object (with action/actionData) is automatically forwarded to onMessage below
       // since 'response' is not in the alreadyHandled list
     }
@@ -151,7 +152,9 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
     } else if (msgType === 'partial_transcript' || msgType === 'transcription' || msgType === 'partial_transcription') {
       // support `transcription` message_type forwarded from backend (partial or final)
       // Reduced logging - partial transcripts are noisy
-      try { if (onMessage) onMessage(parsed); } catch (e) {}
+      try { if (onMessage) onMessage(parsed); } catch {
+        // Ignore errors in message handler
+      }
     } else if (msgType === 'committed_transcript' || msgType === 'committed_transcript_with_timestamps' || msgType === 'transcription' || msgType === 'transcribed' || msgType === 'final_transcript') {
       const transcriptText = parsed.text || parsed.partial || null;
       // Skip empty/null transcripts to prevent glitches
@@ -166,7 +169,9 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
         console.debug('[realtimeSttClient] 📝 Short transcript (likely fragment):', transcriptText);
       }
       // Forward valid transcript to onMessage handler
-      try { if (onMessage) onMessage(parsed); } catch (e) {}
+      try { if (onMessage) onMessage(parsed); } catch {
+        // Ignore errors in message handler
+      }
       return; // Don't forward again at the end
     } else if (msgType === 'error') {
       console.error('[realtimeSttClient] ElevenLabs error:', parsed.error);
@@ -200,7 +205,13 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
     );
     
     if (!alreadyHandled) {
-      try { onMessage && onMessage(parsed); } catch (e) {}
+      try { 
+        if (onMessage) {
+          onMessage(parsed);
+        }
+      } catch {
+        // Ignore errors in message handler
+      }
     }
   }
 
@@ -226,9 +237,11 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
             try {
               const parsed = JSON.parse(data);
               handleWebSocketMessage(parsed);
-            } catch (e) {
+            } catch {
               console.log('[realtimeSttClient] Received non-JSON message:', data);
-              onMessage && onMessage(data);
+              if (onMessage) {
+                onMessage(data);
+              }
             }
           } else if (data instanceof ArrayBuffer) {
             // Binary audio data
@@ -236,21 +249,27 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
             try {
               const b64 = arrayBufferToBase64(data);
               if (onAudioChunk) {
-                try { onAudioChunk(b64); } catch (e) { /* swallow */ }
+                try { onAudioChunk(b64); } catch {
+                  // Ignore errors in audio chunk handler
+                }
               }
               if (onMessage) {
-                try { onMessage({ message_type: 'audio_chunk', audio_base_64: b64 }); } catch (e) { /* swallow */ }
+                try { onMessage({ message_type: 'audio_chunk', audio_base_64: b64 }); } catch {
+                  // Ignore errors in message handler
+                }
               }
-            } catch (e) {
-              console.warn('[realtimeSttClient] Failed to convert binary audio to base64', e);
-              onMessage && onMessage(data);
+            } catch (error) {
+              console.warn('[realtimeSttClient] Failed to convert binary audio to base64', error);
+              if (onMessage) {
+                onMessage(data);
+              }
             }
           } else if (typeof data === 'object') {
             // Already parsed JSON
             handleWebSocketMessage(data);
           }
-        } catch (e) {
-          console.error('[realtimeSttClient] Error handling message:', e);
+        } catch (error) {
+          console.error('[realtimeSttClient] Error handling message:', error);
         }
       },
       onStateChange: (state) => {
@@ -265,8 +284,8 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
               const authMsg = { type: 'authorization', token };
               console.log('[realtimeSttClient] Sending auth message');
               wsManager?.send(authMsg);
-            } catch (e) {
-              console.error('[realtimeSttClient] Failed to send auth message', e);
+            } catch (error) {
+              console.error('[realtimeSttClient] Failed to send auth message', error);
             }
           }
           if (onOpen) {
@@ -345,14 +364,18 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
                     if (wsManager && wsManager.isReady()) {
                       wsManager.send({ type: 'transcribe', response_format: 'verbose' });
                     }
-                  } catch (e) {}
-                } catch (e) {
-                  onError && onError(e);
+                  } catch {
+                    // Ignore errors when sending transcribe message
+                  }
+                } catch (error) {
+                  if (onError) {
+                    onError(error);
+                  }
                 }
               })();
             }
           }
-        } catch (e) {
+        } catch {
           // continue if VAD fails
         }
 
@@ -410,11 +433,13 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
         });
       }
       wsManager.send(msg);
-    } catch (e) {
-      console.error('[realtimeSttClient] Error sending chunk:', e);
-      onError && onError(e);
-      return;
-    }
+      } catch (error) {
+        console.error('[realtimeSttClient] Error sending chunk:', error);
+        if (onError) {
+          onError(error);
+        }
+        return;
+      }
     // Note: WebSocketManager doesn't expose bufferedAmount, but it has internal queue management
     // backpressure is handled by the manager
     await new Promise((r) => setTimeout(r, 10)); // Small delay for flow control
@@ -432,8 +457,10 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
           wsManager.send({ type: 'transcribe', response_format: 'verbose' }); 
         }
       } catch {}
-    } catch (e) {
-      onError && onError(e);
+    } catch (error) {
+      if (onError) {
+        onError(error);
+      }
     }
 
     try {
@@ -443,7 +470,9 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
         processor = null;
       }
       if (sourceNode) {
-        try { sourceNode.disconnect(); } catch (e) {}
+        try { sourceNode.disconnect(); } catch {
+          // Ignore disconnect errors
+        }
         sourceNode = null;
       }
       if (audioCtx) {
