@@ -18,6 +18,7 @@ export default function FooterBar({
 	input,
 	setInput,
 	handleTextSubmit,
+	isLoadingResponse,
 	textMessages,
 }: {
 	alwaysShowInput?: boolean;
@@ -33,6 +34,7 @@ export default function FooterBar({
 	input: string;
 	setInput: (value: string) => void;
 	handleTextSubmit: () => void;
+	isLoadingResponse?: boolean;
 	textMessages: unknown[];
 }) {
 	const hasStarted = alwaysShowInput || textMessages.length > 0;
