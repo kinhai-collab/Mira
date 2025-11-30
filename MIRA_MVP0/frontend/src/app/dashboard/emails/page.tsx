@@ -8,6 +8,8 @@ import { useState, useEffect } from "react";
 import { fetchEmailList, type Email } from "@/utils/dashboardApi";
 import { fetchEmailSummary } from "@/utils/dashboardApi";
 import { getWeather } from "@/utils/weather";
+import { useVoiceNavigation } from "@/utils/voice/navigationHandler";
+import { startMiraVoice, stopMiraVoice } from "@/utils/voice/voiceHandler";
 import Sidebar from "@/components/Sidebar";
 import HeaderBar from "@/components/HeaderBar";
 
@@ -23,6 +25,9 @@ const generateCalendarDays = (year: number, month: number) => {
 
 export default function EmailsPage() {
 	const router = useRouter();
+	
+	// Enable voice navigation
+	useVoiceNavigation();
 
 	const [activeTab, setActiveTab] = useState("All");
 	const [showCalendar, setShowCalendar] = useState(false);
@@ -39,6 +44,20 @@ export default function EmailsPage() {
 	const [isLocationLoading, setIsLocationLoading] = useState<boolean>(true);
 	const [temperatureC, setTemperatureC] = useState<number | null>(null);
 	const [isWeatherLoading, setIsWeatherLoading] = useState<boolean>(false);
+	
+	// Voice control state
+	const [isVoiceActive, setIsVoiceActive] = useState(false);
+	
+	// Handle voice toggle
+	const toggleVoice = () => {
+		if (isVoiceActive) {
+			stopMiraVoice();
+			setIsVoiceActive(false);
+		} else {
+			startMiraVoice();
+			setIsVoiceActive(true);
+		}
+	};
 
 	// Fetch emails on component mount
 	useEffect(() => {
@@ -663,6 +682,49 @@ export default function EmailsPage() {
 					</div>
 				</div>
 			)}
+			
+			{/* Floating Microphone Button */}
+			<button
+				onClick={toggleVoice}
+				className={`fixed bottom-6 right-6 md:bottom-8 md:right-8 w-16 h-16 rounded-full shadow-2xl flex items-center justify-center transition-all duration-300 z-50 hover:scale-110 active:scale-95 ${
+					isVoiceActive 
+						? 'bg-gradient-to-br from-purple-500 to-pink-500 animate-pulse' 
+						: 'bg-gradient-to-br from-purple-600 to-indigo-600 hover:shadow-purple-500/50'
+				}`}
+				aria-label={isVoiceActive ? "Stop voice assistant" : "Start voice assistant"}
+			>
+				{isVoiceActive ? (
+					<svg 
+						className="w-7 h-7 text-white" 
+						fill="none" 
+						stroke="currentColor" 
+						viewBox="0 0 24 24"
+					>
+						<path 
+							strokeLinecap="round" 
+							strokeLinejoin="round" 
+							strokeWidth={2} 
+							d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" 
+						/>
+						<circle cx="12" cy="12" r="2" fill="currentColor" className="animate-ping opacity-75" />
+					</svg>
+				) : (
+					<svg 
+						className="w-7 h-7 text-white" 
+						fill="none" 
+						stroke="currentColor" 
+						viewBox="0 0 24 24"
+					>
+						<path 
+							strokeLinecap="round" 
+							strokeLinejoin="round" 
+							strokeWidth={2} 
+							d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" 
+						/>
+					</svg>
+				)}
+			</button>
+			
 			<Sidebar />
 		</div>
 	);

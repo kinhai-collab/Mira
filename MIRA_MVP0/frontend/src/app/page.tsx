@@ -17,6 +17,7 @@ import {
 	stopMiraVoice,
 	setMiraMute,
 } from "@/utils/voice/voiceHandler";
+import { useVoiceNavigation } from "@/utils/voice/navigationHandler";
 import { playVoice } from "@/utils/voice/voice";
 import { getWeather } from "@/utils/weather";
 import HeaderBar from "@/components/HeaderBar";
@@ -58,6 +59,10 @@ const prepareVoiceSteps = (
 
 export default function Home() {
 	const router = useRouter();
+	
+	// Enable voice navigation
+	useVoiceNavigation();
+	
 	const [input, setInput] = useState("");
 	const [isListening, setIsListening] = useState(true);
 	const [greeting, setGreeting] = useState<string>("");

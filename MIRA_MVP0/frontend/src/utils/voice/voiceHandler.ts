@@ -76,6 +76,10 @@ let lastPartialResponseText = '';
 let firstChunkReceivedTime = 0;
 let firstAudioPlayTime = 0;
 
+// Deduplication: Track recently processed transcripts to avoid duplicate processing
+const recentTranscripts = new Map<string, number>(); // {text: timestamp}
+const TRANSCRIPT_CACHE_TTL = 5000; // 5 seconds - ignore duplicates within 5 seconds
+
 function playNextInQueue() {
 	// Block playback if user interrupted
 	if (isAudioInterrupted) {
@@ -394,6 +398,97 @@ async function playAudio(base64: string) {
 	}
 }
 
+/**
+ * Play non-streaming audio (for calendar/email actions, etc.)
+ * This clears any existing queue and plays the audio immediately
+ */
+function playNonStreamingAudio(audioBase64: string) {
+	// Stop any current audio/queue
+	if (currentAudio) {
+		currentAudio.pause();
+		currentAudio.currentTime = 0;
+		isAudioPlaying = false;
+		currentAudio = null;
+	}
+	
+	// Clear streaming audio queue
+	if (isPlayingQueue || audioQueue.length > 0) {
+		console.log('🧹 Clearing audio queue for calendar/email action');
+		audioQueue.forEach(audio => {
+			try {
+				URL.revokeObjectURL(audio.src);
+			} catch (e) {}
+		});
+		audioQueue = [];
+		isPlayingQueue = false;
+	}
+	
+	if (currentPlayingAudio) {
+		try {
+			currentPlayingAudio.pause();
+			URL.revokeObjectURL(currentPlayingAudio.src);
+		} catch (e) {}
+		currentPlayingAudio = null;
+	}
+
+	try {
+		const audioBinary = atob(audioBase64);
+		const arrayBuffer = new ArrayBuffer(audioBinary.length);
+		const view = new Uint8Array(arrayBuffer);
+		for (let i = 0; i < audioBinary.length; i++) {
+			view[i] = audioBinary.charCodeAt(i);
+		}
+		const blob = new Blob([view], { type: "audio/mpeg" });
+		const url = URL.createObjectURL(blob);
+		const audio = new Audio(url);
+		currentAudio = audio;
+
+		audio.volume = 1.0;
+		audio.preload = "auto";
+
+		const playAudioNow = () => {
+			isAudioPlaying = true;
+			const playPromise = audio.play();
+			if (playPromise !== undefined) {
+				playPromise
+					.then(() => {
+						console.log('✅ Calendar/email audio playing');
+						audio.addEventListener("ended", () => {
+							isAudioPlaying = false;
+							currentAudio = null;
+							URL.revokeObjectURL(url);
+						});
+						audio.addEventListener("error", () => {
+							isAudioPlaying = false;
+							currentAudio = null;
+							URL.revokeObjectURL(url);
+						});
+					})
+					.catch((err) => {
+						isAudioPlaying = false;
+						currentAudio = null;
+						console.error("❌ Calendar/email audio playback failed:", err);
+						URL.revokeObjectURL(url);
+					});
+			} else {
+				isAudioPlaying = false;
+				currentAudio = null;
+				console.warn("⚠️ audio.play() returned undefined");
+			}
+		};
+
+		audio.addEventListener("loadeddata", () => playAudioNow());
+		if (audio.readyState >= 2) playAudioNow();
+
+		// Fallback attempt after a short delay
+		setTimeout(() => {
+			if (audio.readyState >= 2 && audio.paused) playAudioNow();
+		}, 100);
+	} catch (err) {
+		console.error("❌ Calendar/email audio creation failed:", err);
+	}
+}
+
 // Centralized server response processor used by both the realtime WS flow and
 // the one-shot blob flow. Keeps conversation history, dispatches events,
 // and plays TTS audio when provided.
@@ -401,21 +496,25 @@ async function processServerResponse(data: any) {
 	try {
 		if (!data) return;
 		
-		// Debug: Log ALL incoming messages to diagnose audio issue
+		// Debug: Only log important messages (actions, errors, audio) - reduce noise for normal flow
 		try {
-			const logData = typeof data === 'object' ? {
-				message_type: data.message_type,
-				type: data.type,
-				event: data.event,
-				hasAudio: !!(data.audio || data.audio_base_64 || data.audio_base64),
-				audioFieldName: data.audio ? 'audio' : data.audio_base_64 ? 'audio_base_64' : data.audio_base64 ? 'audio_base64' : 'none',
-				audioLength: (data.audio || data.audio_base_64 || data.audio_base64 || '').length,
-				text: data.text ? data.text.substring(0, 50) + '...' : null,
-				allKeys: Object.keys(data)
-			} : data;
-			console.log('📥 WS Message received:', logData);
+			const msgType = data.message_type || data.type || data.event;
+			const isImportant = msgType === 'response' || msgType === 'error' || msgType === 'session_started' || 
+			                    data.action || data.error || !!(data.audio || data.audio_base_64 || data.audio_base64);
+			if (isImportant) {
+				const logData = typeof data === 'object' ? {
+					message_type: data.message_type,
+					type: data.type,
+					event: data.event,
+					hasAudio: !!(data.audio || data.audio_base_64 || data.audio_base64),
+					action: data.action,
+					error: data.error,
+					text: data.text ? data.text.substring(0, 50) + '...' : null,
+				} : data;
+				console.log('📥 WS Message (important):', logData);
+			}
 		} catch (e) {
-			console.log('📥 WS Message (raw):', data);
+			// Silent catch for logging errors
 		}
 		
 		// Handle ElevenLabs-specific message types (forwarded by server)
@@ -444,9 +543,17 @@ async function processServerResponse(data: any) {
 	
 	// Handle partial_response from OpenAI stream
 	if (msgType === 'partial_response') {
-		if (!firstChunkReceivedTime) {
+		// Track first partial response for latency measurement
+		if (firstChunkReceivedTime === 0) {
+			firstChunkReceivedTime = performance.now();
 			console.log('⏱️ First partial_response received - response generation started');
 		}
+		
+		// Skip empty partial responses
+		if (!data.text || !data.text.trim()) {
+			return;
+		}
+		
 		console.debug('📝 Partial response:', data.text?.substring(0, 50) || '');
 		lastPartialResponseText = data.text || '';
 		
@@ -457,7 +564,40 @@ async function processServerResponse(data: any) {
 		return;
 	}		if (msgType === 'committed_transcript' || msgType === 'committed_transcript_with_timestamps' || msgType === 'transcription' || msgType === 'final_transcript') {
 			// Final committed transcript - this is the complete transcription
-			console.log('📝 Final transcript:', data.text);
+			// Skip empty/null transcripts to prevent glitches
+			if (!data.text || !data.text.trim()) {
+				console.debug('⏭️ Skipping empty committed transcript');
+				return;
+			}
+			
+			// Deduplication: Skip if this exact transcript was processed recently
+			const textNormalized = data.text.trim().toLowerCase();
+			const currentTime = Date.now();
+			const lastProcessedTime = recentTranscripts.get(textNormalized);
+			
+			if (lastProcessedTime && (currentTime - lastProcessedTime) < TRANSCRIPT_CACHE_TTL) {
+				const timeSince = ((currentTime - lastProcessedTime) / 1000).toFixed(2);
+				console.debug(`⏭️ Skipping duplicate transcript (processed ${timeSince}s ago): '${data.text.substring(0, 50)}...'`);
+				return; // Don't process duplicate
+			}
+			
+			// Mark as processed
+			recentTranscripts.set(textNormalized, currentTime);
+			
+			// Clean old entries (keep cache size manageable)
+			if (recentTranscripts.size > 50) {
+				const cutoffTime = currentTime - TRANSCRIPT_CACHE_TTL;
+				for (const [text, timestamp] of recentTranscripts.entries()) {
+					if (timestamp < cutoffTime) {
+						recentTranscripts.delete(text);
+					}
+				}
+			}
+			
+			// Only log final transcript if it's meaningful
+			if (data.text && data.text.trim().length > 10) {
+				console.log('📝 Final transcript:', data.text);
+			}
 			// Update data structure to match what processServerResponse expects
 			if (data.text && !data.userText) {
 				// This is the transcribed user speech
@@ -528,6 +668,35 @@ async function processServerResponse(data: any) {
 			}
 		}
 
+		// Handle dashboard navigation commands
+		if (data.action === "dashboard_navigate") {
+			try {
+				const route = data.actionData?.route;
+				if (route && typeof window !== "undefined") {
+					// Dispatch navigation event
+					window.dispatchEvent(
+						new CustomEvent("miraDashboardNavigate", {
+							detail: {
+								route: route,
+								destination: data.actionData?.destination,
+							},
+						})
+					);
+					console.log("📤 Dispatched navigation event:", route);
+				}
+			} catch (e) {
+				console.warn("Failed to dispatch navigation event", e);
+			}
+			
+			// Play navigation audio if available
+			const audioField = data.audio || data.audio_base_64 || data.audio_base64 || null;
+			if (audioField && !isMiraMuted && hasUserInteracted) {
+				console.log("🔊 Playing navigation audio");
+				playNonStreamingAudio(audioField);
+			}
+			return; // Exit early
+		}
+		
 		if (data.action === "email_calendar_summary") {
 			try {
 				if (typeof window !== "undefined") {
@@ -541,6 +710,15 @@ async function processServerResponse(data: any) {
 			} catch (e) {
 				console.warn("Failed to dispatch email/calendar summary event", e);
 			}
+			
+			// CRITICAL FIX: Handle audio for calendar/email actions ONLY HERE (not in text processing below)
+			// This prevents duplicate audio playback which causes quality issues
+			const audioField = data.audio || data.audio_base_64 || data.audio_base64 || null;
+			if (audioField && !isMiraMuted && hasUserInteracted) {
+				console.log("🔊 Playing calendar/email action audio");
+				playNonStreamingAudio(audioField);
+			}
+			return; // Exit early - don't process in the text section below
 		}
 
 		// Only process if we have meaningful text

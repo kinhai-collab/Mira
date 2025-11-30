@@ -109,7 +109,7 @@ async def generate_speech(req: TextToSpeechRequest):
 
 
 # ------------- Browser GET test -------------
-@router.get("/tts")
+@router.get("/")
 async def test_tts(text: str = "Hello world"):
     if not ELEVENLABS_API_KEY:
         raise HTTPException(status_code=500, detail="Missing API key")

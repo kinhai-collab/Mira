@@ -116,6 +116,10 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
 
     // New handlers for incremental streaming responses/audio
     if (msgType === 'partial_response') {
+      // Skip empty partial responses
+      if (!parsed.text || !parsed.text.trim()) {
+        return; // Don't process empty partial responses
+      }
       console.log('[realtimeSttClient] 📝 partial_response detected');
       try { if (onPartialResponse && parsed.text) onPartialResponse(parsed.text); } catch (e) {}
     } else if (msgType === 'audio_chunk') {
@@ -128,8 +132,13 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
       try { if (onAudioFinal) onAudioFinal(); } catch (e) { console.error('[realtimeSttClient] onAudioFinal error:', e); }
     } else if (msgType === 'response') {
       const audioB64 = parsed.audio_base_64 || parsed.audio || parsed.audio_base64 || null;
-      console.log('[realtimeSttClient] 💬 response detected! Has audio:', !!audioB64);
+      // Only log response details if it has action or is important
+      if (parsed.action || !audioB64) {
+        console.log('[realtimeSttClient] 💬 response detected! Has audio:', !!audioB64, 'Has action:', !!parsed.action);
+      }
       try { if (onResponse) onResponse(parsed.text || '', audioB64); } catch (e) { console.error('[realtimeSttClient] onResponse error:', e); }
+      // Note: Full parsed object (with action/actionData) is automatically forwarded to onMessage below
+      // since 'response' is not in the alreadyHandled list
     }
 
     // Existing STT/transcript and server message handling
@@ -141,10 +150,24 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
       });
     } else if (msgType === 'partial_transcript' || msgType === 'transcription' || msgType === 'partial_transcription') {
       // support `transcription` message_type forwarded from backend (partial or final)
-      console.debug('[realtimeSttClient] Partial transcript:', parsed.text || parsed.partial || null);
+      // Reduced logging - partial transcripts are noisy
       try { if (onMessage) onMessage(parsed); } catch (e) {}
     } else if (msgType === 'committed_transcript' || msgType === 'committed_transcript_with_timestamps' || msgType === 'transcription' || msgType === 'transcribed' || msgType === 'final_transcript') {
-      console.log('[realtimeSttClient] ✅ Committed transcript:', parsed.text || parsed.partial || null);
+      const transcriptText = parsed.text || parsed.partial || null;
+      // Skip empty/null transcripts to prevent glitches
+      if (!transcriptText || !transcriptText.trim()) {
+        console.debug('[realtimeSttClient] ⏭️ Skipping empty committed transcript');
+        return; // Don't forward empty transcripts - exit early
+      }
+      // Only log if transcript is meaningful (not fragments from VAD splitting)
+      if (transcriptText.length > 10) {
+        console.log('[realtimeSttClient] ✅ Committed transcript:', transcriptText);
+      } else {
+        console.debug('[realtimeSttClient] 📝 Short transcript (likely fragment):', transcriptText);
+      }
+      // Forward valid transcript to onMessage handler
+      try { if (onMessage) onMessage(parsed); } catch (e) {}
+      return; // Don't forward again at the end
     } else if (msgType === 'error') {
       console.error('[realtimeSttClient] ElevenLabs error:', parsed.error);
     } else if (msgType === 'quota_exceeded_error') {
@@ -164,12 +187,31 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
       }
     }
 
-    // Always forward the raw parsed message to the general onMessage handler
-    try { onMessage && onMessage(parsed); } catch (e) {}
+    // Forward the raw parsed message to the general onMessage handler
+    // BUT skip if we've already handled it above (committed_transcript, partial_response, etc.)
+    // This prevents duplicate processing
+    const alreadyHandled = (
+      msgType === 'committed_transcript' || 
+      msgType === 'committed_transcript_with_timestamps' || 
+      msgType === 'transcription' || 
+      msgType === 'transcribed' || 
+      msgType === 'final_transcript' ||
+      msgType === 'partial_response'
+    );
+    
+    if (!alreadyHandled) {
+      try { onMessage && onMessage(parsed); } catch (e) {}
+    }
   }
 
   async function ensureWebSocket() {
     if (wsManager && wsManager.isReady()) return;
+    
+    // Don't connect if page is unloading (hot-reload or navigation)
+    if (typeof document !== 'undefined' && document.readyState === 'unloading') {
+      console.warn('[realtimeSttClient] Skipping WebSocket connection - page unloading');
+      return;
+    }
     
     console.log('[realtimeSttClient] Creating WebSocket connection...');
     
@@ -418,7 +460,8 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
 
     try {
       if (wsManager) {
-        wsManager.close(false); // Close but allow reconnection
+        // Disable auto-reconnect when stopping - only reconnect if user explicitly starts voice again
+        wsManager.close(true); // Close and prevent auto-reconnection
         wsManager = null;
       }
     } catch (e) {}

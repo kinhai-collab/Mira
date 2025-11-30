@@ -2392,16 +2392,42 @@ async def ws_voice_stt(websocket: WebSocket, language_code: str = "en"):
     
     # Deduplication: Track recently processed transcripts to avoid duplicate processing
     _recent_transcripts = {}  # {text: timestamp}
-    _transcript_cache_ttl = 10.0  # seconds - ignore duplicates within 10 seconds (increased from 2s)
+    _transcript_cache_ttl = 30.0  # seconds - ignore duplicates within 30 seconds (increased to handle ElevenLabs re-commits)
+    _permanent_seen = set()  # Permanently track transcripts for this session to prevent ElevenLabs re-commits
+    
+    # Processing lock: Ensures only one transcription processes at a time
+    # Prevents concurrent processing when VAD splits a sentence (e.g., "I said" then "that")
+    _processing_lock = asyncio.Lock()
+    _current_processing_task = None
+    _last_processing_start_time = 0.0  # Timestamp of when last processing started
+    _processing_cooldown_seconds = 2.0  # Reject new transcripts within 2s of starting processing
     
     async def process_transcription(text: str, user_id: str):
         """Process transcription with OpenAI streaming response and generate TTS"""
         import time
-        nonlocal _recent_transcripts  # Allow modification of outer scope variable
+        import re
+        import hashlib
+        nonlocal _recent_transcripts, _permanent_seen, _processing_lock, _current_processing_task, _last_processing_start_time, client_token, api_key  # Allow modification of outer scope variables
+        
+        # Skip empty/null transcripts immediately
+        if not text or not text.strip():
+            logging.debug(f"⏭️ Skipping empty/null transcript")
+            return
         
         # Deduplication: Skip if this exact transcript was processed recently
         current_time = time.time()
         text_normalized = text.strip().lower()
+        
+        # Skip if normalized text is empty (after stripping)
+        if not text_normalized:
+            logging.debug(f"⏭️ Skipping empty transcript after normalization")
+            return
+        
+        # PERMANENT deduplication: Create hash to catch EXACT duplicates from ElevenLabs re-commits
+        text_hash = hashlib.md5(text_normalized.encode()).hexdigest()
+        if text_hash in _permanent_seen:
+            logging.info(f"⏭️ Skipping PERMANENT duplicate (ElevenLabs re-commit): '{text[:50]}...'")
+            return
         
         if text_normalized in _recent_transcripts:
             last_time = _recent_transcripts[text_normalized]
@@ -2409,16 +2435,313 @@ async def ws_voice_stt(websocket: WebSocket, language_code: str = "en"):
                 logging.info(f"⏭️ Skipping duplicate transcript (processed {current_time - last_time:.2f}s ago): '{text[:50]}...'")
                 return
         
-        # Mark as processed
-        _recent_transcripts[text_normalized] = current_time
-        
-        # Clean old entries (keep cache size manageable)
-        if len(_recent_transcripts) > 100:
-            cutoff_time = current_time - _transcript_cache_ttl
-            _recent_transcripts = {k: v for k, v in _recent_transcripts.items() if v > cutoff_time}
+        # CRITICAL: Use lock to prevent concurrent processing
+        # Check if another transcription started recently (within cooldown window)
+        # This prevents overlapping audio when VAD splits a sentence into fragments
+        async with _processing_lock:
+            # Check if processing started very recently (likely a fragment/continuation)
+            time_since_last_start = current_time - _last_processing_start_time
+            if _last_processing_start_time > 0 and time_since_last_start < _processing_cooldown_seconds:
+                logging.info(f"⏭️ Skipping transcript (arrived {time_since_last_start:.2f}s after previous start, likely fragment): '{text[:50]}...'")
+                return
+            
+            # Double-check PERMANENT deduplication after acquiring lock
+            text_hash = hashlib.md5(text_normalized.encode()).hexdigest()
+            if text_hash in _permanent_seen:
+                logging.info(f"⏭️ Skipping PERMANENT duplicate after lock (ElevenLabs re-commit): '{text[:50]}...'")
+                return
+            
+            # Double-check time-based deduplication after acquiring lock (in case it was processed while waiting)
+            if text_normalized in _recent_transcripts:
+                last_time = _recent_transcripts[text_normalized]
+                if current_time - last_time < _transcript_cache_ttl:
+                    logging.info(f"⏭️ Skipping duplicate transcript (processed while waiting for lock): '{text[:50]}...'")
+                    return
+            
+            # Mark as processed PERMANENTLY and update processing start time
+            _permanent_seen.add(text_hash)
+            _recent_transcripts[text_normalized] = current_time
+            _last_processing_start_time = current_time
+            
+            # Clean old entries (keep cache size manageable)
+            if len(_recent_transcripts) > 100:
+                cutoff_time = current_time - _transcript_cache_ttl
+                _recent_transcripts = {k: v for k, v in _recent_transcripts.items() if v > cutoff_time}
         
         start_time = current_time
-        logging.info(f"🎯 process_transcription started for: '{text}'")
+        # Only log meaningful transcripts (not fragments from VAD splitting)
+        if len(text.strip()) > 10:
+            logging.info(f"🎯 Processing transcript: '{text[:60]}...'")
+        else:
+            logging.debug(f"⏭️ Skipping short transcript fragment: '{text}'")
+        
+        # ✅ CHECK FOR CALENDAR ACTIONS FIRST (add/reschedule/cancel) - BEFORE viewing commands
+        # This must run BEFORE summary check to catch action commands
+        user_token = client_token if client_token else None
+        auth_header = f"Bearer {user_token}" if user_token else None
+        
+        if auth_header:
+            try:
+                # Check for calendar actions (schedule/cancel/reschedule)
+                cal_action_data = await _handle_calendar_voice_command(text, auth_header, return_dict=True, user_timezone=None)
+                if cal_action_data is not None and cal_action_data.get("action", "").startswith("calendar_"):
+                    logging.info(f"📅 Calendar action detected: {cal_action_data.get('action')}")
+                    
+                    # Send action response first (without audio - we'll stream it)
+                    await websocket.send_json({
+                        "message_type": "response",
+                        "text": cal_action_data.get("text", ""),
+                        "userText": text,
+                        "action": cal_action_data.get("action", ""),
+                        "actionResult": cal_action_data.get("actionResult"),
+                    })
+                    
+                    # Generate TTS audio for calendar action (non-streaming since we have full text)
+                    voice_id = os.getenv("ELEVENLABS_VOICE_ID")
+                    
+                    if voice_id and api_key:
+                        try:
+                            # Use non-streaming API for calendar actions (more reliable, we have full text)
+                            el = get_elevenlabs_client()
+                            audio_format = os.getenv("ELEVENLABS_AUDIO_FORMAT", "mp3_44100_128")  # High quality
+                            response_text = cal_action_data.get("text", "")
+                            
+                            # Generate audio in background task to avoid blocking
+                            async def generate_and_send_audio():
+                                try:
+                                    stream = el.text_to_speech.convert(
+                                        voice_id=voice_id,
+                                        model_id="eleven_flash_v2_5",
+                                        text=response_text,
+                                        output_format=audio_format,
+                                    )
+                                    mp3_bytes = b"".join(stream)
+                                    if mp3_bytes:
+                                        # Send audio in chunks for smooth playback
+                                        chunk_size = 8192  # 8KB chunks
+                                        audio_chunk_count = 0
+                                        for i in range(0, len(mp3_bytes), chunk_size):
+                                            chunk = mp3_bytes[i:i + chunk_size]
+                                            audio_b64 = base64.b64encode(chunk).decode("ascii")
+                                            await websocket.send_json({
+                                                "message_type": "audio_chunk",
+                                                "audio": audio_b64
+                                            })
+                                            audio_chunk_count += 1
+                                        
+                                        # Send audio_final
+                                        await websocket.send_json({"message_type": "audio_final"})
+                                        logging.info(f"✅ Sent calendar action audio ({audio_chunk_count} chunks, {len(mp3_bytes)} bytes)")
+                                except Exception as e:
+                                    logging.exception(f"Error generating audio in background: {e}")
+                            
+                            # Start audio generation in background
+                            asyncio.create_task(generate_and_send_audio())
+                        except Exception as e:
+                            logging.exception(f"Failed to generate TTS audio for calendar action: {e}")
+                    else:
+                        logging.warning("⚠️ ElevenLabs credentials not available for calendar action audio")
+                    
+                    logging.info(f"✅ Sent calendar action response: {cal_action_data.get('action')}")
+                    return  # Exit early - don't proceed with OpenAI streaming
+            except Exception as e:
+                logging.exception(f"Error handling calendar action: {e}")
+                # Continue with regular flow if calendar action fails
+        
+        # ✅ CHECK FOR DASHBOARD NAVIGATION COMMANDS (BEFORE viewing/streaming)
+        # Match voice commands like "show mail list", "open settings", "go to calendar"
+        nav_patterns = {
+            "emails": re.compile(r"(show|open|view|go to|display|navigate to).*(mail list|email list|emails|inbox)", re.I),
+            "calendar": re.compile(r"(show|open|view|go to|display|navigate to).*(calendar|my calendar|schedule)", re.I),
+            "settings": re.compile(r"(show|open|view|go to|display|navigate to).*(setting|settings|preferences)", re.I),
+            "reminders": re.compile(r"(show|open|view|go to|display|navigate to).*(reminder|reminders|tasks)", re.I),
+            "profile": re.compile(r"(show|open|view|go to|display|navigate to).*(profile|account|my profile)", re.I),
+            "homepage": re.compile(r"(go to|open|show|navigate to).*(home\s*page|homepage)", re.I),
+            "dashboard": re.compile(r"(go to|open|show|back to|return to|navigate to).*(dashboard|main)", re.I),
+        }
+        
+        # Check for navigation intent (check homepage before dashboard since it's more specific)
+        nav_destination = None
+        for destination in ["homepage", "emails", "calendar", "settings", "reminders", "profile", "dashboard"]:
+            pattern = nav_patterns.get(destination)
+            if pattern and pattern.search(text):
+                nav_destination = destination
+                logging.info(f"🧭 Navigation command detected: {destination}")
+                break
+        
+        # If navigation command detected, send navigation action
+        if nav_destination:
+            try:
+                # Map destination to route
+                route_map = {
+                    "emails": "/dashboard/emails",
+                    "calendar": "/dashboard/calendar", 
+                    "settings": "/dashboard/settings",
+                    "reminders": "/dashboard/remainder",
+                    "profile": "/dashboard/profile",
+                    "homepage": "/",
+                    "dashboard": "/dashboard",
+                }
+                target_route = route_map.get(nav_destination, "/dashboard")
+                
+                # Friendly responses for each destination
+                response_map = {
+                    "emails": "Opening your email list.",
+                    "calendar": "Opening your calendar.",
+                    "settings": "Opening settings.",
+                    "reminders": "Opening your reminders.",
+                    "profile": "Opening your profile.",
+                    "homepage": "Going to the homepage.",
+                    "dashboard": "Going to the dashboard.",
+                }
+                response_text = response_map.get(nav_destination, "Navigating...")
+                
+                # Generate quick TTS audio
+                audio_base64: Optional[str] = None
+                voice_id = os.getenv("ELEVENLABS_VOICE_ID")
+                if voice_id:
+                    try:
+                        el = get_elevenlabs_client()
+                        stream = el.text_to_speech.convert(
+                            voice_id=voice_id,
+                            model_id="eleven_flash_v2_5",
+                            text=response_text,
+                            output_format="mp3_44100_128",
+                        )
+                        mp3_bytes = b"".join(stream)
+                        if mp3_bytes:
+                            audio_base64 = base64.b64encode(mp3_bytes).decode("ascii")
+                            logging.info(f"✅ Generated TTS audio for navigation ({len(mp3_bytes)} bytes)")
+                    except Exception as e:
+                        logging.warning(f"Failed to generate navigation TTS: {e}")
+                
+                # Send navigation action to client
+                try:
+                    await websocket.send_json({
+                        "message_type": "response",
+                        "text": response_text,
+                        "userText": text,
+                        "action": "dashboard_navigate",
+                        "actionData": {
+                            "route": target_route,
+                            "destination": nav_destination,
+                        },
+                        "audio": audio_base64,
+                    })
+                    await asyncio.sleep(0.02)  # Small delay for message processing
+                    logging.info(f"✅ Sent navigation command: {target_route}")
+                    return  # Exit early - navigation handled
+                except Exception as e:
+                    logging.error(f"Failed to send navigation command: {e}")
+                    # Continue with regular flow if send fails
+            except Exception as e:
+                logging.exception(f"Error processing navigation command: {e}")
+                # Continue with regular flow
+        
+        # ✅ CHECK FOR EMAIL/CALENDAR VIEWING COMMANDS (BEFORE OpenAI streaming)
+        # This matches the logic in /text-query endpoint to ensure consistent behavior
+        view_keywords = re.compile(r"(show|view|see|check|what|tell|read|summary|list|display).*(email|inbox|mail|messages|calendar|schedule|event|meeting)", re.I)
+        email_keywords = re.compile(r"(email|inbox|mail|messages)", re.I)
+        calendar_keywords = re.compile(r"(calendar|schedule|event|meeting)", re.I)
+        has_view_intent = view_keywords.search(text)
+        has_email_intent = email_keywords.search(text) and has_view_intent
+        has_calendar_intent = calendar_keywords.search(text) and has_view_intent
+        
+        if has_email_intent or has_calendar_intent:
+            logging.info(f"📅 Calendar/Email command: email={has_email_intent}, calendar={has_calendar_intent}")
+            
+            # Use already-defined user_token from calendar action check above
+            if not user_token and user_id:
+                # For voice commands, we need the token to fetch dashboard data
+                # If token is not available, log warning and continue with regular flow
+                logging.warning("⚠️ Client token not available for calendar/email viewing in voice command")
+            
+            if user_token:
+                try:
+                    steps = []
+                    if has_email_intent:
+                        steps.append({"id": "emails", "label": "Checking your inbox for priority emails..."})
+                    if has_calendar_intent:
+                        steps.append({"id": "calendar", "label": "Reviewing today's calendar events..."})
+                        steps.append({"id": "highlights", "label": "Highlighting the most important meetings..."})
+                    if has_email_intent and has_calendar_intent:
+                        steps.append({"id": "conflicts", "label": "Noting any schedule conflicts..."})
+                    
+                    # ✅ Fetch live data from dashboard routes
+                    emails, calendar_events = await fetch_dashboard_data(user_token, has_email_intent, has_calendar_intent, None)
+                    
+                    action_data = {
+                        "steps": steps,
+                        "emails": emails if has_email_intent else [],
+                        "calendarEvents": calendar_events if has_calendar_intent else [],
+                        "focus": (
+                            "You have upcoming events and important unread emails — review your schedule and respond accordingly."
+                            if has_email_intent and has_calendar_intent
+                            else None
+                        ),
+                    }
+                    
+                    response_text = (
+                        "Here's what I'm seeing in your inbox and calendar."
+                        if has_email_intent and has_calendar_intent
+                        else "Here's what I'm seeing in your inbox."
+                        if has_email_intent
+                        else "Here's what I'm seeing on your calendar."
+                    )
+                    
+                    # Generate TTS audio for voice response
+                    audio_base64: Optional[str] = None
+                    voice_id = os.getenv("ELEVENLABS_VOICE_ID")
+                    if voice_id:
+                        try:
+                            el = get_elevenlabs_client()
+                            audio_format = os.getenv("ELEVENLABS_AUDIO_FORMAT", "mp3_44100_128")  # High quality for calendar/email viewing
+                            stream = el.text_to_speech.convert(
+                                voice_id=voice_id,
+                                model_id="eleven_flash_v2_5",
+                                text=response_text,
+                                output_format=audio_format,
+                            )
+                            mp3_bytes = b"".join(stream)
+                            if mp3_bytes:
+                                audio_base64 = base64.b64encode(mp3_bytes).decode("ascii")
+                                logging.info(f"✅ Generated TTS audio for calendar/email response ({len(mp3_bytes)} bytes)")
+                        except Exception as e:
+                            logging.warning(f"Failed to generate TTS audio: {e}")
+                            audio_base64 = None
+                    
+                    # Send action response via WebSocket with proper error handling
+                    try:
+                        await websocket.send_json({
+                            "message_type": "response",
+                            "text": response_text,
+                            "userText": text,
+                            "action": "email_calendar_summary",
+                            "actionData": action_data,
+                            "audio": audio_base64,  # Include audio if available
+                        })
+                        # Small delay to allow client to process large message
+                        await asyncio.sleep(0.05)  # 50ms buffer
+                        logging.info(f"✅ Sent calendar/email summary: {len(emails) if has_email_intent else 0} emails, {len(calendar_events) if has_calendar_intent else 0} events")
+                    except Exception as e:
+                        logging.error(f"Failed to send calendar/email summary: {e}")
+                        # Try to send error message
+                        try:
+                            await websocket.send_json({
+                                "message_type": "error",
+                                "error": "Failed to send calendar/email data"
+                            })
+                        except:
+                            pass
+                    
+                    return  # Exit early - don't proceed with OpenAI streaming
+                    
+                except Exception as e:
+                    logging.exception(f"Error fetching calendar/email data: {e}")
+                    # Continue with regular flow if fetch fails
+            else:
+                logging.warning("⚠️ Cannot fetch calendar/email data: no token available")
+                # Continue with regular flow
         
         # Start memory retrieval asynchronously (non-blocking)
         async def get_memory_context_async():
@@ -2537,9 +2860,9 @@ Mischievous: "Oh, I see what you did there… clever move!"""
         min_tts_length = int(os.getenv("ELEVENLABS_MIN_TTS_LENGTH", "10"))  # Skip TTS for responses < 10 words
         
         if voice_id:
-            # Stream with TTS - using flash model (cheapest), optimized audio format for cost savings
-            # Use lower quality audio format to reduce costs: mp3_22050_32 or mp3_44100_64 (valid formats)
-            audio_format = os.getenv("ELEVENLABS_AUDIO_FORMAT", "mp3_22050_32")  # Lower quality = lower cost (valid format)
+            # Stream with TTS - using flash model (cheapest), balanced audio quality
+            # Use mp3_44100_64 for good quality/size balance, or mp3_44100_128 for highest quality
+            audio_format = os.getenv("ELEVENLABS_AUDIO_FORMAT", "mp3_44100_64")  # Balanced quality and cost
             # Note: output_format should be in BOS message, not URL for WebSocket streaming
             tts_ws_url = f"wss://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream-input?model_id=eleven_flash_v2_5"
             tts_headers = {"xi-api-key": api_key}
@@ -2583,7 +2906,16 @@ Mischievous: "Oh, I see what you did there… clever move!"""
                                     # Raw audio bytes - encode to base64 and send
                                     audio_b64 = base64.b64encode(msg).decode("ascii")
                                     logging.info(f"⏱️ Audio chunk #{audio_chunk_count} received at {time.time() - start_time:.2f}s (size: {len(msg)} bytes)")
-                                    await websocket.send_json({"message_type": "audio_chunk", "audio": audio_b64})
+                                    
+                                    # CRITICAL FIX: Add backpressure handling and error recovery
+                                    try:
+                                        await websocket.send_json({"message_type": "audio_chunk", "audio": audio_b64})
+                                        # Small delay to prevent buffer overflow (allows client to process)
+                                        await asyncio.sleep(0.01)  # 10ms backpressure
+                                    except Exception as e:
+                                        logging.warning(f"Failed to send audio chunk #{audio_chunk_count}: {e}")
+                                        # Don't break - try to continue with next chunk
+                                        continue
                                 else:
                                     # JSON messages (alignment info, isFinal, etc.)
                                     try:
@@ -2599,17 +2931,30 @@ Mischievous: "Oh, I see what you did there… clever move!"""
                                             audio_chunk_count += 1
                                             audio_b64 = msg_json["audio"]
                                             logging.info(f"⏱️ Audio chunk #{audio_chunk_count} received at {time.time() - start_time:.2f}s (JSON format)")
-                                            await websocket.send_json({"message_type": "audio_chunk", "audio": audio_b64})
+                                            
+                                            # CRITICAL FIX: Add backpressure handling
+                                            try:
+                                                await websocket.send_json({"message_type": "audio_chunk", "audio": audio_b64})
+                                                await asyncio.sleep(0.01)  # 10ms backpressure
+                                            except Exception as e:
+                                                logging.warning(f"Failed to send audio chunk #{audio_chunk_count}: {e}")
+                                                continue
                                         elif msg_json.get("isFinal"):
                                             logging.info("ws_voice_stt: TTS final from ElevenLabs")
-                                            await websocket.send_json({"message_type": "audio_final"})
+                                            try:
+                                                await websocket.send_json({"message_type": "audio_final"})
+                                            except Exception as e:
+                                                logging.warning(f"Failed to send audio_final: {e}")
                                     except (json.JSONDecodeError, KeyError, TypeError):
                                         pass
                             
                             # Stream ended - send audio_final if not already sent
                             logging.info(f"⏱️ TTS stream ended at {time.time() - start_time:.2f}s (total chunks: {audio_chunk_count}), sending audio_final")
-                            await websocket.send_json({"message_type": "audio_final"})
-                            logging.info(f"⏱️ audio_final sent at {time.time() - start_time:.2f}s")
+                            try:
+                                await websocket.send_json({"message_type": "audio_final"})
+                                logging.info(f"⏱️ audio_final sent at {time.time() - start_time:.2f}s")
+                            except Exception as e:
+                                logging.warning(f"Failed to send final audio_final: {e}")
                         except Exception:
                             logging.exception("Error forwarding TTS audio")
                             # Send audio_final even on error to prevent frontend from waiting forever
@@ -2698,10 +3043,15 @@ Mischievous: "Oh, I see what you did there… clever move!"""
                             return
                         
                         # Wait for TTS task to complete and send audio_final
+                        # Increased timeout to 15s to accommodate:
+                        # - OpenAI response generation (1-3s)
+                        # - ElevenLabs TTS generation (2-5s)
+                        # - Network latency and audio chunking (1-2s)
+                        # - Longer responses with multiple audio chunks (up to 10s)
                         try:
-                            await asyncio.wait_for(tts_task, timeout=3.0)
+                            await asyncio.wait_for(tts_task, timeout=15.0)
                         except asyncio.TimeoutError:
-                            logging.warning("ws_voice_stt: TTS task timeout, cancelling")
+                            logging.warning("ws_voice_stt: TTS task timeout after 15s, cancelling")
                             tts_task.cancel()
                             # Ensure audio_final is sent even on timeout
                             await websocket.send_json({"message_type": "audio_final"})
@@ -2740,8 +3090,8 @@ Mischievous: "Oh, I see what you did there… clever move!"""
                         await websocket.send_json({"message_type": "response", "text": response_text})
                     else:
                         el = get_elevenlabs_client()
-                        # Use flash model (cheaper) and lower quality audio format for cost optimization
-                        audio_format = os.getenv("ELEVENLABS_AUDIO_FORMAT", "mp3_22050_32")
+                        # Use flash model (cheaper) with balanced audio quality
+                        audio_format = os.getenv("ELEVENLABS_AUDIO_FORMAT", "mp3_44100_64")  # Better quality for fallback TTS
                         stream = el.text_to_speech.convert(
                             voice_id=voice_id,
                             model_id="eleven_flash_v2_5",  # Changed from turbo to flash (cheaper)
@@ -2846,10 +3196,13 @@ Mischievous: "Oh, I see what you did there… clever move!"""
                                 # Process only committed transcripts (VAD-based, after 0.8s silence)
                                 # This ensures one and only one processing call per user utterance
                                 elif msg_json.get("message_type") == "committed_transcript":
-                                    transcript_text = msg_json.get("text", "").strip()
-                                    if transcript_text:
+                                    transcript_text = msg_json.get("text", "").strip() if msg_json.get("text") else ""
+                                    # Only process non-empty transcripts with meaningful content
+                                    if transcript_text and len(transcript_text) > 0:
                                         logging.info(f"📝 Processing committed transcript: {transcript_text}")
                                         asyncio.create_task(process_transcription(transcript_text, user_id))
+                                    else:
+                                        logging.debug(f"⏭️ Skipping empty/null committed transcript")
                             except (json.JSONDecodeError, KeyError, TypeError):
                                 pass
                             
@@ -2886,8 +3239,17 @@ Mischievous: "Oh, I see what you did there… clever move!"""
                                 break
                         except:
                             pass  # Attribute might not exist in some websockets versions
-                            
-                        data = await websocket.receive()
+                        
+                        # CRITICAL FIX: Use timeout so we don't block forever waiting for messages
+                        # This allows ping processing even during long operations (email/calendar fetches)
+                        try:
+                            data = await asyncio.wait_for(websocket.receive(), timeout=5.0)
+                        except asyncio.TimeoutError:
+                            # No message received - continue loop to check connection status
+                            continue
+                        except Exception as e:
+                            logging.debug(f"ws_voice_stt: receive error: {e}")
+                            break
                         if data.get("type") == "websocket.receive":
                             text = data.get("text")
                             bytes_msg = data.get("bytes")
@@ -2913,9 +3275,13 @@ Mischievous: "Oh, I see what you did there… clever move!"""
                                                     pass
                                             break
                                     elif msg_type == "ping":
-                                        # Respond to client ping with pong
-                                        await websocket.send_json({"message_type": "pong"})
-                                        logging.debug("ws_voice_stt: received ping, sent pong")
+                                        # CRITICAL: Respond to client ping IMMEDIATELY with proper error handling
+                                        try:
+                                            await websocket.send_json({"message_type": "pong"})
+                                            logging.debug("ws_voice_stt: received ping, sent pong")
+                                        except Exception as e:
+                                            logging.warning(f"ws_voice_stt: failed to send pong: {e}")
+                                            # Don't break - keep trying
                                     else:
                                         logging.debug(f"ws_voice_stt: ignoring client message type: {msg_type}")
                                 except json.JSONDecodeError:
@@ -2965,27 +3331,15 @@ Mischievous: "Oh, I see what you did there… clever move!"""
                 except Exception:
                     logging.exception("ws_voice_stt: error in forward_client_to_upstream")
 
-            # Keepalive task to prevent timeout during silence
-            async def keepalive():
-                """Send periodic ping to keep connection alive"""
-                try:
-                    while True:
-                        await asyncio.sleep(30)  # Ping every 30 seconds
-                        try:
-                            await websocket.send_json({"message_type": "ping"})
-                            logging.debug("ws_voice_stt: sent keepalive ping")
-                        except Exception as e:
-                            logging.debug(f"ws_voice_stt: keepalive failed: {e}")
-                            break
-                except asyncio.CancelledError:
-                    pass
+            # NOTE: Keepalive disabled - frontend handles ping/pong
+            # Backend responding to client pings in forward_client_to_upstream() is sufficient
+            # Having both sides send pings causes confusion and timeout issues
             
             task_up = asyncio.create_task(forward_upstream_to_client())
             task_down = asyncio.create_task(forward_client_to_upstream())
-            task_keepalive = asyncio.create_task(keepalive())
 
             done, pending = await asyncio.wait(
-                [task_up, task_down, task_keepalive], 
+                [task_up, task_down], 
                 return_when=asyncio.FIRST_COMPLETED
             )
             for p in pending:

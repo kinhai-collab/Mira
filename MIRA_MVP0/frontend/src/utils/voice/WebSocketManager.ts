@@ -44,8 +44,8 @@ export class WebSocketManager {
 		this.config = config;
 		this.maxReconnectAttempts = config.maxReconnectAttempts ?? 10;
 		this.initialReconnectDelay = config.initialReconnectDelay ?? 1000;
-		this.pingInterval = config.pingInterval ?? 25000; // 25 seconds
-		this.pongTimeout = config.pongTimeout ?? 10000; // 10 seconds
+		this.pingInterval = config.pingInterval ?? 30000; // 30 seconds (reduced frequency)
+		this.pongTimeout = config.pongTimeout ?? 20000; // 20 seconds (increased tolerance for slow responses)
 	}
 
 	/**
@@ -66,6 +66,13 @@ export class WebSocketManager {
 	 * Create a new WebSocket connection
 	 */
 	private async createConnection(): Promise<void> {
+		// Don't connect if page is unloading (hot-reload or navigation)
+		if (typeof document !== 'undefined' && document.readyState === 'unloading') {
+			console.warn('⚠️ Skipping WebSocket connection - page unloading');
+			this.shouldReconnect = false;
+			return;
+		}
+		
 		try {
 			this.updateState(ConnectionState.CONNECTING);
 			console.log('🔌 Connecting to WebSocket...', this.config.wsUrl);
