@@ -233,6 +233,38 @@ export default function Home() {
 		};
 	}, []);
 
+	// Load data from sessionStorage on mount (for navigation from home page)
+	useEffect(() => {
+		if (typeof window !== "undefined") {
+			const storedData = sessionStorage.getItem("mira_email_calendar_data");
+			if (storedData) {
+				try {
+					const data = JSON.parse(storedData) as VoiceSummaryEventDetail;
+					console.log("📦 Smart Summary: Loading data from sessionStorage", data);
+					
+					const rawSteps = data.steps?.length ? data.steps : DEFAULT_SUMMARY_STEPS;
+					const normalizedCalendarEvents: VoiceSummaryCalendarEvent[] =
+						Array.isArray(data.calendarEvents) ? data.calendarEvents : [];
+
+					setSummarySteps(prepareVoiceSteps(rawSteps));
+					setSummaryEmails(data.emails ?? []);
+					setSummaryEvents(normalizedCalendarEvents);
+					setSummaryFocus(data.focus ?? null);
+					setSummaryStage("thinking");
+					setSummaryOverlayVisible(true);
+					setSummaryRunId((id) => id + 1);
+					
+					// Clear the stored data after loading
+					sessionStorage.removeItem("mira_email_calendar_data");
+					console.log("🗑️ Smart Summary: Cleared sessionStorage");
+				} catch (error) {
+					console.error("❌ Smart Summary: Error parsing stored data", error);
+					sessionStorage.removeItem("mira_email_calendar_data");
+				}
+			}
+		}
+	}, []);
+
 	useEffect(() => {
 		const handler = async (event: Event) => {
 			const customEvent = event as CustomEvent<VoiceSummaryEventDetail>;
@@ -246,7 +278,7 @@ export default function Home() {
 			const normalizedCalendarEvents: VoiceSummaryCalendarEvent[] =
 				Array.isArray(detail.calendarEvents) ? detail.calendarEvents : [];
 
-			console.log("📧 Smart Summary: Received email/calendar data:", {
+			console.log("📧 Smart Summary: Received email/calendar data via event:", {
 				emails: detail.emails?.length || 0,
 				events: normalizedCalendarEvents.length || 0,
 				steps: rawSteps.length
@@ -422,14 +454,25 @@ export default function Home() {
 					setPendingSummaryMessage(data.text);
 				}
 
-				// Dispatch event to trigger the overlay
-				if (typeof window !== "undefined") {
-					window.dispatchEvent(
-						new CustomEvent("miraEmailCalendarSummary", {
-							detail: data.actionData ?? {},
-						})
-					);
-					console.log("✅ Smart Summary Page: Dispatched miraEmailCalendarSummary event with data");
+				// Directly update state since we're already on the smart-summary page
+				if (data.actionData) {
+					const detail = data.actionData;
+					const rawSteps = detail.steps?.length ? detail.steps : DEFAULT_SUMMARY_STEPS;
+					const normalizedCalendarEvents: VoiceSummaryCalendarEvent[] =
+						Array.isArray(detail.calendarEvents) ? detail.calendarEvents : [];
+
+					console.log("📧 Smart Summary Page: Setting state directly", {
+						emails: detail.emails?.length || 0,
+						events: normalizedCalendarEvents.length || 0,
+					});
+
+					setSummarySteps(prepareVoiceSteps(rawSteps));
+					setSummaryEmails(detail.emails ?? []);
+					setSummaryEvents(normalizedCalendarEvents);
+					setSummaryFocus(detail.focus ?? null);
+					setSummaryStage("thinking");
+					setSummaryOverlayVisible(true);
+					setSummaryRunId((id) => id + 1);
 				}
 
 				return;

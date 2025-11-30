@@ -577,21 +577,18 @@ export default function Home() {
 				console.log("📧 Home: Received email_calendar_summary action", data.actionData);
 				if (data.text) setPendingSummaryMessage(data.text);
 				
-				// First dispatch the event with the data
-				if (typeof window !== "undefined") {
-					window.dispatchEvent(
-						new CustomEvent("miraEmailCalendarSummary", {
-							detail: data.actionData ?? {},
-						})
+				// Store data in sessionStorage for the smart-summary page to pick up
+				if (typeof window !== "undefined" && data.actionData) {
+					sessionStorage.setItem(
+						"mira_email_calendar_data",
+						JSON.stringify(data.actionData)
 					);
-					console.log("✅ Home: Dispatched miraEmailCalendarSummary event");
+					console.log("💾 Home: Stored email/calendar data in sessionStorage");
 				}
 				
-				// Then navigate to the smart-summary page
-				setTimeout(() => {
-					console.log("🔄 Home: Navigating to /scenarios/smart-summary");
-					router.push("/scenarios/smart-summary");
-				}, 100); // Small delay to ensure event is dispatched first
+				// Navigate to the smart-summary page
+				console.log("🔄 Home: Navigating to /scenarios/smart-summary");
+				router.push("/scenarios/smart-summary");
 				return;
 			}
 
