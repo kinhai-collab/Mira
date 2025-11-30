@@ -11,10 +11,10 @@ type RealtimeOptions = {
   wsUrl?: string; // e.g. 'ws://127.0.0.1:8000/api/ws/voice-stt'
   token?: string | null;
   chunkSize?: number; // bytes per chunk
-  onMessage?: (msg: any) => void;
+  onMessage?: (msg: unknown) => void;
   onOpen?: () => void;
   onClose?: (ev?: CloseEvent) => void;
-  onError?: (err: any) => void;
+  onError?: (err: unknown) => void;
   onPartialResponse?: (text: string) => void;
   onAudioChunk?: (base64: string) => void;
   onAudioFinal?: () => void;
@@ -98,7 +98,7 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
     bufferedBytes = tmp;
   }
 
-  function handleWebSocketMessage(parsed: any) {
+  function handleWebSocketMessage(parsed: Record<string, unknown>) {
     const msgType = parsed.message_type || parsed.type || parsed.event;
     
     // Debug: Log all incoming JSON messages
@@ -297,7 +297,7 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
     await ensureWebSocket();
 
     stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const AudioCtx = (window as any).AudioContext || (window as any).webkitAudioContext;
+    const AudioCtx = (window.AudioContext || (window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext) as typeof AudioContext;
     audioCtx = new AudioCtx();
     if (!audioCtx) throw new Error('Failed to create AudioContext');
     sourceNode = audioCtx.createMediaStreamSource(stream);
@@ -438,8 +438,8 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
 
     try {
       if (processor) {
-        try { processor.disconnect(); } catch (e) {}
-        processor.onaudioprocess = null as any;
+        try { processor.disconnect(); } catch {}
+        processor.onaudioprocess = null as unknown as ((this: ScriptProcessorNode, ev: AudioProcessingEvent) => void) | null;
         processor = null;
       }
       if (sourceNode) {
@@ -447,14 +447,14 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
         sourceNode = null;
       }
       if (audioCtx) {
-        try { await audioCtx.close(); } catch (e) {}
+        try { await audioCtx.close(); } catch {}
         audioCtx = null;
       }
       if (stream) {
         stream.getTracks().forEach((t) => t.stop());
         stream = null;
       }
-    } catch (e) {
+    } catch {
       // swallow
     }
 
@@ -464,14 +464,14 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
         wsManager.close(true); // Close and prevent auto-reconnection
         wsManager = null;
       }
-    } catch (e) {}
+    } catch {}
   }
 
   return {
     start,
     stop,
     getWebSocket: () => wsManager,
-    send: (data: any) => wsManager?.send(data),
+    send: (data: unknown) => wsManager?.send(data),
     forceReconnect: () => wsManager?.forceReconnect(),
   };
 }

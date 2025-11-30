@@ -12,16 +12,19 @@ Notes:
 - Provide `token` in options; it will be sent as an initial auth message. If your server expects token in querystring, provide it in wsUrl.
 */
 
+// Type for AudioContext (supports both standard and webkit prefix)
+type AudioContextType = typeof AudioContext | typeof (window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+
 type Options = {
   wsUrl?: string;
   token?: string | null;
   chunkSize?: number; // bytes per chunk before base64-encoding and send
   mediaRecorderTimeslice?: number; // ms for MediaRecorder.start(timeslice)
   mimeType?: string; // e.g. 'audio/webm;codecs=opus'
-  onTranscript?: (msg: any) => void; // called when server sends transcript frames
+  onTranscript?: (msg: unknown) => void; // called when server sends transcript frames
   onOpen?: () => void;
   onClose?: (ev?: CloseEvent) => void;
-  onError?: (err: any) => void;
+  onError?: (err: unknown) => void;
   onProgress?: (sentBytes: number, totalBuffered: number) => void;
 };
 
@@ -44,7 +47,7 @@ export function arrayBufferToBase64(ab: ArrayBuffer): string {
 export async function decodeAudioBlobToPCM16(blob: Blob, targetRate = 16000): Promise<ArrayBuffer> {
   if (!blob || blob.size === 0) throw new Error('decodeAudioBlobToPCM16: empty blob');
   const ab = await blob.arrayBuffer();
-  const AudioCtx = (window as any).AudioContext || (window as any).webkitAudioContext;
+  const AudioCtx = (window.AudioContext || (window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext) as typeof AudioContext;
   const ac = new AudioCtx();
   try {
     const decoded: AudioBuffer = await new Promise((resolve, reject) => {
@@ -53,7 +56,8 @@ export async function decodeAudioBlobToPCM16(blob: Blob, targetRate = 16000): Pr
         if (p && typeof (p as Promise<AudioBuffer>).then === 'function') {
           (p as Promise<AudioBuffer>).then(resolve).catch(reject);
         } else {
-          (ac as any).decodeAudioData(ab.slice(0), resolve, reject);
+          // Fallback for older browsers with callback-based API
+          (ac as unknown as { decodeAudioData: (buffer: ArrayBuffer, successCallback: (decodedData: AudioBuffer) => void, errorCallback: (error: DOMException) => void) => void }).decodeAudioData(ab.slice(0), resolve, reject);
         }
       } catch (err) {
         reject(err);
@@ -91,7 +95,7 @@ export async function decodeAudioBlobToPCM16(blob: Blob, targetRate = 16000): Pr
     const float32 = sourceBuffer.getChannelData(0);
     const pcm16 = new Int16Array(float32.length);
     for (let i = 0; i < float32.length; i++) {
-      let s = Math.max(-1, Math.min(1, float32[i]));
+      const s = Math.max(-1, Math.min(1, float32[i]));
       pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
     }
 
@@ -105,13 +109,8 @@ export async function decodeAudioBlobToPCM16(blob: Blob, targetRate = 16000): Pr
 
 export async function startWsVoiceStt(options: Options = {}) {
   const {
-    wsUrl = (typeof window !== 'undefined' && (window as any).NEXT_PUBLIC_API_URL)
-      ? undefined
-      : undefined,
     token = null,
     chunkSize = 4096,
-    mediaRecorderTimeslice = 100,
-    mimeType = 'audio/webm;codecs=opus',
     onTranscript,
     onOpen,
     onClose,
@@ -123,9 +122,7 @@ export async function startWsVoiceStt(options: Options = {}) {
   const connectUrl = (options.wsUrl && options.wsUrl.length > 0) ? options.wsUrl : defaultWs;
 
   let ws: WebSocket | null = null;
-  let mediaRecorder: MediaRecorder | null = null;
   let stream: MediaStream | null = null;
-  let isStopping = false;
 
   // internal buffer of bytes to slice into chunkSize blocks
   let buffer = new Uint8Array(0);
@@ -139,11 +136,14 @@ export async function startWsVoiceStt(options: Options = {}) {
   let zeroGain: GainNode | null = null;
 
   // Convert a Blob (webm/opus/etc.) into PCM16@targetRate (Uint8Array little-endian)
+  // Note: This function is defined but currently unused - kept for potential future use
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async function convertBlobToPCM16(blob: Blob, targetRate = 16000): Promise<ArrayBuffer> {
     if (!blob || blob.size === 0) throw new Error('convertBlobToPCM16: empty blob');
     const ab = await blob.arrayBuffer();
     // Use AudioContext to decode
-    const ac = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const AudioCtx = (window.AudioContext || (window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext) as typeof AudioContext;
+    const ac = new AudioCtx();
     try {
       // Some browsers' decodeAudioData implementations are callback-based; wrap for compatibility
       const decoded: AudioBuffer = await new Promise((resolve, reject) => {
@@ -153,7 +153,7 @@ export async function startWsVoiceStt(options: Options = {}) {
             (p as Promise<AudioBuffer>).then(resolve).catch((err) => reject(err));
           } else {
             // fallback to callback style
-            (ac as any).decodeAudioData(ab.slice(0), resolve, reject);
+            (ac as unknown as { decodeAudioData: (buffer: ArrayBuffer, successCallback: (decodedData: AudioBuffer) => void, errorCallback: (error: DOMException) => void) => void }).decodeAudioData(ab.slice(0), resolve, reject);
           }
         } catch (err) {
           reject(err);
@@ -194,7 +194,7 @@ export async function startWsVoiceStt(options: Options = {}) {
       const float32 = sourceBuffer.getChannelData(0);
       const pcm16 = new Int16Array(float32.length);
       for (let i = 0; i < float32.length; i++) {
-        let s = Math.max(-1, Math.min(1, float32[i]));
+        const s = Math.max(-1, Math.min(1, float32[i]));
         pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
       }
 
@@ -221,7 +221,7 @@ export async function startWsVoiceStt(options: Options = {}) {
     if (inputRate === outputRate) {
       const out = new Int16Array(input.length);
       for (let i = 0; i < input.length; i++) {
-        let s = Math.max(-1, Math.min(1, input[i]));
+        const s = Math.max(-1, Math.min(1, input[i]));
         out[i] = s < 0 ? Math.round(s * 0x8000) : Math.round(s * 0x7fff);
       }
       return out;
@@ -282,7 +282,7 @@ export async function startWsVoiceStt(options: Options = {}) {
         debugLoggedFirstChunk = true;
         console.debug('[wsVoiceStt] sendAppendChunk: first chunk ->', { byteLength: ab.byteLength, commit, sample_rate: 16000, preview_b64: commit ? '(empty commit)' : b64.slice(0, 64) });
       }
-    } catch (e) {
+    } catch {
       // ignore logging failures
     }
     const msg = {
@@ -307,6 +307,8 @@ export async function startWsVoiceStt(options: Options = {}) {
     }
   }
 
+  // Note: sendCommit is defined but currently unused - kept for potential future use
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   function sendCommit() {
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
     try {
@@ -337,7 +339,7 @@ export async function startWsVoiceStt(options: Options = {}) {
       try {
         const parsed = JSON.parse(evt.data);
         if (onTranscript) onTranscript(parsed);
-      } catch (e) {
+      } catch {
         // if it's plain text, forward raw
         if (onTranscript) onTranscript(evt.data);
       }
@@ -358,7 +360,7 @@ export async function startWsVoiceStt(options: Options = {}) {
             const sep = connectUrl.includes('?') ? '&' : '?';
             urlToUse = `${connectUrl}${sep}token=${encodeURIComponent(token)}`;
           }
-        } catch (e) {
+        } catch {
           urlToUse = connectUrl;
         }
 
@@ -410,8 +412,8 @@ export async function startWsVoiceStt(options: Options = {}) {
             };
             if (onClose) onClose(ev);
             if (onError) onError(closeInfo);
-            // stop audio capture to avoid flood of 'not open' errors
-            try { void stop(); } catch (e) { /* swallow */ }
+          // stop audio capture to avoid flood of 'not open' errors
+          try { void stop(); } catch { /* swallow */ }
           };
           ws!.onmessage = handleServerMessage;
           if (onOpen) onOpen();
@@ -444,7 +446,6 @@ export async function startWsVoiceStt(options: Options = {}) {
   }
 
   async function start() {
-    isStopping = false;
     sentBytes = 0;
     buffer = new Uint8Array(0);
 
@@ -453,7 +454,7 @@ export async function startWsVoiceStt(options: Options = {}) {
     // start capturing audio via Web Audio API (preferred).
     stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-    const AudioCtx = (window as any).AudioContext || (window as any).webkitAudioContext;
+    const AudioCtx = (window.AudioContext || (window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext) as typeof AudioContext;
     audioContext = new AudioCtx();
     sourceNode = (audioContext as AudioContext).createMediaStreamSource(stream);
 
@@ -506,12 +507,11 @@ export async function startWsVoiceStt(options: Options = {}) {
   }
 
   async function stop() {
-    isStopping = true;
     try {
       // disconnect and stop WebAudio nodes if present
       if (processor) {
         try { processor.disconnect(); } catch {}
-        processor.onaudioprocess = null as any;
+        processor.onaudioprocess = null as unknown as ((this: ScriptProcessorNode, ev: AudioProcessingEvent) => void) | null;
         processor = null;
       }
       if (sourceNode) {
@@ -541,7 +541,7 @@ export async function startWsVoiceStt(options: Options = {}) {
       }
 
       if (audioContext) {
-        try { await audioContext.close(); } catch (e) {}
+        try { await audioContext.close(); } catch {}
         audioContext = null;
       }
 
@@ -579,15 +579,23 @@ export async function startWsVoiceStt(options: Options = {}) {
  * Send a single Blob/File over the ws voice-stt endpoint by chunking into base64 append messages,
  * then sending commit + transcribe and returning the first or last transcript-like server message.
  */
+type TranscriptMessage = {
+  type?: string;
+  text?: string;
+  is_final?: boolean;
+  event?: string;
+  [key: string]: unknown;
+};
+
 export async function sendBlobOnce(
   blob: Blob,
   opts: { wsUrl?: string; token?: string | null; chunkSize?: number; timeoutMs?: number } = {}
-): Promise<any> {
+): Promise<TranscriptMessage | string | null> {
   const { wsUrl = 'ws://127.0.0.1:8000/api/ws/voice-stt', token = null, chunkSize = 4096, timeoutMs = 30000 } = opts;
 
-  return new Promise<any>(async (resolve, reject) => {
+  return new Promise<TranscriptMessage | string | null>(async (resolve, reject) => {
     let ws: WebSocket | null = null;
-    let lastMsg: any = null;
+    let lastMsg: TranscriptMessage | string | null = null;
     let settled = false;
     let sendBlobOnceLoggedFirstChunk = false;
     const timer = setTimeout(() => {
@@ -602,7 +610,7 @@ export async function sendBlobOnce(
       ws = new WebSocket(wsUrl);
       ws.onopen = async () => {
         if (token) {
-          try { ws!.send(JSON.stringify({ type: 'authorization', token })); } catch (e) {}
+          try { ws!.send(JSON.stringify({ type: 'authorization', token })); } catch {}
         }
 
         // The server expects raw PCM16@16000 bytes in base64 inside JSON frames.
@@ -659,7 +667,7 @@ export async function sendBlobOnce(
               sendBlobOnceLoggedFirstChunk = true;
               console.debug('[wsVoiceStt] sendBlobOnce: first message ->', { preview: JSON.stringify({ ...msg, audio_base_64: msg.audio_base_64.slice(0, 64) }) });
             }
-          } catch (e) {}
+          } catch {}
           ws!.send(JSON.stringify(msg));
 
           // backpressure
@@ -699,7 +707,7 @@ export async function sendBlobOnce(
                 resolve(parsed);
               }
             }
-          } catch (e) {
+          } catch {
             // not JSON — treat as raw text
             lastMsg = evt.data;
             if (!settled) {
