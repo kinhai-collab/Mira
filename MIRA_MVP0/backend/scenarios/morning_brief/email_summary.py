@@ -2,7 +2,6 @@
 import requests
 from typing import Dict, Any, Optional
 from datetime import datetime, timedelta, timezone
-from zoneinfo import ZoneInfo
 import sys
 import os
 

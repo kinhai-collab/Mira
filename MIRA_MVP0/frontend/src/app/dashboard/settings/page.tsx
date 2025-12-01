@@ -183,7 +183,6 @@ export default function SettingsPage() {
 			await loadUserSettings();
 		};
 		loadAllData();
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [router]);
 
 	// Load user data from localStorage
@@ -425,7 +424,6 @@ export default function SettingsPage() {
 		window.addEventListener("userDataUpdated", handleUserDataUpdate);
 		return () =>
 			window.removeEventListener("userDataUpdated", handleUserDataUpdate);
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
 	// Added: get system/geolocation and reverse-geocode to a readable place name

@@ -11,7 +11,6 @@ from .rate_limit import acquire
 from . import settings
 
 from supabase import create_client
-import os
 
 # Note: We're using the sb() helper from supa.py for consistency
 # But we keep this client for backward compatibility in upsert_creds

@@ -360,8 +360,11 @@ export async function fetchEventList(
 			return { events: [], providers: [] };
 		}
 
+		// ✅ Get user's timezone from browser
+		const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+		
 		const endpoint = buildApiUrl("dashboard/events/list");
-		let query = `?days=${days}`;
+		let query = `?days=${days}&user_timezone=${encodeURIComponent(userTimezone)}`;
 		if (startDate) query += `&start_date=${startDate.toISOString()}`;
 		if (endDate) query += `&end_date=${endDate.toISOString()}`;
 
@@ -681,11 +684,14 @@ export async function fetchEmailList(
 			};
 		}
 
+		// ✅ Get user's timezone from browser
+		const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+		
 		const endpoint = buildApiUrl("dashboard/emails/list");
 		console.log("Fetching email list from:", endpoint);
 
 		const response = await fetch(
-			`${endpoint}?max_results=${maxResults}&days_back=${daysBack}`,
+			`${endpoint}?max_results=${maxResults}&days_back=${daysBack}&user_timezone=${encodeURIComponent(userTimezone)}`,
 			{
 				method: "GET",
 				headers: {

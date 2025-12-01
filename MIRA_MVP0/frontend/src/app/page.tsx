@@ -5,7 +5,6 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 
 import { useRouter } from "next/navigation";
-import Image from "next/image";
 import { Icon } from "@/components/Icon";
 import {
 	EmailCalendarOverlay,

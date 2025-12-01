@@ -967,12 +967,13 @@ async def get_event_list(
     authorization: Optional[str] = Header(default=None),
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
-    days: int = 7
+    days: int = 7,
+    user_timezone: str = "UTC"  # ✅ Accept timezone parameter from frontend
 ):
     """Get detailed list of events from both Google Calendar and Outlook for a date range."""
     try:
         user = get_user_from_token(authorization)
-        print(f"📅 Dashboard: Fetching event list for user {user['id']} ({user['email']})")
+        print(f"📅 Dashboard: Fetching event list for user {user['id']} ({user['email']}) in timezone {user_timezone}")
         
         calendar_service = None
         outlook_token = None
@@ -999,8 +1000,14 @@ async def get_event_list(
                 "data": {"events": [], "providers": []}
             }
             
-        # Determine date range
-        now = datetime.now(timezone.utc)
+        # ✅ Determine date range based on user's timezone
+        try:
+            user_tz = ZoneInfo(user_timezone)
+        except Exception as e:
+            print(f"⚠️ Invalid timezone '{user_timezone}', falling back to UTC: {e}")
+            user_tz = ZoneInfo("UTC")
+        
+        now = datetime.now(user_tz)
         if start_date:
             try:
                 range_start = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
@@ -1430,12 +1437,13 @@ async def get_email_list(
     request: Request,
     authorization: Optional[str] = Header(default=None),
     max_results: int = 50,
-    days_back: int = 7
+    days_back: int = 7,
+    user_timezone: str = "UTC"  # ✅ Accept timezone parameter from frontend
 ):
     """Get detailed list of emails from both Gmail and Outlook for the emails page."""
     try:
         user = get_user_from_token(authorization)
-        print(f"📧 Dashboard: Fetching email list for user {user['id']} ({user['email']})")
+        print(f"📧 Dashboard: Fetching email list for user {user['id']} ({user['email']}) in timezone {user_timezone}")
         
         gmail_service = None
         outlook_token = None
@@ -1470,8 +1478,14 @@ async def get_email_list(
                 }
             }
         
-        # Get messages from specified days back
-        days_ago = datetime.now(timezone.utc) - timedelta(days=days_back)
+        # ✅ Get messages from specified days back based on user's timezone
+        try:
+            user_tz = ZoneInfo(user_timezone)
+        except Exception as e:
+            print(f"⚠️ Invalid timezone '{user_timezone}', falling back to UTC: {e}")
+            user_tz = timezone.utc
+        
+        days_ago = datetime.now(user_tz) - timedelta(days=days_back)
         emails_list = []
         
         # ========== FETCH GMAIL EMAILS ==========

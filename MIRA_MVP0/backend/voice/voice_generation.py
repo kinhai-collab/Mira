@@ -1,6 +1,5 @@
 ﻿import os
 import re
-import base64
 import asyncio
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse, JSONResponse

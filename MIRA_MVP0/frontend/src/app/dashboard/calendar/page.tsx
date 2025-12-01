@@ -257,7 +257,6 @@ export default function CalendarPage() {
 				window.removeEventListener("miraCalendarUpdated", handleCalendarUpdate);
 			}
 		};
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []); // Only register once, loadEvents will use current selectedDate/viewMode
 
 	// Fetch weather using Open-Meteo API directly
