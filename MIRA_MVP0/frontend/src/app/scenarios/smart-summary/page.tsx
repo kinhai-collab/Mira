@@ -79,7 +79,9 @@ export default function Home() {
 	const [isLocationLoading, setIsLocationLoading] = useState<boolean>(true);
 	const [isWeatherLoading, setIsWeatherLoading] = useState<boolean>(false);
 	const [weatherCode, setWeatherCode] = useState<number | null>(null);
-
+	const [weatherDescription, setWeatherDescription] = useState<string | null>(
+		null
+	);
 	// Timezone for formatting the date/time for the detected location.
 	// Default to the browser/system timezone — good offline/frontend-only fallback.
 	const [timezone, setTimezone] = useState<string>(
@@ -169,21 +171,138 @@ export default function Home() {
 			{ timeout: 10000 }
 		);
 	}, [timezone]);
+	const fetchWeatherForCoords = useCallback(
+		async (lat: number, lon: number) => {
+			// Helper: map Open-Meteo weathercode to simple description
+			const openMeteoCodeToDesc = (code: number) => {
+				// Simplified mapping for common values
+				switch (code) {
+					case 0:
+						return "Clear";
+					case 1:
+					case 2:
+					case 3:
+						return "Partly cloudy";
+					case 45:
+					case 48:
+						return "Fog";
+					case 51:
+					case 53:
+					case 55:
+						return "Drizzle";
+					case 61:
+					case 63:
+					case 65:
+						return "Rain";
+					case 71:
+					case 73:
+					case 75:
+						return "Snow";
+					case 80:
+					case 81:
+					case 82:
+						return "Showers";
+					case 95:
+					case 96:
+					case 99:
+						return "Thunderstorm";
+					default:
+						return "Unknown";
+				}
+			};
+			try {
+				setIsWeatherLoading(true);
+				console.log("Dashboard: fetching weather for coords:", lat, lon);
+				const data = await getWeather(lat, lon);
+				const temp = data?.temperatureC;
+				let desc: string | null = null;
+				// Map weathercode from Open-Meteo payload
+				if (data?.raw?.current_weather?.weathercode !== undefined) {
+					const code = Number(data.raw.current_weather.weathercode);
+					setWeatherCode(code);
+					desc = openMeteoCodeToDesc(code);
+				}
 
-	const fetchWeatherForCoords = async (lat: number, lon: number) => {
-		try {
-			setIsWeatherLoading(true);
-			const data = await getWeather(lat, lon);
-
-			if (typeof data?.temperatureC === "number") {
-				setTemperatureC(Math.round(data.temperatureC));
+				if (typeof temp === "number") setTemperatureC(temp);
+				if (desc) setWeatherDescription(desc);
+				if (!desc && temp == null)
+					console.warn(
+						"Dashboard: weather response had no usable fields",
+						data
+					);
+			} catch (err) {
+				console.error("Dashboard: Error fetching weather:", err);
+			} finally {
+				setIsWeatherLoading(false);
 			}
-		} catch (err) {
-			console.error("Error fetching weather:", err);
-		} finally {
-			setIsWeatherLoading(false);
+		},
+		[]
+	);
+
+	useEffect(() => {
+		if (latitude != null && longitude != null) {
+			fetchWeatherForCoords(latitude, longitude);
 		}
-	};
+	}, [latitude, longitude]);
+	useEffect(() => {
+		const ipFallback = async () => {
+			try {
+				const res = await fetch("https://ipapi.co/json/");
+				const data = await res.json();
+
+				setLocation(data.city || data.region || "Unknown");
+				setTimezone(data.timezone || timezone);
+
+				if (data.latitude && data.longitude) {
+					setLatitude(Number(data.latitude));
+					setLongitude(Number(data.longitude));
+				}
+			} catch (err) {
+				console.error("IP fallback error:", err);
+			} finally {
+				setIsLocationLoading(false);
+			}
+		};
+
+		if (!("geolocation" in navigator)) {
+			ipFallback();
+			return;
+		}
+
+		navigator.geolocation.getCurrentPosition(
+			async (pos) => {
+				const { latitude, longitude } = pos.coords;
+				setLatitude(latitude);
+				setLongitude(longitude);
+
+				try {
+					const res = await fetch(
+						`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}`
+					);
+					const data = await res.json();
+
+					const city =
+						data?.address?.city ||
+						data?.address?.town ||
+						data?.address?.village ||
+						data?.address?.state ||
+						data?.address?.county ||
+						"Unknown";
+
+					setLocation(city);
+				} catch {
+					await ipFallback();
+				}
+
+				setIsLocationLoading(false);
+			},
+			async () => {
+				await ipFallback();
+			},
+			{ timeout: 10000 }
+		);
+	}, [timezone]);
+
 	useEffect(() => {
 		if (latitude != null && longitude != null) {
 			fetchWeatherForCoords(latitude, longitude);
@@ -583,6 +702,7 @@ export default function Home() {
 		<div className="flex flex-col min-h-screen bg-[#F8F8FB] text-gray-800">
 			{/* Global Header Bar */}
 			<div className="fixed top-0 left-0 w-full bg-[#F8F8FB] pl-[70px] md:pl-[90px]">
+				{/* Global Header Bar */}
 				<HeaderBar
 					dateLabel={new Date().toLocaleDateString("en-US", {
 						weekday: "short",
@@ -593,9 +713,9 @@ export default function Home() {
 					temperatureLabel={
 						temperatureC != null ? `${Math.floor(temperatureC)}°` : "--"
 					}
+					weatherCode={weatherCode}
 					isLocationLoading={isLocationLoading}
 					isWeatherLoading={isWeatherLoading}
-					scenarioTag="smart-summary"
 				/>
 			</div>
 

@@ -1,7 +1,7 @@
 /** @format */
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Orb from "./components/Orb";
@@ -69,7 +69,10 @@ export default function MorningBrief() {
 	const [temperatureC, setTemperatureC] = useState<number | null>(null);
 	const [isLocationLoading, setIsLocationLoading] = useState<boolean>(true);
 	const [isWeatherLoading, setIsWeatherLoading] = useState<boolean>(false);
-
+	const [weatherCode, setWeatherCode] = useState<number | null>(null);
+	const [weatherDescription, setWeatherDescription] = useState<string | null>(
+		null
+	);
 	const [timezone, setTimezone] = useState<string>(
 		Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
 	);
@@ -104,20 +107,6 @@ export default function MorningBrief() {
 		}, 1200);
 	};
 
-	const fetchWeatherForCoords = async (lat: number, lon: number) => {
-		try {
-			setIsWeatherLoading(true);
-			const data = await getWeather(lat, lon);
-
-			if (typeof data?.temperatureC === "number") {
-				setTemperatureC(Math.round(data.temperatureC));
-			}
-		} catch (err) {
-			console.error("Error fetching weather:", err);
-		} finally {
-			setIsWeatherLoading(false);
-		}
-	};
 	const speakMorningBrief = (text: string) => {
 		if (!text) return;
 		window.dispatchEvent(new CustomEvent("miraSpeak", { detail: { text } }));
@@ -190,7 +179,73 @@ export default function MorningBrief() {
 			{ timeout: 10000 }
 		);
 	}, [timezone]);
+	const fetchWeatherForCoords = useCallback(
+		async (lat: number, lon: number) => {
+			// Helper: map Open-Meteo weathercode to simple description
+			const openMeteoCodeToDesc = (code: number) => {
+				// Simplified mapping for common values
+				switch (code) {
+					case 0:
+						return "Clear";
+					case 1:
+					case 2:
+					case 3:
+						return "Partly cloudy";
+					case 45:
+					case 48:
+						return "Fog";
+					case 51:
+					case 53:
+					case 55:
+						return "Drizzle";
+					case 61:
+					case 63:
+					case 65:
+						return "Rain";
+					case 71:
+					case 73:
+					case 75:
+						return "Snow";
+					case 80:
+					case 81:
+					case 82:
+						return "Showers";
+					case 95:
+					case 96:
+					case 99:
+						return "Thunderstorm";
+					default:
+						return "Unknown";
+				}
+			};
+			try {
+				setIsWeatherLoading(true);
+				console.log("Dashboard: fetching weather for coords:", lat, lon);
+				const data = await getWeather(lat, lon);
+				const temp = data?.temperatureC;
+				let desc: string | null = null;
+				// Map weathercode from Open-Meteo payload
+				if (data?.raw?.current_weather?.weathercode !== undefined) {
+					const code = Number(data.raw.current_weather.weathercode);
+					setWeatherCode(code);
+					desc = openMeteoCodeToDesc(code);
+				}
 
+				if (typeof temp === "number") setTemperatureC(temp);
+				if (desc) setWeatherDescription(desc);
+				if (!desc && temp == null)
+					console.warn(
+						"Dashboard: weather response had no usable fields",
+						data
+					);
+			} catch (err) {
+				console.error("Dashboard: Error fetching weather:", err);
+			} finally {
+				setIsWeatherLoading(false);
+			}
+		},
+		[]
+	);
 	useEffect(() => {
 		if (latitude != null && longitude != null) {
 			fetchWeatherForCoords(latitude, longitude);
@@ -503,6 +558,7 @@ export default function MorningBrief() {
 					temperatureLabel={
 						temperatureC != null ? `${Math.floor(temperatureC)}°` : "--"
 					}
+					weatherCode={weatherCode}
 					isLocationLoading={isLocationLoading}
 					isWeatherLoading={isWeatherLoading}
 					scenarioTag="morning-brief"

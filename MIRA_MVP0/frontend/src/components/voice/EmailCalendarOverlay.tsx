@@ -67,33 +67,19 @@ function stepTextColor(status: VoiceSummaryStepStatus) {
 			return "text-[#272829]";
 	}
 }
-
 function StepBullet({ status }: { status: VoiceSummaryStepStatus }) {
+	// DONE → Blue checkmark icon
 	if (status === "done") {
 		return (
-			<span className="flex size-4 items-center justify-center rounded-full bg-[#382099] text-[10px] font-semibold text-white">
-				✓
-			</span>
+			<Image
+				src="/Icons/Property 1=Done in circle.svg"
+				alt="done"
+				width={20}
+				height={20}
+				className="shrink-0"
+			/>
 		);
 	}
-
-	if (status === "active") {
-		return (
-			<span className="flex size-4 items-center justify-center rounded-full border-2 border-[#382099]">
-				<span className="size-1.5 rounded-full bg-[#382099]" />
-			</span>
-		);
-	}
-
-	if (status === "disabled") {
-		return (
-			<span className="flex size-4 items-center justify-center rounded-full border border-[#d5d8df] bg-[#eceff6]" />
-		);
-	}
-
-	return (
-		<span className="flex size-4 items-center justify-center rounded-full border border-[#c4c6cc]" />
-	);
 }
 
 const GMAIL_ICON = {
