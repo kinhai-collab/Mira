@@ -24,9 +24,8 @@ export default function CalendarFlowPage() {
 	>("thinking");
 	// FooterBar states
 
-	const [isListening, setIsListening] = useState(false);
-	const [isTextMode, setIsTextMode] = useState(true);
-
+	const [isListening, setIsListening] = useState(true); // mic selected by default
+	const [isTextMode, setIsTextMode] = useState(false);
 	const [isConversationActive, setIsConversationActive] = useState(false);
 	const [isMuted, setIsMuted] = useState(false);
 
@@ -47,11 +46,51 @@ export default function CalendarFlowPage() {
 	const [textMessages, setTextMessages] = useState<
 		Array<{ role: "user" | "assistant"; content: string }>
 	>([]);
+	useEffect(() => {
+		const timers: NodeJS.Timeout[] = [];
 
-	// Events
-	const [summaryEvents, setSummaryEvents] = useState<any[]>([]);
-	const [conflictEvents, setConflictEvents] = useState<any[]>([]);
-	const [finalEvent, setFinalEvent] = useState<any | null>(null);
+		timers.push(setTimeout(() => setStage("summary"), 2000)); // 2s
+		timers.push(setTimeout(() => setStage("conflict"), 4000)); // 4s
+		timers.push(setTimeout(() => setStage("rescheduling"), 6000)); // 6s
+		timers.push(setTimeout(() => setStage("confirmation"), 8500)); // 8.5s
+
+		return () => timers.forEach((t) => clearTimeout(t));
+	}, []);
+
+	const sampleEvents = [
+		{
+			id: "1",
+			title: "Project Timeline & Budget Discussion",
+			time: "12 pm - 1 pm",
+			attendee: "David Olibear",
+			provider: "google",
+		},
+		{
+			id: "2",
+			title: "Quarterly Budget Review",
+			time: "2 pm - 2:30 pm",
+			attendee: "Sam Altman",
+			provider: "google",
+		},
+		{
+			id: "3",
+			title: "Marketing Budget Approval",
+			time: "4 pm - 5 pm",
+			attendee: "Kate Foret",
+			provider: "google",
+		},
+		{
+			id: "4",
+			title: "Revised Marketing Budget",
+			time: "4 pm - 5 pm",
+			attendee: "Sam Foleigh",
+			provider: "teams",
+		},
+	];
+
+	const rescheduledEvents = sampleEvents.map((ev) =>
+		ev.id === "4" ? { ...ev, time: "10:00 am - 10:30 am" } : ev
+	);
 
 	const [input, setInput] = useState("");
 	const [isLoadingResponse, setIsLoadingResponse] = useState(false);
@@ -231,7 +270,6 @@ export default function CalendarFlowPage() {
 			let data;
 			try {
 				data = await response.json();
-				console.log("BACKEND DATA:", data);
 			} catch (err) {
 				console.error("❌ Failed to parse JSON from backend:", err);
 				throw new Error("Invalid JSON in backend response");
@@ -239,26 +277,32 @@ export default function CalendarFlowPage() {
 
 			// ✅ Handle calendar actions (schedule, cancel, reschedule)
 			if (data.action && data.action.startsWith("calendar_")) {
-				const result = data.actionResult;
-
-				if (data.action === "calendar_check") {
-					setSummaryEvents(result.events || []);
-					setStage("summary");
+				// Display the response text from Mira
+				if (data.text) {
+					setTextMessages((prev) => [
+						...prev,
+						{ role: "assistant", content: data.text },
+					]);
 				}
-
-				if (data.action === "calendar_conflict") {
-					setConflictEvents(result.conflicts || []);
-					setStage("conflict");
+				// Log the action result for debugging
+				if (data.actionResult) {
+					console.log(
+						"Calendar action completed:",
+						data.action,
+						data.actionResult
+					);
 				}
-
-				if (
-					data.action === "calendar_schedule" ||
-					data.action === "calendar_reschedule"
-				) {
-					setFinalEvent(result.event || null);
-					setStage("confirmation");
+				// ✅ Dispatch event to refresh dashboard and calendar page
+				if (typeof window !== "undefined") {
+					window.dispatchEvent(
+						new CustomEvent("miraCalendarUpdated", {
+							detail: {
+								action: data.action,
+								result: data.actionResult,
+							},
+						})
+					);
 				}
-
 				return;
 			}
 
@@ -334,46 +378,49 @@ export default function CalendarFlowPage() {
 							{stage !== "thinking" && (
 								<div className="relative mt-14 w-full max-w-[800px]">
 									{/* Scrollable content */}
-									<div className="max-h-[58vh] overflow-y-scroll no-scrollbar bg-white border border-gray-200 rounded-[25px] relative z-10 w-full">
+									<div
+										className="
+						max-h-[58vh] 
+						overflow-y-scroll 
+						no-scrollbar 
+						bg-white 
+						border 
+						border-gray-200 
+						rounded-[25px] 
+						relative 
+						z-10 
+						w-full
+					"
+										onScroll={(e) => {
+											const frame = document.querySelector(
+												".scroll-frame"
+											) as HTMLElement;
+											if (!frame) return;
+
+											if (e.currentTarget.scrollTop > 2) {
+												frame.style.opacity = "1";
+											} else {
+												frame.style.opacity = "0";
+											}
+										}}
+									>
 										{stage === "summary" && (
 											<CalendarSummaryPanel
-												events={summaryEvents}
-												totalEvents={summaryEvents.length}
-												totalMeet={
-													summaryEvents.filter(
-														(e) =>
-															e.provider === "meet" || e.provider === "google"
-													).length
-												}
-												totalTeams={
-													summaryEvents.filter(
-														(e) =>
-															e.provider === "teams" ||
-															e.provider === "microsoft"
-													).length
-												}
-												nextEventTitle={summaryEvents[0]?.title || ""}
+												events={sampleEvents}
+												totalEvents={4}
+												totalMeet={3}
+												totalTeams={1}
+												nextEventTitle="Project Timeline & Budget Discussion"
 											/>
 										)}
 
 										{stage === "conflict" && (
 											<CalendarConflictDetection
-												events={conflictEvents}
-												totalEvents={conflictEvents.length}
-												totalMeet={
-													conflictEvents.filter(
-														(e) =>
-															e.provider === "meet" || e.provider === "google"
-													).length
-												}
-												totalTeams={
-													conflictEvents.filter(
-														(e) =>
-															e.provider === "teams" ||
-															e.provider === "microsoft"
-													).length
-												}
-												nextEventTitle={conflictEvents[0]?.title || ""}
+												events={sampleEvents}
+												totalEvents={sampleEvents.length}
+												totalMeet={3}
+												totalTeams={1}
+												nextEventTitle="Project Timeline & Budget Discussion"
 											/>
 										)}
 
@@ -381,9 +428,9 @@ export default function CalendarFlowPage() {
 
 										{stage === "confirmation" && (
 											<MeetingConfirmationUI
-												events={finalEvent ? [finalEvent] : []}
-												rescheduledEventId={finalEvent?.id || ""}
-												newTime={finalEvent?.time || ""}
+												events={rescheduledEvents}
+												rescheduledEventId="4"
+												newTime="10:00 AM – 10:30 AM"
 											/>
 										)}
 									</div>
