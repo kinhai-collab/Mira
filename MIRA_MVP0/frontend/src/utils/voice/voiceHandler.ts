@@ -4,6 +4,7 @@ import { getValidToken } from "@/utils/auth";
 import { sendBlobOnce } from "./wsVoiceStt";
 import { createRealtimeSttClient } from "./realtimeSttClient";
 import { ConnectionState } from "./WebSocketManager";
+import { getWebSocketUrl } from "./websocketUrl";
 
 /* ---------------------- Global Mute Control ---------------------- */
 export let isMiraMuted = false;
@@ -1060,9 +1061,7 @@ export async function startMiraVoice() {
 				}
 			})();
 			wsController = createRealtimeSttClient({
-				wsUrl:
-					(process.env.NEXT_PUBLIC_WS_URL as string) ||
-					"ws://127.0.0.1:8000/api/ws/voice-stt",
+				wsUrl: getWebSocketUrl(),
 				token,
 				chunkSize: 4096,
 				onMessage: async (msg: unknown) => {
@@ -1435,9 +1434,7 @@ async function recordOnce(): Promise<void> {
 
 						// Send recorded blob via websocket helper and await transcript-like response
 						const wsResult = await sendBlobOnce(audioBlob, {
-							wsUrl:
-								(process.env.NEXT_PUBLIC_WS_URL as string) ||
-								"ws://127.0.0.1:8000/api/ws/voice-stt",
+							wsUrl: getWebSocketUrl(),
 							token,
 							chunkSize: 4096,
 							timeoutMs: 30000,

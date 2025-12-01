@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 
-# Import all routers EXCEPT voice
+# Import all routers
 from auth import router as auth_router
 from greetings import router as greetings_router
 from tts_server import router as tts_router
@@ -24,6 +24,7 @@ from temp import router as weather_router
 from Google_Calendar_API import register_google_calendar
 from dashboard_api import router as dashboard_router
 from memory_test import router as memory_test_router
+from voice.voice_generation import router as voice_router
 
 # Optional routers
 try:
@@ -58,10 +59,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include all routers EXCEPT voice_router
+# Include all routers
 app.include_router(auth_router)
 app.include_router(greetings_router)
 app.include_router(tts_router)
+app.include_router(voice_router, prefix="/api")  # Includes /api/text-query endpoint
 app.include_router(gmail_events)
 app.include_router(text_query_router, prefix="/api")
 app.include_router(settings_router)

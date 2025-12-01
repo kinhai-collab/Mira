@@ -6,6 +6,7 @@
 // - Sends a final commit when stopped
 
 import { WebSocketManager, ConnectionState } from './WebSocketManager';
+import { normalizeWebSocketUrl } from './websocketUrl';
 
 type RealtimeOptions = {
   wsUrl?: string; // e.g. 'ws://127.0.0.1:8000/api/ws/voice-stt'
@@ -62,7 +63,7 @@ function resampleFloat32ToInt16(input: Float32Array, inputRate: number, outputRa
 
 export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
   const {
-    wsUrl = 'ws://127.0.0.1:8000/api/ws/voice-stt',
+    wsUrl: rawWsUrl = 'ws://127.0.0.1:8000/api/ws/voice-stt',
     token = null,
     chunkSize = 4096,
     onMessage,
@@ -70,6 +71,9 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
     onError,
     onStateChange,
   } = opts;
+  
+  // Normalize WebSocket URL to use wss:// when page is loaded over HTTPS
+  const wsUrl = normalizeWebSocketUrl(rawWsUrl);
     
     // new streaming callbacks
     const onPartialResponse = opts.onPartialResponse;

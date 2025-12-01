@@ -10,7 +10,10 @@ WebSocket STT streamer
 Notes:
 - This is browser-side TypeScript; import/adjust as needed in your app.
 - Provide `token` in options; it will be sent as an initial auth message. If your server expects token in querystring, provide it in wsUrl.
+- WebSocket URLs are automatically normalized to use wss:// when the page is loaded over HTTPS.
 */
+
+import { normalizeWebSocketUrl, getWebSocketUrl } from './websocketUrl';
 
 type Options = {
   wsUrl?: string;
@@ -115,8 +118,8 @@ export async function startWsVoiceStt(options: Options = {}) {
     onProgress,
   } = options;
 
-  const defaultWs = 'ws://127.0.0.1:8000/api/ws/voice-stt';
-  const connectUrl = (options.wsUrl && options.wsUrl.length > 0) ? options.wsUrl : defaultWs;
+  const defaultWs = getWebSocketUrl('ws://127.0.0.1:8000/api/ws/voice-stt');
+  const connectUrl = normalizeWebSocketUrl((options.wsUrl && options.wsUrl.length > 0) ? options.wsUrl : defaultWs);
 
   let ws: WebSocket | null = null;
   let stream: MediaStream | null = null;
@@ -588,7 +591,8 @@ export async function sendBlobOnce(
   blob: Blob,
   opts: { wsUrl?: string; token?: string | null; chunkSize?: number; timeoutMs?: number } = {}
 ): Promise<TranscriptMessage | string | null> {
-  const { wsUrl = 'ws://127.0.0.1:8000/api/ws/voice-stt', token = null, chunkSize = 4096, timeoutMs = 30000 } = opts;
+  const { wsUrl: rawWsUrl = 'ws://127.0.0.1:8000/api/ws/voice-stt', token = null, chunkSize = 4096, timeoutMs = 30000 } = opts;
+  const wsUrl = normalizeWebSocketUrl(rawWsUrl);
 
   return new Promise<TranscriptMessage | string | null>(async (resolve, reject) => {
     let ws: WebSocket | null = null;

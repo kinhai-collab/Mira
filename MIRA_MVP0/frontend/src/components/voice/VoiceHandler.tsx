@@ -4,6 +4,7 @@
 import { useState, useRef } from "react";
 import { getValidToken } from "@/utils/auth";
 import { sendBlobOnce } from "@/utils/voice/wsVoiceStt";
+import { getWebSocketUrl } from "@/utils/voice/websocketUrl";
 
 export default function VoiceHandler() {
 	const [isRecording, setIsRecording] = useState(false);
@@ -36,7 +37,7 @@ export default function VoiceHandler() {
 			try {
 				const token = await (async () => { try { return await getValidToken(); } catch { return null; } })();
 				const result = await sendBlobOnce(audioBlob, {
-					wsUrl: (process.env.NEXT_PUBLIC_WS_URL as string) || 'ws://127.0.0.1:8000/api/ws/voice-stt',
+					wsUrl: getWebSocketUrl(),
 					token,
 					chunkSize: 4096,
 					timeoutMs: 30000,
