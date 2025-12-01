@@ -9,7 +9,7 @@ import {
 	stopMiraVoice,
 	setMiraMute,
 } from "@/utils/voice/voiceHandler";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Orb from "@/components/Orb";
 import ThinkingPanel from "./components/ThinkingPanel";
 import CalendarSummaryPanel from "./components/CalendarSummaryPanel";
@@ -17,6 +17,7 @@ import CalendarConflictDetection from "./components/CalendarConflictDetection";
 import ReschedulingPanel from "./components/ReschedulingPanel";
 import MeetingConfirmationUI from "./components/MeetingConfirmationUI";
 import Sidebar from "@/components/Sidebar";
+import { getWeather } from "@/utils/weather";
 
 export default function CalendarFlowPage() {
 	const [stage, setStage] = useState<
@@ -28,6 +29,22 @@ export default function CalendarFlowPage() {
 	const [isTextMode, setIsTextMode] = useState(false);
 	const [isConversationActive, setIsConversationActive] = useState(false);
 	const [isMuted, setIsMuted] = useState(false);
+
+	// weather
+	const [weatherCode, setWeatherCode] = useState<number | null>(null);
+	const [weatherDescription, setWeatherDescription] = useState<string | null>(
+		null
+	);
+	const [isWeatherLoading, setIsWeatherLoading] = useState<boolean>(false);
+	const [location, setLocation] = useState<string>("Detecting...");
+	const [latitude, setLatitude] = useState<number | null>(null);
+	const [longitude, setLongitude] = useState<number | null>(null);
+	const [temperatureC, setTemperatureC] = useState<number | null>(null);
+	const [isLocationLoading, setIsLocationLoading] = useState<boolean>(true);
+	const [timezone, setTimezone] = useState<string>(
+		Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
+	);
+
 	const [textMessages, setTextMessages] = useState<
 		Array<{ role: "user" | "assistant"; content: string }>
 	>([]);
@@ -76,12 +93,141 @@ export default function CalendarFlowPage() {
 	const rescheduledEvents = sampleEvents.map((ev) =>
 		ev.id === "4" ? { ...ev, time: "10:00 am - 10:30 am" } : ev
 	);
-	const location = "Pittsburgh";
-	const temperatureC = 22;
-	const isLocationLoading = false;
-	const isWeatherLoading = false;
+
 	const [input, setInput] = useState("");
 	const [isLoadingResponse, setIsLoadingResponse] = useState(false);
+	const fetchWeatherForCoords = useCallback(
+		async (lat: number, lon: number) => {
+			// Helper: map Open-Meteo weathercode to simple description
+			const openMeteoCodeToDesc = (code: number) => {
+				// Simplified mapping for common values
+				switch (code) {
+					case 0:
+						return "Clear";
+					case 1:
+					case 2:
+					case 3:
+						return "Partly cloudy";
+					case 45:
+					case 48:
+						return "Fog";
+					case 51:
+					case 53:
+					case 55:
+						return "Drizzle";
+					case 61:
+					case 63:
+					case 65:
+						return "Rain";
+					case 71:
+					case 73:
+					case 75:
+						return "Snow";
+					case 80:
+					case 81:
+					case 82:
+						return "Showers";
+					case 95:
+					case 96:
+					case 99:
+						return "Thunderstorm";
+					default:
+						return "Unknown";
+				}
+			};
+			try {
+				setIsWeatherLoading(true);
+				console.log("Dashboard: fetching weather for coords:", lat, lon);
+				const data = await getWeather(lat, lon);
+				const temp = data?.temperatureC;
+				let desc: string | null = null;
+				// Map weathercode from Open-Meteo payload
+				if (data?.raw?.current_weather?.weathercode !== undefined) {
+					const code = Number(data.raw.current_weather.weathercode);
+					setWeatherCode(code);
+					desc = openMeteoCodeToDesc(code);
+				}
+
+				if (typeof temp === "number") setTemperatureC(temp);
+				if (desc) setWeatherDescription(desc);
+				if (!desc && temp == null)
+					console.warn(
+						"Dashboard: weather response had no usable fields",
+						data
+					);
+			} catch (err) {
+				console.error("Dashboard: Error fetching weather:", err);
+			} finally {
+				setIsWeatherLoading(false);
+			}
+		},
+		[]
+	);
+
+	useEffect(() => {
+		if (latitude != null && longitude != null) {
+			fetchWeatherForCoords(latitude, longitude);
+		}
+	}, [latitude, longitude]);
+	useEffect(() => {
+		const ipFallback = async () => {
+			try {
+				const res = await fetch("https://ipapi.co/json/");
+				const data = await res.json();
+
+				setLocation(data.city || data.region || "Unknown");
+				setTimezone(data.timezone || timezone);
+
+				if (data.latitude && data.longitude) {
+					setLatitude(Number(data.latitude));
+					setLongitude(Number(data.longitude));
+				}
+			} catch (err) {
+				console.error("IP fallback error:", err);
+			} finally {
+				setIsLocationLoading(false);
+			}
+		};
+
+		if (!("geolocation" in navigator)) {
+			ipFallback();
+			return;
+		}
+
+		navigator.geolocation.getCurrentPosition(
+			async (pos) => {
+				const { latitude, longitude } = pos.coords;
+				setLatitude(latitude);
+				setLongitude(longitude);
+
+				try {
+					const res = await fetch(
+						`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}`
+					);
+					const data = await res.json();
+
+					const city =
+						data?.address?.city ||
+						data?.address?.town ||
+						data?.address?.village ||
+						data?.address?.state ||
+						data?.address?.county ||
+						"Unknown";
+
+					setLocation(city);
+				} catch {
+					await ipFallback();
+				}
+
+				setIsLocationLoading(false);
+			},
+			async () => {
+				await ipFallback();
+			},
+			{ timeout: 10000 }
+		);
+	}, [timezone]);
+
 	const handleTextSubmit = async (text?: string) => {
 		const queryText = text || input.trim();
 		if (!queryText) return;
@@ -199,6 +345,7 @@ export default function CalendarFlowPage() {
 					temperatureLabel={
 						temperatureC != null ? `${Math.floor(temperatureC)}°` : "--"
 					}
+					weatherCode={weatherCode}
 					isLocationLoading={isLocationLoading}
 					isWeatherLoading={isWeatherLoading}
 					scenarioTag="smart-scheduling"

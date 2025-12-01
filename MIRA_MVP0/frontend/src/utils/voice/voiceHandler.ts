@@ -11,7 +11,7 @@ export let isMiraMuted = false;
 export function setMiraMute(mute: boolean) {
 	isMiraMuted = mute;
 	console.log(`Mira mute state set to: ${mute}`);
-	
+
 	// If muting, stop any currently playing audio
 	if (mute) {
 		// Stop current playing audio
@@ -22,12 +22,12 @@ export function setMiraMute(mute: boolean) {
 				currentPlayingAudio.volume = 0;
 				currentPlayingAudio.muted = true;
 			} catch (e) {
-				console.debug('Failed to stop audio when muting:', e);
+				console.debug("Failed to stop audio when muting:", e);
 			}
 		}
-		
+
 		// Clear audio queue
-		audioQueue.forEach(audio => {
+		audioQueue.forEach((audio) => {
 			try {
 				audio.pause();
 				audio.currentTime = 0;
@@ -39,7 +39,7 @@ export function setMiraMute(mute: boolean) {
 		audioQueue = [];
 		isPlayingQueue = false;
 		isAudioPlaying = false;
-		
+
 		// Also stop the legacy currentAudio if it exists
 		if (currentAudio) {
 			try {
@@ -47,11 +47,11 @@ export function setMiraMute(mute: boolean) {
 				currentAudio.currentTime = 0;
 			} catch {}
 		}
-		
+
 		// Stop greeting voice if playing
 		stopVoice();
-		
-		console.log('🔇 Stopped all audio playback due to mute');
+
+		console.log("🔇 Stopped all audio playback due to mute");
 	}
 }
 
@@ -72,6 +72,21 @@ type RealtimeSttController = {
 	send: (data: unknown) => void;
 	forceReconnect: () => void;
 } | null;
+type VoiceResponse = {
+	message_type?: string;
+	type?: string;
+	event?: string;
+	text?: string;
+	audio?: string;
+	audio_base_64?: string;
+	audio_base64?: string;
+	action?: string;
+	actionTarget?: string;
+	actionData?: any;
+	error?: any;
+	needsDetails?: boolean;
+};
+
 let wsController: RealtimeSttController = null;
 
 // Simple audio playback with HTML Audio elements
@@ -81,7 +96,8 @@ let currentPlayingAudio: HTMLAudioElement | null = null;
 let isAudioInterrupted = false; // Track if user interrupted AI audio
 let firstChunkReceivedTime = 0;
 let firstAudioPlayTime = 0;
-
+let lastPartialResponseText: string = "";
+let isAudioPlaying = false;
 // Deduplication: Track recently processed transcripts to avoid duplicate processing
 const recentTranscripts = new Map<string, number>(); // {text: timestamp}
 const TRANSCRIPT_CACHE_TTL = 5000; // 5 seconds - ignore duplicates within 5 seconds
@@ -89,19 +105,19 @@ const TRANSCRIPT_CACHE_TTL = 5000; // 5 seconds - ignore duplicates within 5 sec
 function playNextInQueue() {
 	// Block playback if user interrupted
 	if (isAudioInterrupted) {
-		console.log('🚫 Blocked playNextInQueue - user interrupted');
+		console.log("🚫 Blocked playNextInQueue - user interrupted");
 		isPlayingQueue = false;
 		currentPlayingAudio = null;
 		return;
 	}
-	
+
 	// Block playback if muted
 	if (isMiraMuted) {
-		console.log('🔇 Blocked playNextInQueue - Mira is muted');
+		console.log("🔇 Blocked playNextInQueue - Mira is muted");
 		isPlayingQueue = false;
 		currentPlayingAudio = null;
 		// Clear the queue when muted
-		audioQueue.forEach(audio => {
+		audioQueue.forEach((audio) => {
 			try {
 				URL.revokeObjectURL(audio.src);
 			} catch {
@@ -111,9 +127,9 @@ function playNextInQueue() {
 		audioQueue = [];
 		return;
 	}
-	
+
 	if (audioQueue.length === 0) {
-		console.log('✅ Queue empty');
+		console.log("✅ Queue empty");
 		isPlayingQueue = false;
 		currentPlayingAudio = null;
 		return;
@@ -130,15 +146,16 @@ function playNextInQueue() {
 		if (audioQueue.length > 0 && !isAudioInterrupted) {
 			const nextAudio = audioQueue[0];
 			// Trigger browser to start loading/decoding next chunk
-			if (nextAudio.readyState < 2) { // If not already loaded
+			if (nextAudio.readyState < 2) {
+				// If not already loaded
 				nextAudio.load();
-				console.log('🔄 Pre-loading next chunk in parallel');
+				console.log("🔄 Pre-loading next chunk in parallel");
 			}
 		}
 	};
 
 	audio.onended = () => {
-		console.log('✅ Chunk complete');
+		console.log("✅ Chunk complete");
 		try {
 			URL.revokeObjectURL(audio.src);
 		} catch {
@@ -149,14 +166,14 @@ function playNextInQueue() {
 		if (!isAudioInterrupted) {
 			playNextInQueue();
 		} else {
-			console.log('🚫 Skipping next chunk - user interrupted');
+			console.log("🚫 Skipping next chunk - user interrupted");
 		}
 	};
 
 	audio.onerror = () => {
 		// Don't log error if we intentionally cleared the source during interruption
 		if (!isAudioInterrupted) {
-			console.error('❌ Audio error');
+			console.error("❌ Audio error");
 		}
 		try {
 			URL.revokeObjectURL(audio.src);
@@ -170,9 +187,10 @@ function playNextInQueue() {
 		}
 	};
 
-	audio.play()
+	audio
+		.play()
 		.then(() => {
-			console.log('✅ Playback started');
+			console.log("✅ Playback started");
 			if (firstAudioPlayTime === 0 && firstChunkReceivedTime > 0) {
 				firstAudioPlayTime = performance.now();
 				const totalLatency = firstAudioPlayTime - firstChunkReceivedTime;
@@ -181,8 +199,8 @@ function playNextInQueue() {
 			// Start pre-loading next chunk NOW while this one plays
 			preloadNext();
 		})
-		.catch(err => {
-			console.error('❌ Play failed:', err);
+		.catch((err) => {
+			console.error("❌ Play failed:", err);
 			URL.revokeObjectURL(audio.src);
 			currentPlayingAudio = null;
 			playNextInQueue();
@@ -193,24 +211,24 @@ function handleAudioChunk(base64: string) {
 	try {
 		// Ignore chunks if user has interrupted
 		if (isAudioInterrupted) {
-			console.log('🚫 Ignoring audio chunk - user interrupted');
+			console.log("🚫 Ignoring audio chunk - user interrupted");
 			return;
 		}
-		
+
 		// Ignore chunks if muted
 		if (isMiraMuted) {
-			console.log('🔇 Ignoring audio chunk - Mira is muted');
+			console.log("🔇 Ignoring audio chunk - Mira is muted");
 			return;
 		}
-		
+
 		if (!base64 || base64.length === 0) {
-			console.warn('⚠️ Empty audio chunk');
+			console.warn("⚠️ Empty audio chunk");
 			return;
 		}
 
 		if (firstChunkReceivedTime === 0) {
 			firstChunkReceivedTime = performance.now();
-			console.log('⏱️ First audio chunk received from backend');
+			console.log("⏱️ First audio chunk received from backend");
 		}
 
 		console.log(`✅ Audio chunk received (${base64.length} bytes)`);
@@ -221,19 +239,19 @@ function handleAudioChunk(base64: string) {
 		for (let i = 0; i < binaryString.length; i++) {
 			bytes[i] = binaryString.charCodeAt(i);
 		}
-		const blob = new Blob([bytes], { type: 'audio/mpeg' });
+		const blob = new Blob([bytes], { type: "audio/mpeg" });
 		const url = URL.createObjectURL(blob);
 
 		// Create audio element with aggressive preloading
 		const audio = new Audio(url);
-		audio.preload = 'auto'; // Request browser to preload entire file
+		audio.preload = "auto"; // Request browser to preload entire file
 		audio.volume = 1.0;
-		
+
 		// Immediately trigger load to start decoding in parallel
 		// This starts decoding ASAP, not waiting until play() is called
 		void audio.load();
-		
-		console.log('🎵 Created Audio element (preloading started)');
+
+		console.log("🎵 Created Audio element (preloading started)");
 
 		// Add to queue
 		audioQueue.push(audio);
@@ -243,9 +261,8 @@ function handleAudioChunk(base64: string) {
 		if (!isPlayingQueue) {
 			playNextInQueue();
 		}
-
 	} catch (error) {
-		console.error('❌ Failed to handle audio chunk:', error);
+		console.error("❌ Failed to handle audio chunk:", error);
 	}
 }
 
@@ -267,10 +284,10 @@ function audioBufferToWav(audioBuffer: AudioBuffer): Blob {
 	const view = new DataView(buffer);
 
 	// Write WAV header
-	writeString(view, 0, 'RIFF');
+	writeString(view, 0, "RIFF");
 	view.setUint32(4, 36 + dataLength, true);
-	writeString(view, 8, 'WAVE');
-	writeString(view, 12, 'fmt ');
+	writeString(view, 8, "WAVE");
+	writeString(view, 12, "fmt ");
 	view.setUint32(16, 16, true); // fmt chunk size
 	view.setUint16(20, format, true);
 	view.setUint16(22, numChannels, true);
@@ -278,7 +295,7 @@ function audioBufferToWav(audioBuffer: AudioBuffer): Blob {
 	view.setUint32(28, sampleRate * blockAlign, true); // byte rate
 	view.setUint16(32, blockAlign, true);
 	view.setUint16(34, bitDepth, true);
-	writeString(view, 36, 'data');
+	writeString(view, 36, "data");
 	view.setUint32(40, dataLength, true);
 
 	// Write PCM samples
@@ -287,12 +304,16 @@ function audioBufferToWav(audioBuffer: AudioBuffer): Blob {
 		for (let channel = 0; channel < numChannels; channel++) {
 			const channelData = audioBuffer.getChannelData(channel);
 			const sample = Math.max(-1, Math.min(1, channelData[i]));
-			const intSample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
-			view.setInt16(offset + (i * numChannels + channel) * bytesPerSample, intSample, true);
+			const intSample = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
+			view.setInt16(
+				offset + (i * numChannels + channel) * bytesPerSample,
+				intSample,
+				true
+			);
 		}
 	}
 
-	return new Blob([buffer], { type: 'audio/wav' });
+	return new Blob([buffer], { type: "audio/wav" });
 }
 
 function writeString(view: DataView, offset: number, string: string) {
@@ -302,16 +323,16 @@ function writeString(view: DataView, offset: number, string: string) {
 }
 
 function handleAudioFinal() {
-	console.log('🏁 Audio stream complete');
+	console.log("🏁 Audio stream complete");
 	// Buffer queue will drain naturally
 }
 
 function stopAudioPlayback() {
-	console.log('🛑 Stopping audio playback - user interruption');
-	
+	console.log("🛑 Stopping audio playback - user interruption");
+
 	// Set interrupt flag to ignore incoming chunks from old response
 	isAudioInterrupted = true;
-	
+
 	// Stop current playing audio IMMEDIATELY with force
 	if (currentPlayingAudio) {
 		try {
@@ -320,27 +341,27 @@ function stopAudioPlayback() {
 			currentPlayingAudio.muted = true;
 			currentPlayingAudio.pause();
 			currentPlayingAudio.currentTime = 0;
-			currentPlayingAudio.src = ''; // Clear source
+			currentPlayingAudio.src = ""; // Clear source
 			currentPlayingAudio.load(); // Force reset
 			currentPlayingAudio.remove(); // Remove from DOM if attached
 			URL.revokeObjectURL(currentPlayingAudio.src);
-			console.log('✅ Forcefully stopped current audio');
+			console.log("✅ Forcefully stopped current audio");
 		} catch (e) {
-			console.debug('Failed to stop current audio:', e);
+			console.debug("Failed to stop current audio:", e);
 		}
 		currentPlayingAudio = null;
 	}
-	
+
 	// Clear entire queue - don't play old chunks
 	console.log(`🗑️ Clearing ${audioQueue.length} queued audio chunks`);
-	audioQueue.forEach(audio => {
+	audioQueue.forEach((audio) => {
 		try {
 			// Mute first for safety
 			audio.volume = 0;
 			audio.muted = true;
 			audio.pause();
 			audio.currentTime = 0;
-			audio.src = '';
+			audio.src = "";
 			void audio.load();
 			URL.revokeObjectURL(audio.src);
 		} catch {
@@ -350,36 +371,36 @@ function stopAudioPlayback() {
 	audioQueue = [];
 	isPlayingQueue = false;
 	isAudioPlaying = false;
-	
+
 	// Stop HTML5 audio if playing (legacy)
 	if (currentAudio) {
 		try {
 			currentAudio.pause();
 			currentAudio.currentTime = 0;
-			console.log('✅ Stopped HTML5 audio');
+			console.log("✅ Stopped HTML5 audio");
 		} catch (error) {
-			console.warn('Failed to stop HTML5 audio:', error);
+			console.warn("Failed to stop HTML5 audio:", error);
 		}
 		currentAudio = null;
 	}
-	
+
 	// Send stop signal to backend if WebSocket is active
-	if (wsController && typeof wsController.send === 'function') {
+	if (wsController && typeof wsController.send === "function") {
 		try {
-			void wsController.send({ message_type: 'stop_audio' });
-			console.log('📤 Sent stop_audio signal to backend');
+			void wsController.send({ message_type: "stop_audio" });
+			console.log("📤 Sent stop_audio signal to backend");
 		} catch (error) {
-			console.warn('Failed to send stop_audio signal:', error);
+			console.warn("Failed to send stop_audio signal:", error);
 		}
 	}
 }
 
 function resetAudioState() {
-	console.log('🔄 Resetting audio');
-	
+	console.log("🔄 Resetting audio");
+
 	// Reset interrupt flag
 	isAudioInterrupted = false;
-	
+
 	// Stop and clear current audio
 	if (currentPlayingAudio) {
 		try {
@@ -390,16 +411,16 @@ function resetAudioState() {
 		}
 		currentPlayingAudio = null;
 	}
-	
+
 	// Clear queue
-	audioQueue.forEach(audio => {
+	audioQueue.forEach((audio) => {
 		try {
 			URL.revokeObjectURL(audio.src);
 		} catch {
 			// Ignore errors when revoking URLs
 		}
 	});
-	
+
 	audioQueue = [];
 	isPlayingQueue = false;
 	isAudioPlaying = false;
@@ -410,17 +431,17 @@ function resetAudioState() {
 async function playAudio(base64: string) {
 	// Don't play if muted
 	if (isMiraMuted) {
-		console.log('🔇 Skipping playAudio - Mira is muted');
+		console.log("🔇 Skipping playAudio - Mira is muted");
 		return;
 	}
-	
+
 	try {
 		const binaryString = atob(base64);
 		const bytes = new Uint8Array(binaryString.length);
 		for (let i = 0; i < binaryString.length; i++) {
 			bytes[i] = binaryString.charCodeAt(i);
 		}
-		const blob = new Blob([bytes], { type: 'audio/mpeg' });
+		const blob = new Blob([bytes], { type: "audio/mpeg" });
 		const url = URL.createObjectURL(blob);
 		const audio = new Audio(url);
 		audio.volume = 1.0;
@@ -432,7 +453,7 @@ async function playAudio(base64: string) {
 		};
 		await audio.play();
 	} catch (error) {
-		console.error('playAudio failed', error);
+		console.error("playAudio failed", error);
 	}
 }
 
@@ -448,11 +469,11 @@ function playNonStreamingAudio(audioBase64: string) {
 		isAudioPlaying = false;
 		currentAudio = null;
 	}
-	
+
 	// Clear streaming audio queue
 	if (isPlayingQueue || audioQueue.length > 0) {
-		console.log('🧹 Clearing audio queue for calendar/email action');
-		audioQueue.forEach(audio => {
+		console.log("🧹 Clearing audio queue for calendar/email action");
+		audioQueue.forEach((audio) => {
 			try {
 				URL.revokeObjectURL(audio.src);
 			} catch {
@@ -462,7 +483,7 @@ function playNonStreamingAudio(audioBase64: string) {
 		audioQueue = [];
 		isPlayingQueue = false;
 	}
-	
+
 	if (currentPlayingAudio) {
 		try {
 			currentPlayingAudio.pause();
@@ -494,7 +515,7 @@ function playNonStreamingAudio(audioBase64: string) {
 			if (playPromise !== undefined) {
 				playPromise
 					.then(() => {
-						console.log('✅ Calendar/email audio playing');
+						console.log("✅ Calendar/email audio playing");
 						audio.addEventListener("ended", () => {
 							isAudioPlaying = false;
 							currentAudio = null;
@@ -534,98 +555,139 @@ function playNonStreamingAudio(audioBase64: string) {
 // Centralized server response processor used by both the realtime WS flow and
 // the one-shot blob flow. Keeps conversation history, dispatches events,
 // and plays TTS audio when provided.
-async function processServerResponse(data: Record<string, unknown>) {
+async function processServerResponse(data: any) {
 	try {
 		if (!data) return;
-		
+
 		// Debug: Only log important messages (actions, errors, audio) - reduce noise for normal flow
 		try {
 			const msgType = data.message_type || data.type || data.event;
-			const isImportant = msgType === 'response' || msgType === 'error' || msgType === 'session_started' || 
-			                    data.action || data.error || !!(data.audio || data.audio_base_64 || data.audio_base64);
+			const isImportant =
+				msgType === "response" ||
+				msgType === "error" ||
+				msgType === "session_started" ||
+				data.action ||
+				data.error ||
+				!!(data.audio || data.audio_base_64 || data.audio_base64);
 			if (isImportant) {
-				const logData = typeof data === 'object' ? {
-					message_type: data.message_type,
-					type: data.type,
-					event: data.event,
-					hasAudio: !!(data.audio || data.audio_base_64 || data.audio_base64),
-					action: data.action,
-					error: data.error,
-					text: data.text ? data.text.substring(0, 50) + '...' : null,
-				} : data;
-				console.log('📥 WS Message (important):', logData);
+				const logData =
+					typeof data === "object"
+						? {
+								message_type: data.message_type,
+								type: data.type,
+								event: data.event,
+								hasAudio: !!(
+									data.audio ||
+									data.audio_base_64 ||
+									data.audio_base64
+								),
+								action: data.action,
+								error: data.error,
+								text: data.text ? data.text.substring(0, 50) + "..." : null,
+						  }
+						: data;
+				console.log("📥 WS Message (important):", logData);
 			}
 		} catch {
 			// Silent catch for logging errors
 		}
-		
+
 		// Handle ElevenLabs-specific message types (forwarded by server)
 		const msgType = data.message_type || data.type || data.event;
-		
+
 		// Handle ElevenLabs session_started confirmation
-		if (msgType === 'session_started') {
-			console.log('✅ ElevenLabs session started successfully:', {
+		if (msgType === "session_started") {
+			console.log("✅ ElevenLabs session started successfully:", {
 				session_id: data.session_id,
 				sample_rate: data.config?.sample_rate,
 			});
 			// Session is ready, we can start sending audio
 			return; // Don't process as a regular response
 		}
-		
-	// Handle ElevenLabs transcript messages (support a few variants)
-	if (msgType === 'partial_transcript' || msgType === 'transcription' || msgType === 'partial_transcription') {
-		// Real-time partial transcript - could show in UI as "typing" indicator
-		console.debug('📝 Partial transcript:', data.text || data.partial || null);
-		// You might want to update UI with partial text here
-		if (typeof window !== 'undefined') {
-			window.dispatchEvent(new CustomEvent('miraPartialResponse', { detail: data.text || data.partial || '' }));
-		}
-		return;
-	}
-	
-	// Handle partial_response from OpenAI stream
-	if (msgType === 'partial_response') {
-		// Track first partial response for latency measurement
-		if (firstChunkReceivedTime === 0) {
-			firstChunkReceivedTime = performance.now();
-			console.log('⏱️ First partial_response received - response generation started');
-		}
-		
-		// Skip empty partial responses
-		if (!data.text || !data.text.trim()) {
+
+		// Handle ElevenLabs transcript messages (support a few variants)
+		if (
+			msgType === "partial_transcript" ||
+			msgType === "transcription" ||
+			msgType === "partial_transcription"
+		) {
+			// Real-time partial transcript - could show in UI as "typing" indicator
+			console.debug(
+				"📝 Partial transcript:",
+				data.text || data.partial || null
+			);
+			// You might want to update UI with partial text here
+			if (typeof window !== "undefined") {
+				window.dispatchEvent(
+					new CustomEvent("miraPartialResponse", {
+						detail: data.text || data.partial || "",
+					})
+				);
+			}
 			return;
 		}
-		
-		console.debug('📝 Partial response:', data.text?.substring(0, 50) || '');
-		lastPartialResponseText = data.text || '';
-		
-		// Dispatch event for UI
-		if (typeof window !== 'undefined') {
-			window.dispatchEvent(new CustomEvent('miraPartialResponse', { detail: data.text || '' }));
+
+		// Handle partial_response from OpenAI stream
+		if (msgType === "partial_response") {
+			// Track first partial response for latency measurement
+			if (firstChunkReceivedTime === 0) {
+				firstChunkReceivedTime = performance.now();
+				console.log(
+					"⏱️ First partial_response received - response generation started"
+				);
+			}
+
+			// Skip empty partial responses
+			if (!data.text || !data.text.trim()) {
+				return;
+			}
+
+			console.debug("📝 Partial response:", data.text?.substring(0, 50) || "");
+			lastPartialResponseText = data.text || "";
+
+			// Dispatch event for UI
+			if (typeof window !== "undefined") {
+				window.dispatchEvent(
+					new CustomEvent("miraPartialResponse", { detail: data.text || "" })
+				);
+			}
+			return;
 		}
-		return;
-	}		if (msgType === 'committed_transcript' || msgType === 'committed_transcript_with_timestamps' || msgType === 'transcription' || msgType === 'final_transcript') {
+		if (
+			msgType === "committed_transcript" ||
+			msgType === "committed_transcript_with_timestamps" ||
+			msgType === "transcription" ||
+			msgType === "final_transcript"
+		) {
 			// Final committed transcript - this is the complete transcription
 			// Skip empty/null transcripts to prevent glitches
 			if (!data.text || !data.text.trim()) {
-				console.debug('⏭️ Skipping empty committed transcript');
+				console.debug("⏭️ Skipping empty committed transcript");
 				return;
 			}
-			
+
 			// Deduplication: Skip if this exact transcript was processed recently
 			const textNormalized = data.text.trim().toLowerCase();
 			const currentTime = Date.now();
 			const lastProcessedTime = recentTranscripts.get(textNormalized);
-			
-			if (lastProcessedTime && (currentTime - lastProcessedTime) < TRANSCRIPT_CACHE_TTL) {
+
+			if (
+				lastProcessedTime &&
+				currentTime - lastProcessedTime < TRANSCRIPT_CACHE_TTL
+			) {
 				const timeSince = ((currentTime - lastProcessedTime) / 1000).toFixed(2);
-				console.debug(`⏭️ Skipping duplicate transcript (processed ${timeSince}s ago): '${data.text.substring(0, 50)}...'`);
+				console.debug(
+					`⏭️ Skipping duplicate transcript (processed ${timeSince}s ago): '${data.text.substring(
+						0,
+						50
+					)}...'`
+				);
 				return; // Don't process duplicate
 			}
-			
+
 			// Mark as processed
 			recentTranscripts.set(textNormalized, currentTime);
-			
+
 			// Clean old entries (keep cache size manageable)
 			if (recentTranscripts.size > 50) {
 				const cutoffTime = currentTime - TRANSCRIPT_CACHE_TTL;
@@ -635,10 +697,10 @@ async function processServerResponse(data: Record<string, unknown>) {
 					}
 				}
 			}
-			
+
 			// Only log final transcript if it's meaningful
 			if (data.text && data.text.trim().length > 10) {
-				console.log('📝 Final transcript:', data.text);
+				console.log("📝 Final transcript:", data.text);
 			}
 			// Update data structure to match what processServerResponse expects
 			if (data.text && !data.userText) {
@@ -647,35 +709,46 @@ async function processServerResponse(data: Record<string, unknown>) {
 			}
 			// Continue processing as normal response
 		}
-		
-	// Audio chunk streaming from backend (ElevenLabs TTS chunks)
-	// NOTE: Chunks are already accumulated by onAudioChunk callback, 
-	// so we just return here to avoid double-accumulation
-	if (msgType === 'audio_chunk') {
-		console.log('🔉 audio_chunk in processServerResponse (already handled by callback)');
-		return;
-	}
 
-	if (msgType === 'audio_final') {
-		console.log('🏁 audio_final in processServerResponse (already handled by callback)');
-		return;
-	}		// Log ElevenLabs upstream errors with helpful context
-		if (msgType === 'auth_error' || (data.error && (data.error.includes('authenticated') || data.error.includes('ElevenLabs')))) {
-			console.error('🔴 ElevenLabs upstream authentication failed. This is a server-side issue:');
-			console.error('   1. Check server .env has ELEVENLABS_API_KEY=sk_...');
-			console.error('   2. Restart server after .env changes');
-			console.error('   3. Verify key is valid for ElevenLabs realtime STT');
-			console.error('   4. Check server logs for upstream connection details');
-			return; // Don't process error as regular response
-		}
-		
-		if (msgType === 'quota_exceeded_error') {
-			console.error('⚠️ ElevenLabs quota exceeded:', data.error);
+		// Audio chunk streaming from backend (ElevenLabs TTS chunks)
+		// NOTE: Chunks are already accumulated by onAudioChunk callback,
+		// so we just return here to avoid double-accumulation
+		if (msgType === "audio_chunk") {
+			console.log(
+				"🔉 audio_chunk in processServerResponse (already handled by callback)"
+			);
 			return;
 		}
-		
-		if (msgType === 'error') {
-			console.error('❌ ElevenLabs error:', data.error);
+
+		if (msgType === "audio_final") {
+			console.log(
+				"🏁 audio_final in processServerResponse (already handled by callback)"
+			);
+			return;
+		} // Log ElevenLabs upstream errors with helpful context
+		if (
+			msgType === "auth_error" ||
+			(data.error &&
+				(data.error.includes("authenticated") ||
+					data.error.includes("ElevenLabs")))
+		) {
+			console.error(
+				"🔴 ElevenLabs upstream authentication failed. This is a server-side issue:"
+			);
+			console.error("   1. Check server .env has ELEVENLABS_API_KEY=sk_...");
+			console.error("   2. Restart server after .env changes");
+			console.error("   3. Verify key is valid for ElevenLabs realtime STT");
+			console.error("   4. Check server logs for upstream connection details");
+			return; // Don't process error as regular response
+		}
+
+		if (msgType === "quota_exceeded_error") {
+			console.error("⚠️ ElevenLabs quota exceeded:", data.error);
+			return;
+		}
+
+		if (msgType === "error") {
+			console.error("❌ ElevenLabs error:", data.error);
 			return;
 		}
 
@@ -729,16 +802,17 @@ async function processServerResponse(data: Record<string, unknown>) {
 			} catch (e) {
 				console.warn("Failed to dispatch navigation event", e);
 			}
-			
+
 			// Play navigation audio if available
-			const audioField = data.audio || data.audio_base_64 || data.audio_base64 || null;
+			const audioField =
+				data.audio || data.audio_base_64 || data.audio_base64 || null;
 			if (audioField && !isMiraMuted && hasUserInteracted) {
 				console.log("🔊 Playing navigation audio");
 				playNonStreamingAudio(audioField);
 			}
 			return; // Exit early
 		}
-		
+
 		if (data.action === "email_calendar_summary") {
 			try {
 				if (typeof window !== "undefined") {
@@ -752,10 +826,11 @@ async function processServerResponse(data: Record<string, unknown>) {
 			} catch (e) {
 				console.warn("Failed to dispatch email/calendar summary event", e);
 			}
-			
+
 			// CRITICAL FIX: Handle audio for calendar/email actions ONLY HERE (not in text processing below)
 			// This prevents duplicate audio playback which causes quality issues
-			const audioField = data.audio || data.audio_base_64 || data.audio_base64 || null;
+			const audioField =
+				data.audio || data.audio_base_64 || data.audio_base64 || null;
 			if (audioField && !isMiraMuted && hasUserInteracted) {
 				console.log("🔊 Playing calendar/email action audio");
 				playNonStreamingAudio(audioField);
@@ -769,23 +844,32 @@ async function processServerResponse(data: Record<string, unknown>) {
 				conversationHistory.push({ role: "user", content: data.userText });
 			}
 			conversationHistory.push({ role: "assistant", content: data.text });
-			localStorage.setItem("mira_conversation", JSON.stringify(conversationHistory));
+			localStorage.setItem(
+				"mira_conversation",
+				JSON.stringify(conversationHistory)
+			);
 
 			// Play TTS audio if present (support `audio` or `audio_base_64` field names)
 			// NOTE: This is for non-streaming responses only. Streaming audio uses handleAudioChunk.
-			const audioField = data.audio || data.audio_base_64 || data.audio_base64 || null;
+			const audioField =
+				data.audio || data.audio_base_64 || data.audio_base64 || null;
 			if (audioField) {
-				console.log("🔊 Audio received (non-streaming), hasUserInteracted:", hasUserInteracted);
-				
+				console.log(
+					"🔊 Audio received (non-streaming), hasUserInteracted:",
+					hasUserInteracted
+				);
+
 				// Don't play if muted
 				if (isMiraMuted) {
 					console.log("🔇 Skipping non-streaming audio - Mira is muted");
 					return;
 				}
-				
+
 				// Don't play if queue is already active
 				if (isPlayingQueue || currentPlayingAudio) {
-					console.warn("⚠️ Skipping non-streaming audio - queue already playing");
+					console.warn(
+						"⚠️ Skipping non-streaming audio - queue already playing"
+					);
 					return;
 				}
 
@@ -797,7 +881,9 @@ async function processServerResponse(data: Record<string, unknown>) {
 				}
 
 				if (!hasUserInteracted) {
-					console.warn("⚠️ Audio available but user hasn't interacted yet - storing for later");
+					console.warn(
+						"⚠️ Audio available but user hasn't interacted yet - storing for later"
+					);
 					localStorage.setItem("pending_audio", data.audio);
 					hasUserInteracted = true;
 				}
@@ -871,10 +957,14 @@ async function processServerResponse(data: Record<string, unknown>) {
 function logDetailedError(prefix: string, err: unknown) {
 	try {
 		if (err instanceof Error) {
-			console.error(prefix, { name: err.name, message: err.message, stack: err.stack });
+			console.error(prefix, {
+				name: err.name,
+				message: err.message,
+				stack: err.stack,
+			});
 			return;
 		}
-		if (err && typeof err === 'object') {
+		if (err && typeof err === "object") {
 			// try stringify first (may fail if circular)
 			try {
 				console.error(prefix, JSON.parse(JSON.stringify(err)));
@@ -885,7 +975,7 @@ function logDetailedError(prefix: string, err: unknown) {
 		}
 		console.error(prefix, err);
 	} catch (e) {
-		console.error(prefix, 'failed to log error', e, err);
+		console.error(prefix, "failed to log error", e, err);
 	}
 }
 
@@ -962,9 +1052,17 @@ export async function startMiraVoice() {
 
 		try {
 			// initialize realtime STT client
-			const token = await (async () => { try { return await getValidToken(); } catch { return null; } })();
+			const token = await (async () => {
+				try {
+					return await getValidToken();
+				} catch {
+					return null;
+				}
+			})();
 			wsController = createRealtimeSttClient({
-				wsUrl: (process.env.NEXT_PUBLIC_WS_URL as string) || 'ws://127.0.0.1:8000/api/ws/voice-stt',
+				wsUrl:
+					(process.env.NEXT_PUBLIC_WS_URL as string) ||
+					"ws://127.0.0.1:8000/api/ws/voice-stt",
 				token,
 				chunkSize: 4096,
 				onMessage: async (msg: unknown) => {
@@ -972,59 +1070,82 @@ export async function startMiraVoice() {
 				},
 				onPartialResponse: (text: string) => {
 					try {
-						console.debug('Partial response:', text);
-						if (typeof window !== 'undefined') {
-							window.dispatchEvent(new CustomEvent('miraPartialResponse', { detail: text }));
+						console.debug("Partial response:", text);
+						if (typeof window !== "undefined") {
+							window.dispatchEvent(
+								new CustomEvent("miraPartialResponse", { detail: text })
+							);
 						}
 					} catch {}
 				},
 				onAudioChunk: (b64: string) => {
-					try { 
+					try {
 						handleAudioChunk(b64);
-					} catch (err) { console.error('onAudioChunk handler failed', err); }
+					} catch (err) {
+						console.error("onAudioChunk handler failed", err);
+					}
 				},
 				onAudioFinal: () => {
-					try { 
+					try {
 						handleAudioFinal();
-					} catch (err) { console.error('onAudioFinal failed', err); }
+					} catch (err) {
+						console.error("onAudioFinal failed", err);
+					}
 				},
 				onResponse: (text: string, audioB64?: string | null) => {
 					try {
-						console.log('Realtime response received:', text);
-						
+						console.log("Realtime response received:", text);
+
 						if (audioB64 && !isMiraMuted) {
 							// non-streaming audio, play as a single chunk (only if not muted)
 							void playAudio(audioB64);
 						} else if (audioB64 && isMiraMuted) {
-							console.log('🔇 Skipping audio playback in onResponse - Mira is muted');
+							console.log(
+								"🔇 Skipping audio playback in onResponse - Mira is muted"
+							);
 						}
 						// also forward to the usual processor so conversation state updates
 						void processServerResponse({ text, audio: audioB64 });
-					} catch (err) { console.error('onResponse handler failed', err); }
+					} catch (err) {
+						console.error("onResponse handler failed", err);
+					}
 				},
 				onError: (err: unknown) => {
-					try { logDetailedError('WS stt error:', err); } catch (logErr) { console.error('WS stt error (logging failed)', logErr, err); }
+					try {
+						logDetailedError("WS stt error:", err);
+					} catch (logErr) {
+						console.error("WS stt error (logging failed)", logErr, err);
+					}
 				},
 				onClose: (ev?: CloseEvent) => {
-					console.log('WS stt closed', ev ? {
-						code: ev.code,
-						reason: ev.reason,
-						wasClean: ev.wasClean,
-					} : '');
+					console.log(
+						"WS stt closed",
+						ev
+							? {
+									code: ev.code,
+									reason: ev.reason,
+									wasClean: ev.wasClean,
+							  }
+							: ""
+					);
 				},
-				onOpen: () => console.log('WS stt open'),
+				onOpen: () => console.log("WS stt open"),
 				onStateChange: (state: ConnectionState) => {
-					console.log('🔄 WebSocket state changed:', state);
+					console.log("🔄 WebSocket state changed:", state);
 					// Dispatch event for UI components
-					if (typeof window !== 'undefined') {
-						window.dispatchEvent(new CustomEvent('wsStateChange', { detail: state }));
+					if (typeof window !== "undefined") {
+						window.dispatchEvent(
+							new CustomEvent("wsStateChange", { detail: state })
+						);
 					}
 				},
 			});
 
 			// Make wsController globally accessible for manual reconnection
-			if (typeof window !== 'undefined') {
-				(window as Window & { wsController?: RealtimeSttController }).wsController = wsController;
+			if (typeof window !== "undefined") {
+				(
+					window as Window & { wsController?: RealtimeSttController }
+				).wsController = wsController;
 			}
 
 			await wsController.start();
@@ -1035,16 +1156,16 @@ export async function startMiraVoice() {
 				if (isPlayingQueue || currentPlayingAudio) {
 					const interrupted = await monitorForInterruption();
 					if (interrupted) {
-						console.log('🛑 Audio interrupted by user');
+						console.log("🛑 Audio interrupted by user");
 						// stopAudioPlayback() already called in monitorForInterruption
 					}
 				}
 				await new Promise((res) => setTimeout(res, 100)); // Check more frequently
 			}
 
-			console.log('🪞 Realtime conversation ended.');
+			console.log("🪞 Realtime conversation ended.");
 		} catch (err) {
-			logDetailedError('Conversation (realtime) error:', err);
+			logDetailedError("Conversation (realtime) error:", err);
 			isConversationActive = false;
 		}
 	} catch (err) {
@@ -1057,10 +1178,10 @@ export async function startMiraVoice() {
 export function stopMiraVoice() {
 	isConversationActive = false;
 	isAudioPlaying = false; // Stop waiting for audio playback
-	
+
 	// Use the new reset function to clean up HTML Audio elements
 	resetAudioState();
-	
+
 	if (currentAudio) {
 		currentAudio.pause();
 		currentAudio = null;
@@ -1198,15 +1319,15 @@ async function monitorForInterruption(): Promise<boolean> {
 								"frames:",
 								highEnergyCount
 							);
-							
+
 							// Stop all audio playback and notify backend
 							stopAudioPlayback();
-							
+
 							// Clean up monitoring
 							clearInterval(checkInterval);
 							audioContext.close();
 							stream.getTracks().forEach((track) => track.stop());
-							
+
 							resolve(true);
 							return;
 						}
@@ -1236,7 +1357,6 @@ async function monitorForInterruption(): Promise<boolean> {
  * By default metadata/history are attached to the first chunk (set sendMetaOnFirstChunk=false to send every chunk).
  */
 
-
 /* ---------------------- Record → Send → Play Cycle ---------------------- */
 // Note: This function is defined but currently unused - kept for potential future use
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -1259,12 +1379,12 @@ async function recordOnce(): Promise<void> {
 				if (event.data && event.data.size > 0) chunks.push(event.data);
 			};
 
-		activeRecorder.onstop = async () => {
-			// User is speaking - reset interrupt flag for new AI response
-			isAudioInterrupted = false;
-			console.log('🎭 Reset audio interrupt flag - ready for new response');
-			
-			// Stop energy analysis and get stats
+			activeRecorder.onstop = async () => {
+				// User is speaking - reset interrupt flag for new AI response
+				isAudioInterrupted = false;
+				console.log("🎭 Reset audio interrupt flag - ready for new response");
+
+				// Stop energy analysis and get stats
 				const { maxEnergy, avgEnergy, speechFrames } = energyAnalyzer.stop();
 				const audioBlob = new Blob(chunks, { type: "audio/webm" });
 
@@ -1302,15 +1422,22 @@ async function recordOnce(): Promise<void> {
 
 				try {
 					// Use WebSocket STT/TTS path instead of HTTP endpoint
-					let data: Record<string, unknown> | null = null;
+					let data: any = null;
+
 					try {
 						const token = await (async () => {
-							try { return await getValidToken(); } catch { return null; }
+							try {
+								return await getValidToken();
+							} catch {
+								return null;
+							}
 						})();
 
 						// Send recorded blob via websocket helper and await transcript-like response
 						const wsResult = await sendBlobOnce(audioBlob, {
-							wsUrl: (process.env.NEXT_PUBLIC_WS_URL as string) || 'ws://127.0.0.1:8000/api/ws/voice-stt',
+							wsUrl:
+								(process.env.NEXT_PUBLIC_WS_URL as string) ||
+								"ws://127.0.0.1:8000/api/ws/voice-stt",
 							token,
 							chunkSize: 4096,
 							timeoutMs: 30000,
@@ -1318,7 +1445,7 @@ async function recordOnce(): Promise<void> {
 						data = wsResult ?? {};
 						console.log("🪞 WS server response:", data);
 					} catch (e) {
-						console.error('Voice pipeline WS error', e);
+						console.error("Voice pipeline WS error", e);
 						resolve();
 						return;
 					}
@@ -1326,14 +1453,14 @@ async function recordOnce(): Promise<void> {
 					try {
 						await processServerResponse(data);
 					} catch (err) {
-						console.error('Voice pipeline error:', err);
+						console.error("Voice pipeline error:", err);
 					}
 				} catch (err) {
 					console.error("Voice pipeline error:", err);
 				}
 
-					chunks.length = 0; // clear memory
-					resolve();
+				chunks.length = 0; // clear memory
+				resolve();
 			};
 
 			// Start recording

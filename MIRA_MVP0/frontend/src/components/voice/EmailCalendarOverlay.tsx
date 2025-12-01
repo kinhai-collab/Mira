@@ -67,33 +67,19 @@ function stepTextColor(status: VoiceSummaryStepStatus) {
 			return "text-[#272829]";
 	}
 }
-
 function StepBullet({ status }: { status: VoiceSummaryStepStatus }) {
+	// DONE → Blue checkmark icon
 	if (status === "done") {
 		return (
-			<span className="flex size-4 items-center justify-center rounded-full bg-[#382099] text-[10px] font-semibold text-white">
-				✓
-			</span>
+			<Image
+				src="/Icons/Property 1=Done in circle.svg"
+				alt="done"
+				width={20}
+				height={20}
+				className="shrink-0"
+			/>
 		);
 	}
-
-	if (status === "active") {
-		return (
-			<span className="flex size-4 items-center justify-center rounded-full border-2 border-[#382099]">
-				<span className="size-1.5 rounded-full bg-[#382099]" />
-			</span>
-		);
-	}
-
-	if (status === "disabled") {
-		return (
-			<span className="flex size-4 items-center justify-center rounded-full border border-[#d5d8df] bg-[#eceff6]" />
-		);
-	}
-
-	return (
-		<span className="flex size-4 items-center justify-center rounded-full border border-[#c4c6cc]" />
-	);
 }
 
 const GMAIL_ICON = {
@@ -239,7 +225,7 @@ function SummaryCard({
 			eventCount: calendarEvents?.length || 0,
 			hasEmails,
 			hasEvents,
-			stage
+			stage,
 		});
 	}, [emails?.length, calendarEvents?.length, hasEmails, hasEvents, stage]);
 
@@ -357,7 +343,7 @@ function SummaryCard({
 	const displayedEmails = emailsToShow.slice(0, visibleCount);
 
 	return (
-		<div className="w-full rounded-[24px] border border-[#e6e9f0] bg-white/85 p-6 text-left shadow-[0_8px_24px_rgba(39,40,41,0.08)] backdrop-blur">
+		<div className="w-full max-h-[60vh] overflow-y-auto no-scrollbar rounded-[24px] border border-[#e6e9f0] bg-white/85 p-6 text-left shadow-[0_8px_24px_rgba(39,40,41,0.08)] backdrop-blur">
 			{hasEmails && (
 				<>
 					{/* Email Summary Header */}
@@ -545,9 +531,12 @@ function SummaryCard({
 			{/* Show "No emails" state only when nothing else is available */}
 			{!hasEmails && !hasEvents && stage === "summary" && (
 				<div className="rounded-2xl border border-dashed border-[#d6d9e1] bg-white/60 p-6 text-center text-sm text-[#5a5c61]">
-					<p className="font-medium text-[#272829] mb-2">No priority items found</p>
+					<p className="font-medium text-[#272829] mb-2">
+						No priority items found
+					</p>
 					<p className="text-xs text-[#5a5c61]">
-						Try asking &quot;Show me my emails and calendar&quot; to get your latest updates.
+						Try asking &quot;Show me my emails and calendar&quot; to get your
+						latest updates.
 					</p>
 				</div>
 			)}
@@ -778,10 +767,9 @@ export function EmailCalendarOverlay({
 							</div>
 						)}
 
-						{showControls && (
+						{/* {showControls && (
 							<div className="flex items-center gap-3">
 								<div className="flex items-center gap-2 rounded-full border border-[#e6e9f0] bg-[#fdedf7] px-4 py-1.5 text-sm font-medium text-[#272829] shadow-[0_2px_8px_rgba(39,40,41,0.04)]">
-									<Icon name="Brain" size={18} />
 									Smart Summary
 								</div>
 								<button
@@ -798,7 +786,7 @@ export function EmailCalendarOverlay({
 									{isMuted ? "Muted" : "Mute"}
 								</button>
 							</div>
-						)}
+						)} */}
 					</div>
 
 					<div className="rounded-[24px] border border-[#e6e9f0] bg-white/80 p-6 shadow-[0_12px_36px_rgba(39,40,41,0.08)] backdrop-blur">

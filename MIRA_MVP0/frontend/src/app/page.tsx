@@ -59,10 +59,10 @@ const prepareVoiceSteps = (
 
 export default function Home() {
 	const router = useRouter();
-	
+
 	// Enable voice navigation
 	useVoiceNavigation();
-	
+
 	const [input, setInput] = useState("");
 	const [isListening, setIsListening] = useState(true);
 	const [greeting, setGreeting] = useState<string>("");
@@ -582,9 +582,12 @@ export default function Home() {
 
 			// ✅ Handle calendar/email summary
 			if (data.action === "email_calendar_summary") {
-				console.log("📧 Home: Received email_calendar_summary action", data.actionData);
+				console.log(
+					"📧 Home: Received email_calendar_summary action",
+					data.actionData
+				);
 				if (data.text) setPendingSummaryMessage(data.text);
-				
+
 				// Store data in sessionStorage for the smart-summary page to pick up
 				if (typeof window !== "undefined" && data.actionData) {
 					sessionStorage.setItem(
@@ -593,7 +596,7 @@ export default function Home() {
 					);
 					console.log("💾 Home: Stored email/calendar data in sessionStorage");
 				}
-				
+
 				// Navigate to the smart-summary page
 				console.log("🔄 Home: Navigating to /scenarios/smart-summary");
 				router.push("/scenarios/smart-summary");
@@ -796,35 +799,6 @@ export default function Home() {
 									</button>
 								))}
 							</div>
-						</div>
-					)}
-
-					{/* Email & calendar thinking panel */}
-
-					{summaryOverlayVisible && (
-						<div className="mt-10 flex w-full justify-center px-4">
-							<EmailCalendarOverlay
-								visible={summaryOverlayVisible}
-								stage={summaryStage}
-								steps={summarySteps}
-								emails={summaryEmails}
-								calendarEvents={summaryEvents}
-								focusNote={summaryFocus}
-								isMuted={isMuted}
-								onMuteToggle={handleMuteToggle}
-								chips={{
-									dateLabel: getFormattedDate(timezone),
-									locationLabel: isLocationLoading ? "Detecting..." : location,
-									temperatureLabel:
-										temperatureC != null
-											? `${Math.round(temperatureC)}°`
-											: isWeatherLoading
-											? "..."
-											: "—",
-								}}
-								showContextChips={false}
-								showControls={true}
-							/>
 						</div>
 					)}
 				</div>
