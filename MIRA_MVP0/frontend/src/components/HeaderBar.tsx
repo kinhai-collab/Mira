@@ -118,16 +118,15 @@ export default function HeaderBar({
 				{/* Scenario Tag — only if scenarioTag exists */}
 				{scenarioTag && (
 					<div
-						className="flex items-center gap-2 px-4 py-1.5 
-                  rounded-full shadow-sm border 
-                  text-sm font-normal 
-                  bg-[#FDEDF7] border-[#E1E2E5] text-black"
+						className="flex items-center gap-1 px-2 py-0.5 
+             border rounded-full bg-[#FDEDF7] border-[#E1E2E5] 
+             text-sm font-normal whitespace-nowrap"
 					>
 						<Image
 							src={scenarioIcons[scenarioTag]}
 							alt="Scenario Icon"
-							width={18}
-							height={18}
+							width={14}
+							height={14}
 						/>
 						<span>
 							{scenarioTag === "morning-brief" && "Morning Brief"}
@@ -142,17 +141,19 @@ export default function HeaderBar({
 				{/* Mute Button */}
 				<button
 					onClick={handleMuteToggle}
-					className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-medium shadow-sm border transition
-      ${
-				isMuted
-					? "bg-[#E8ECF9] border-[#B8C7F2] text-[#5568A2]"
-					: "bg-[#F5F5F5] border-gray-200 text-gray-700"
-			}`}
+					className={`flex items-center gap-1 px-4 py-0.5 
+              rounded-full border text-sm font-light 
+              whitespace-nowrap transition
+    ${
+			isMuted
+				? "bg-[#464647] border-[#B8C7F2] text-white"
+				: "bg-[#464647] border-gray-200 text-white"
+		}`}
 				>
 					<Icon
 						name={isMuted ? "VoiceOff" : "VoiceOn"}
-						size={18}
-						className="opacity-80"
+						size={14}
+						className="text-white opacity-80"
 					/>
 					<span>{isMuted ? "Muted" : "Mute"}</span>
 				</button>

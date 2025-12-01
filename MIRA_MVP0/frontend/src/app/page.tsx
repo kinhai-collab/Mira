@@ -2,6 +2,8 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import ReactMarkdown from "react-markdown";
+
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { Icon } from "@/components/Icon";
@@ -819,40 +821,47 @@ export default function Home() {
 							</div>
 						</div>
 					)}
-					{/* Conversation Feed */}
-					{/* Conversation Feed */}
-					{!summaryOverlayVisible && textMessages.length > 0 && (
-						<div className="mt-10 sm:mt-14 w-full max-w-[800px] space-y-4 max-h-[950px] overflow-y-auto px-4">
-							{textMessages.map((msg, idx) => (
-								<div
-									key={idx}
-									className={`flex ${
-										msg.role === "user" ? "justify-end" : "justify-start"
-									}`}
-								>
-									<div
-										className={`max-w-[80%] rounded-2xl px-4 py-3 shadow-sm ${
-											msg.role === "user"
-												? "bg-gradient-to-r from-[#d9b8ff] to-[#bfa3ff] text-gray-900"
-												: "bg-white border border-gray-200 text-gray-700"
-										}`}
-									>
-										{msg.content}
-									</div>
-								</div>
-							))}
 
-							{isLoadingResponse && (
-								<div className="flex justify-start">
-									<div className="max-w-[80%] rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
-										<div className="flex items-center gap-2">
-											<div className="h-2 w-2 animate-pulse rounded-full bg-purple-500" />
-											<div className="h-2 w-2 animate-pulse rounded-full bg-purple-500 animation-delay-200" />
-											<div className="h-2 w-2 animate-pulse rounded-full bg-purple-500 animation-delay-400" />
+					{/* Conversation Feed */}
+					{textMessages.length > 0 && (
+						<div className="w-full flex justify-center">
+							<div className="w-full max-w-[800px] mx-auto -mt-8">
+								{/* SCROLLABLE FEED */}
+								<div className="max-h-[52vh] overflow-y-scroll no-scrollbar space-y-4 px-4 bg-transparent rounded-[25px]">
+									{textMessages.map((msg, idx) => (
+										<div
+											key={idx}
+											className={`flex ${
+												msg.role === "user" ? "justify-end" : "justify-start"
+											}`}
+										>
+											<div
+												className={`max-w-[75%] rounded-2xl px-4 py-3 shadow-sm ${
+													msg.role === "user"
+														? "bg-gradient-to-r from-[#d9b8ff] to-[#bfa3ff] text-gray-900"
+														: "bg-white border border-gray-200 text-gray-700"
+												}`}
+											>
+												<div className="prose prose-sm">
+													<ReactMarkdown>{msg.content}</ReactMarkdown>
+												</div>
+											</div>
 										</div>
-									</div>
+									))}
+
+									{isLoadingResponse && (
+										<div className="flex justify-start">
+											<div className="max-w-[75%] rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
+												<div className="flex items-center gap-2">
+													<div className="h-2 w-2 animate-pulse rounded-full bg-purple-500" />
+													<div className="h-2 w-2 animate-pulse rounded-full bg-purple-500 animation-delay-200" />
+													<div className="h-2 w-2 animate-pulse rounded-full bg-purple-500 animation-delay-400" />
+												</div>
+											</div>
+										</div>
+									)}
 								</div>
-							)}
+							</div>
 						</div>
 					)}
 
