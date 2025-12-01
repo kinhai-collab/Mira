@@ -70,24 +70,22 @@ export default function Home() {
 	const [isLoadingResponse, setIsLoadingResponse] = useState(false);
 
 	// Added: dynamic location state (defaults to "New York")
-	const [location, setLocation] = useState<string>("New York");
+
+	// 🌤 Weather + Location
+	const [location, setLocation] = useState<string>("Detecting...");
+	const [latitude, setLatitude] = useState<number | null>(null);
+	const [longitude, setLongitude] = useState<number | null>(null);
+	const [temperatureC, setTemperatureC] = useState<number | null>(null);
 	const [isLocationLoading, setIsLocationLoading] = useState<boolean>(true);
+	const [isWeatherLoading, setIsWeatherLoading] = useState<boolean>(false);
+	const [weatherCode, setWeatherCode] = useState<number | null>(null);
 
 	// Timezone for formatting the date/time for the detected location.
 	// Default to the browser/system timezone — good offline/frontend-only fallback.
 	const [timezone, setTimezone] = useState<string>(
 		() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
 	);
-
 	// Weather state: store coords and current temperature. We'll call Open-Meteo (no API key)
-	const [latitude, setLatitude] = useState<number | null>(null);
-	const [longitude, setLongitude] = useState<number | null>(null);
-	const [temperatureC, setTemperatureC] = useState<number | null>(null);
-	const [isWeatherLoading, setIsWeatherLoading] = useState<boolean>(false);
-	const [weatherCode, setWeatherCode] = useState<number | null>(null);
-	const [weatherDescription, setWeatherDescription] = useState<string | null>(
-		null
-	);
 
 	const greetingCalledRef = useRef(false);
 	const [summaryOverlayVisible, setSummaryOverlayVisible] = useState(true); // ✅ Changed to true so it's visible on this page
@@ -106,7 +104,6 @@ export default function Home() {
 	const [pendingSummaryMessage, setPendingSummaryMessage] = useState<
 		string | null
 	>(null);
-	const [isMovingDown, setIsMovingDown] = useState(false);
 
 	const handleMuteToggle = () => {
 		const muteState = !isMuted;
@@ -114,13 +111,84 @@ export default function Home() {
 		setMiraMute(muteState);
 	};
 	// Removed unused handleMicToggle
-
 	useEffect(() => {
-		console.log("Initializing Mira...");
-		startMiraVoice();
-		setIsConversationActive(true);
-	}, []);
+		const ipFallback = async () => {
+			try {
+				const res = await fetch("https://ipapi.co/json/");
+				const data = await res.json();
 
+				setLocation(data.city || data.region || "Unknown");
+				setTimezone(data.timezone || timezone);
+
+				if (data.latitude && data.longitude) {
+					setLatitude(Number(data.latitude));
+					setLongitude(Number(data.longitude));
+				}
+			} catch (err) {
+				console.error("IP fallback error:", err);
+			} finally {
+				setIsLocationLoading(false);
+			}
+		};
+
+		if (!("geolocation" in navigator)) {
+			ipFallback();
+			return;
+		}
+
+		navigator.geolocation.getCurrentPosition(
+			async (pos) => {
+				const { latitude, longitude } = pos.coords;
+				setLatitude(latitude);
+				setLongitude(longitude);
+
+				try {
+					const res = await fetch(
+						`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}`
+					);
+					const data = await res.json();
+
+					const city =
+						data?.address?.city ||
+						data?.address?.town ||
+						data?.address?.village ||
+						data?.address?.state ||
+						data?.address?.county ||
+						"Unknown";
+
+					setLocation(city);
+				} catch {
+					await ipFallback();
+				}
+
+				setIsLocationLoading(false);
+			},
+			async () => {
+				await ipFallback();
+			},
+			{ timeout: 10000 }
+		);
+	}, [timezone]);
+
+	const fetchWeatherForCoords = async (lat: number, lon: number) => {
+		try {
+			setIsWeatherLoading(true);
+			const data = await getWeather(lat, lon);
+
+			if (typeof data?.temperatureC === "number") {
+				setTemperatureC(Math.round(data.temperatureC));
+			}
+		} catch (err) {
+			console.error("Error fetching weather:", err);
+		} finally {
+			setIsWeatherLoading(false);
+		}
+	};
+	useEffect(() => {
+		if (latitude != null && longitude != null) {
+			fetchWeatherForCoords(latitude, longitude);
+		}
+	}, [latitude, longitude]);
 	useEffect(() => {
 		const init = async () => {
 			const urlToken = extractTokenFromUrl();
@@ -135,20 +203,25 @@ export default function Home() {
 				return;
 			}
 
-			// Try to refresh token if expired (for returning users)
+			// Refresh or validate token
 			const { getValidToken } = await import("@/utils/auth");
 			const validToken = await getValidToken();
 
 			if (!validToken) {
-				// No valid token, redirect to login
 				router.push("/login");
 				return;
 			}
 
+			// 🚨 FIX: START MIRA ONLY AFTER TOKEN IS VALID
+			startMiraVoice();
+			setIsConversationActive(true);
+
+			// Continue your existing logic
 			try {
 				const apiBase = (
 					process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
 				).replace(/\/+$/, "");
+
 				const email = localStorage.getItem("mira_email");
 
 				if (email) {
@@ -175,34 +248,29 @@ export default function Home() {
 				console.log("Error checking onboarding status on home page:", error);
 			}
 
-			if (greetingCalledRef.current) return;
-			greetingCalledRef.current = true;
+			if (!greetingCalledRef.current) {
+				greetingCalledRef.current = true;
 
-			// Get user name from localStorage (updated when profile is saved)
-			// The name is kept in sync via profile_update endpoint and localStorage
-			setTimeout(() => {
-				const userName =
-					localStorage.getItem("mira_full_name") ||
-					localStorage.getItem("mira_username") ||
-					localStorage.getItem("user_name") ||
-					"there";
+				setTimeout(() => {
+					const userName =
+						localStorage.getItem("mira_full_name") ||
+						localStorage.getItem("mira_username") ||
+						localStorage.getItem("user_name") ||
+						"there";
 
-				const hour = new Date().getHours();
-				let timeGreeting = "Good Evening";
-				if (hour < 12) timeGreeting = "Good Morning";
-				else if (hour < 18) timeGreeting = "Good Afternoon";
+					const hour = new Date().getHours();
+					let timeGreeting = "Good Evening";
+					if (hour < 12) timeGreeting = "Good Morning";
+					else if (hour < 18) timeGreeting = "Good Afternoon";
 
-				// Extract first name for personalized greeting
-				const firstName =
-					userName !== "there" ? userName.split(" ")[0] : userName;
-				setGreeting(`${timeGreeting}, ${firstName}!`);
-				// playVoice(`${timeGreeting}, ${firstName}!`); // Temporarily disabled
-				console.info(
-					"Greeting voice is temporarily disabled. Fallback greeting:",
-					`${timeGreeting}, ${firstName}!`
-				);
-			}, 300);
+					const firstName =
+						userName !== "there" ? userName.split(" ")[0] : userName;
+
+					setGreeting(`${timeGreeting}, ${firstName}!`);
+				}, 300);
+			}
 		};
+
 		init();
 	}, [router]);
 
@@ -240,9 +308,14 @@ export default function Home() {
 			if (storedData) {
 				try {
 					const data = JSON.parse(storedData) as VoiceSummaryEventDetail;
-					console.log("📦 Smart Summary: Loading data from sessionStorage", data);
-					
-					const rawSteps = data.steps?.length ? data.steps : DEFAULT_SUMMARY_STEPS;
+					console.log(
+						"📦 Smart Summary: Loading data from sessionStorage",
+						data
+					);
+
+					const rawSteps = data.steps?.length
+						? data.steps
+						: DEFAULT_SUMMARY_STEPS;
 					const normalizedCalendarEvents: VoiceSummaryCalendarEvent[] =
 						Array.isArray(data.calendarEvents) ? data.calendarEvents : [];
 
@@ -253,7 +326,7 @@ export default function Home() {
 					setSummaryStage("thinking");
 					setSummaryOverlayVisible(true);
 					setSummaryRunId((id) => id + 1);
-					
+
 					// Clear the stored data after loading
 					sessionStorage.removeItem("mira_email_calendar_data");
 					console.log("🗑️ Smart Summary: Cleared sessionStorage");
@@ -281,7 +354,7 @@ export default function Home() {
 			console.log("📧 Smart Summary: Received email/calendar data via event:", {
 				emails: detail.emails?.length || 0,
 				events: normalizedCalendarEvents.length || 0,
-				steps: rawSteps.length
+				steps: rawSteps.length,
 			});
 
 			setSummarySteps(prepareVoiceSteps(rawSteps));
@@ -298,7 +371,9 @@ export default function Home() {
 				"miraEmailCalendarSummary",
 				handler as EventListener
 			);
-			console.log("✅ Smart Summary: Event listener registered for miraEmailCalendarSummary");
+			console.log(
+				"✅ Smart Summary: Event listener registered for miraEmailCalendarSummary"
+			);
 		}
 
 		return () => {
@@ -448,8 +523,11 @@ export default function Home() {
 
 			// ----- SMART SUMMARY ACTION -----
 			if (data.action === "email_calendar_summary") {
-				console.log("📧 Smart Summary Page: Received email_calendar_summary action", data.actionData);
-				
+				console.log(
+					"📧 Smart Summary Page: Received email_calendar_summary action",
+					data.actionData
+				);
+
 				if (data.text) {
 					setPendingSummaryMessage(data.text);
 				}
@@ -457,7 +535,9 @@ export default function Home() {
 				// Directly update state since we're already on the smart-summary page
 				if (data.actionData) {
 					const detail = data.actionData;
-					const rawSteps = detail.steps?.length ? detail.steps : DEFAULT_SUMMARY_STEPS;
+					const rawSteps = detail.steps?.length
+						? detail.steps
+						: DEFAULT_SUMMARY_STEPS;
 					const normalizedCalendarEvents: VoiceSummaryCalendarEvent[] =
 						Array.isArray(detail.calendarEvents) ? detail.calendarEvents : [];
 
@@ -502,56 +582,69 @@ export default function Home() {
 	return (
 		<div className="flex flex-col min-h-screen bg-[#F8F8FB] text-gray-800">
 			{/* Global Header Bar */}
-			<HeaderBar
-				dateLabel={new Date().toLocaleDateString("en-US", {
-					weekday: "short",
-					month: "short",
-					day: "numeric",
-				})}
-				locationLabel={location}
-				temperatureLabel={
-					temperatureC != null ? `${Math.floor(temperatureC)}°` : "--"
-				}
-				weatherCode={weatherCode}
-				isLocationLoading={isLocationLoading}
-				isWeatherLoading={isWeatherLoading}
-				scenarioTag="smart-summary"
-			/>
-			<main className="flex-1 flex flex-col items-center px-2 sm:px-4 md:px-6">
+			<div className="fixed top-0 left-0 w-full bg-[#F8F8FB] pl-[70px] md:pl-[90px]">
+				<HeaderBar
+					dateLabel={new Date().toLocaleDateString("en-US", {
+						weekday: "short",
+						month: "short",
+						day: "numeric",
+					})}
+					locationLabel={location}
+					temperatureLabel={
+						temperatureC != null ? `${Math.floor(temperatureC)}°` : "--"
+					}
+					isLocationLoading={isLocationLoading}
+					isWeatherLoading={isWeatherLoading}
+					scenarioTag="smart-summary"
+				/>
+			</div>
+
+			{/* Main */}
+			<main className="max-sm:mt-6 flex-1 flex flex-col items-center px-2 sm:px-4 md:px-6">
 				{/* SCALE CONTAINER */}
 				<div className="scale-[0.85] flex flex-col items-center w-full max-w-[900px] mx-auto px-4">
-					{/* Orb + Greeting */}
-					<div className="orb-wrapper mt-9 max-sm:mt-8">
-						<Orb hasMessages={textMessages.length > 0} />
+					{/* ORB (must NOT be fixed) */}
+					<div className="mt-4 relative flex flex-col items-center">
+						<div
+							className="w-32 h-32 sm:w-44 sm:h-44 rounded-full bg-gradient-to-br 
+		from-[#C4A0FF] via-[#E1B5FF] to-[#F5C5E5]
+		shadow-[0_0_80px_15px_rgba(210,180,255,0.45)] animate-pulse"
+						></div>
 					</div>
+					{/* PANEL CONTAINER */}
+					<div className="w-full mt-10 flex justify-center mt-0">
+						<div className="w-full max-w-[800px] mx-auto">
+							{/* THINKING PANEL */}
+							{summaryStage === "thinking" && (
+								<div className="max-w-[800px] bg-[#F8F8FB] rounded-xl">
+									<EmailCalendarOverlay
+										visible={true}
+										stage="thinking"
+										steps={summarySteps}
+										isMuted={isMuted}
+									/>
+								</div>
+							)}
 
-					{/* Email & calendar thinking panel */}
-					{summaryOverlayVisible && (
-						<div className="mt-10 flex w-full justify-center px-4">
-							<EmailCalendarOverlay
-								stage={summaryStage}
-								steps={summarySteps}
-								emails={summaryEmails}
-								calendarEvents={summaryEvents}
-								focusNote={summaryFocus}
-								isMuted={isMuted}
-								onMuteToggle={handleMuteToggle}
-								chips={{
-									dateLabel: getFormattedDate(timezone),
-									locationLabel: isLocationLoading ? "Detecting..." : location,
-									temperatureLabel:
-										temperatureC != null
-											? `${Math.round(temperatureC)}°`
-											: isWeatherLoading
-											? "..."
-											: "—",
-								}}
-								showContextChips={false}
-								showControls={false}
-								visible={summaryOverlayVisible}
-							/>
+							{/* SUMMARY PANEL */}
+							{summaryStage === "summary" && (
+								<div className="relative w-full max-w-[800px]">
+									{/* SCROLLABLE CONTENT (same style as Morning Brief Recommendation Panel) */}
+
+									<EmailCalendarOverlay
+										key={summaryRunId}
+										visible={true}
+										stage="summary"
+										steps={summarySteps}
+										emails={summaryEmails}
+										calendarEvents={summaryEvents}
+										focusNote={summaryFocus}
+										isMuted={isMuted}
+									/>
+								</div>
+							)}
 						</div>
-					)}
+					</div>
 				</div>
 			</main>
 			<Sidebar />

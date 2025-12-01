@@ -3194,7 +3194,7 @@ Mischievous: "Oh, I see what you did there… clever move!"""
                 logging.debug("🧠 Intelligent learner: disabled via ENABLE_INTELLIGENT_LEARNER env var")
 
     try:
-        async with _wslib.connect(ws_url, extra_headers=headers) as upstream:
+        async with _wslib.connect(ws_url, additional_headers=headers) as upstream:
             logging.info("ws_voice_stt: connected to ElevenLabs")
 
             async def forward_upstream_to_client():
