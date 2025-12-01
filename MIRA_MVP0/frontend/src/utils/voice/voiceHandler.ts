@@ -12,45 +12,148 @@ export let isMiraMuted = false;
 export function setMiraMute(mute: boolean) {
 	isMiraMuted = mute;
 
-	// If muting, stop any currently playing audio
 	if (mute) {
-		// Stop current playing audio
-		if (currentPlayingAudio) {
-			try {
-				currentPlayingAudio.pause();
-				currentPlayingAudio.currentTime = 0;
-				currentPlayingAudio.volume = 0;
-				currentPlayingAudio.muted = true;
-			} catch (e) {
-				// Failed to stop audio when muting
-			}
-		}
-
-		// Clear audio queue
-		audioQueue.forEach((audio) => {
-			try {
-				audio.pause();
-				audio.currentTime = 0;
-				audio.volume = 0;
-				audio.muted = true;
-				URL.revokeObjectURL(audio.src);
-			} catch {}
-		});
-		audioQueue = [];
-		isPlayingQueue = false;
-		isAudioPlaying = false;
-
-		// Also stop the legacy currentAudio if it exists
-		if (currentAudio) {
-			try {
-				currentAudio.pause();
-				currentAudio.currentTime = 0;
-			} catch {}
-		}
-
-		// Stop greeting voice if playing
+		// Stop all audio playback immediately
+		stopAllAudio();
 		stopVoice();
 	}
+}
+
+/* ---------------------- Unified Audio Manager ---------------------- */
+class AudioManager {
+	private queue: HTMLAudioElement[] = [];
+	private currentAudio: HTMLAudioElement | null = null;
+	private isPlaying = false;
+	private interrupted = false;
+
+	constructor() {
+		// Bind methods to preserve context
+		this.playNext = this.playNext.bind(this);
+	}
+
+	enqueue(base64: string, mimeType = 'audio/mpeg') {
+		if (isMiraMuted || this.interrupted) return;
+		
+		try {
+			const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+			const blob = new Blob([bytes], { type: mimeType });
+			const url = URL.createObjectURL(blob);
+			const audio = new Audio(url);
+			audio.preload = 'auto';
+			audio.volume = 1.0;
+			
+			// Pre-load immediately
+			audio.load();
+			
+			this.queue.push(audio);
+			
+			if (!this.isPlaying) {
+				this.playNext();
+			}
+		} catch (e) {
+			console.error('[AudioManager] Failed to enqueue audio:', e);
+		}
+	}
+
+	private playNext() {
+		if (isMiraMuted || this.interrupted || this.queue.length === 0) {
+			this.isPlaying = false;
+			this.currentAudio = null;
+			return;
+		}
+
+		this.isPlaying = true;
+		const audio = this.queue.shift()!;
+		this.currentAudio = audio;
+
+		const cleanup = () => {
+			try {
+				URL.revokeObjectURL(audio.src);
+			} catch { /* ignore */ }
+			this.currentAudio = null;
+			if (!this.interrupted) {
+				this.playNext();
+			}
+		};
+
+		audio.onended = cleanup;
+		audio.onerror = () => {
+			console.error('[AudioManager] Audio playback error');
+			cleanup();
+		};
+
+		audio.play().catch((err) => {
+			console.error('[AudioManager] Play failed:', err);
+			cleanup();
+		});
+	}
+
+	stop() {
+		this.interrupted = true;
+		
+		// Stop current audio immediately
+		if (this.currentAudio) {
+			try {
+				this.currentAudio.volume = 0;
+				this.currentAudio.muted = true;
+				this.currentAudio.pause();
+				this.currentAudio.src = '';
+				URL.revokeObjectURL(this.currentAudio.src);
+			} catch { /* ignore */ }
+			this.currentAudio = null;
+		}
+
+		// Clear queue
+		for (const audio of this.queue) {
+			try {
+				audio.pause();
+				audio.src = '';
+				URL.revokeObjectURL(audio.src);
+			} catch { /* ignore */ }
+		}
+		this.queue = [];
+		this.isPlaying = false;
+	}
+
+	reset() {
+		this.stop();
+		this.interrupted = false;
+	}
+
+	isActive() {
+		return this.isPlaying || this.queue.length > 0;
+	}
+}
+
+const audioManager = new AudioManager();
+
+function stopAllAudio() {
+	audioManager.stop();
+	
+	// Legacy cleanup
+	if (currentAudio) {
+		try {
+			currentAudio.pause();
+			currentAudio.currentTime = 0;
+		} catch { /* ignore */ }
+		currentAudio = null;
+	}
+	
+	if (currentPlayingAudio) {
+		try {
+			currentPlayingAudio.pause();
+			URL.revokeObjectURL(currentPlayingAudio.src);
+		} catch { /* ignore */ }
+		currentPlayingAudio = null;
+	}
+	
+	// Clear legacy queue
+	audioQueue.forEach((audio) => {
+		try { URL.revokeObjectURL(audio.src); } catch { /* ignore */ }
+	});
+	audioQueue = [];
+	isPlayingQueue = false;
+	isAudioPlaying = false;
 }
 
 /* ---------------------- Conversation Variables ---------------------- */
@@ -195,18 +298,7 @@ function playNextInQueue() {
 
 function handleAudioChunk(base64: string) {
 	try {
-		// Ignore chunks if user has interrupted
-		if (isAudioInterrupted) {
-			return;
-		}
-
-		// Ignore chunks if muted
-		if (isMiraMuted) {
-			return;
-		}
-
-		if (!base64 || base64.length === 0) {
-			console.warn("⚠️ Empty audio chunk");
+		if (isAudioInterrupted || isMiraMuted || !base64 || base64.length === 0) {
 			return;
 		}
 
@@ -214,31 +306,8 @@ function handleAudioChunk(base64: string) {
 			firstChunkReceivedTime = performance.now();
 		}
 
-		// Convert base64 to blob - MP3 format
-		const binaryString = atob(base64);
-		const bytes = new Uint8Array(binaryString.length);
-		for (let i = 0; i < binaryString.length; i++) {
-			bytes[i] = binaryString.charCodeAt(i);
-		}
-		const blob = new Blob([bytes], { type: "audio/mpeg" });
-		const url = URL.createObjectURL(blob);
-
-		// Create audio element with aggressive preloading
-		const audio = new Audio(url);
-		audio.preload = "auto"; // Request browser to preload entire file
-		audio.volume = 1.0;
-
-		// Immediately trigger load to start decoding in parallel
-		// This starts decoding ASAP, not waiting until play() is called
-		void audio.load();
-
-		// Add to queue
-		audioQueue.push(audio);
-
-		// Start playing if not already playing
-		if (!isPlayingQueue) {
-			playNextInQueue();
-		}
+		// Use the unified AudioManager
+		audioManager.enqueue(base64, 'audio/mpeg');
 	} catch (error) {
 		console.error("❌ Failed to handle audio chunk:", error);
 	}
@@ -305,91 +374,26 @@ function handleAudioFinal() {
 }
 
 function stopAudioPlayback() {
-	// Set interrupt flag to ignore incoming chunks from old response
 	isAudioInterrupted = true;
 
-	// Stop current playing audio IMMEDIATELY with force
-	if (currentPlayingAudio) {
-		try {
-			// INSTANT silence - mute immediately before anything else
-			currentPlayingAudio.volume = 0;
-			currentPlayingAudio.muted = true;
-			currentPlayingAudio.pause();
-			currentPlayingAudio.currentTime = 0;
-			currentPlayingAudio.src = ""; // Clear source
-			currentPlayingAudio.load(); // Force reset
-			currentPlayingAudio.remove(); // Remove from DOM if attached
-			URL.revokeObjectURL(currentPlayingAudio.src);
-		} catch (e) {
-			// Failed to stop audio
-		}
-		currentPlayingAudio = null;
-	}
+	// Stop all audio via unified manager
+	stopAllAudio();
 
-	// Clear entire queue - don't play old chunks
-	audioQueue.forEach((audio) => {
-		try {
-			// Mute first for safety
-			audio.volume = 0;
-			audio.muted = true;
-			audio.pause();
-			audio.currentTime = 0;
-			audio.src = "";
-			void audio.load();
-			URL.revokeObjectURL(audio.src);
-		} catch {
-			// Ignore errors when cleaning up audio
-		}
-	});
-	audioQueue = [];
-	isPlayingQueue = false;
-	isAudioPlaying = false;
-
-	// Stop HTML5 audio if playing (legacy)
-	if (currentAudio) {
-		try {
-			currentAudio.pause();
-			currentAudio.currentTime = 0;
-		} catch (error) {
-			// Failed to stop HTML5 audio
-		}
-		currentAudio = null;
-	}
-
-	// Send stop signal to backend if WebSocket is active
+	// Send stop signal to backend
 	if (wsController && typeof wsController.send === "function") {
 		try {
 			void wsController.send({ message_type: "stop_audio" });
-		} catch (error) {
-			// Failed to send stop_audio signal
-		}
+		} catch { /* ignore */ }
 	}
 }
 
 function resetAudioState() {
-	// Reset interrupt flag
 	isAudioInterrupted = false;
-
-	// Stop and clear current audio
-	if (currentPlayingAudio) {
-		try {
-			currentPlayingAudio.pause();
-			URL.revokeObjectURL(currentPlayingAudio.src);
-		} catch {
-			// Ignore errors when revoking URLs
-		}
-		currentPlayingAudio = null;
-	}
-
-	// Clear queue
-	audioQueue.forEach((audio) => {
-		try {
-			URL.revokeObjectURL(audio.src);
-		} catch {
-			// Ignore errors when revoking URLs
-		}
-	});
-
+	audioManager.reset();
+	
+	// Reset legacy state
+	currentPlayingAudio = null;
+	currentAudio = null;
 	audioQueue = [];
 	isPlayingQueue = false;
 	isAudioPlaying = false;
@@ -430,91 +434,14 @@ async function playAudio(base64: string) {
  * This clears any existing queue and plays the audio immediately
  */
 function playNonStreamingAudio(audioBase64: string) {
-	// Stop any current audio/queue
-	if (currentAudio) {
-		currentAudio.pause();
-		currentAudio.currentTime = 0;
-		isAudioPlaying = false;
-		currentAudio = null;
-	}
-
-	// Clear streaming audio queue
-	if (isPlayingQueue || audioQueue.length > 0) {
-		audioQueue.forEach((audio) => {
-			try {
-				URL.revokeObjectURL(audio.src);
-			} catch {
-				// Ignore errors when revoking URLs
-			}
-		});
-		audioQueue = [];
-		isPlayingQueue = false;
-	}
-
-	if (currentPlayingAudio) {
-		try {
-			currentPlayingAudio.pause();
-			URL.revokeObjectURL(currentPlayingAudio.src);
-		} catch {
-			// Ignore errors when revoking URLs
-		}
-		currentPlayingAudio = null;
-	}
-
-	try {
-		const audioBinary = atob(audioBase64);
-		const arrayBuffer = new ArrayBuffer(audioBinary.length);
-		const view = new Uint8Array(arrayBuffer);
-		for (let i = 0; i < audioBinary.length; i++) {
-			view[i] = audioBinary.charCodeAt(i);
-		}
-		const blob = new Blob([view], { type: "audio/mpeg" });
-		const url = URL.createObjectURL(blob);
-		const audio = new Audio(url);
-		currentAudio = audio;
-
-		audio.volume = 1.0;
-		audio.preload = "auto";
-
-		const playAudioNow = () => {
-			isAudioPlaying = true;
-			const playPromise = audio.play();
-			if (playPromise !== undefined) {
-				playPromise
-					.then(() => {
-						audio.addEventListener("ended", () => {
-							isAudioPlaying = false;
-							currentAudio = null;
-							URL.revokeObjectURL(url);
-						});
-						audio.addEventListener("error", () => {
-							isAudioPlaying = false;
-							currentAudio = null;
-							URL.revokeObjectURL(url);
-						});
-					})
-					.catch((err) => {
-						isAudioPlaying = false;
-						currentAudio = null;
-						console.error("❌ Calendar/email audio playback failed:", err);
-						URL.revokeObjectURL(url);
-					});
-			} else {
-				isAudioPlaying = false;
-				currentAudio = null;
-			}
-		};
-
-		audio.addEventListener("loadeddata", () => playAudioNow());
-		if (audio.readyState >= 2) playAudioNow();
-
-		// Fallback attempt after a short delay
-		setTimeout(() => {
-			if (audio.readyState >= 2 && audio.paused) playAudioNow();
-		}, 100);
-	} catch (err) {
-		console.error("❌ Calendar/email audio creation failed:", err);
-	}
+	if (isMiraMuted) return;
+	
+	// Stop any current audio first
+	audioManager.reset();
+	stopAllAudio();
+	
+	// Use the AudioManager to play this audio
+	audioManager.enqueue(audioBase64, 'audio/mpeg');
 }
 
 // Centralized server response processor used by both the realtime WS flow and
@@ -1022,13 +949,10 @@ export async function startMiraVoice() {
 			// Keep loop alive while conversation active; monitor interruption
 			while (isConversationActive) {
 				// Monitor for interruption when audio is playing
-				if (isPlayingQueue || currentPlayingAudio) {
-					const interrupted = await monitorForInterruption();
-				if (interrupted) {
-					// stopAudioPlayback() already called in monitorForInterruption
+				if (audioManager.isActive()) {
+					await monitorForInterruption();
 				}
-				}
-				await new Promise((res) => setTimeout(res, 100)); // Check more frequently
+				await new Promise((res) => setTimeout(res, 80)); // Check frequently
 			}
 
 		} catch (err) {
@@ -1144,18 +1068,24 @@ function analyzeAudioEnergy(stream: MediaStream): {
 async function monitorForInterruption(): Promise<boolean> {
 	return new Promise((resolve) => {
 		// Only monitor if audio is actually playing
-		if (!isPlayingQueue && !currentPlayingAudio) {
+		if (!audioManager.isActive()) {
 			resolve(false);
 			return;
 		}
 
 		navigator.mediaDevices
-			.getUserMedia({ audio: true })
+			.getUserMedia({ 
+				audio: { 
+					echoCancellation: true, 
+					noiseSuppression: true,
+					autoGainControl: true 
+				} 
+			})
 			.then((stream) => {
 				const audioContext = new AudioContext();
 				const source = audioContext.createMediaStreamSource(stream);
 				const analyser = audioContext.createAnalyser();
-				analyser.fftSize = 2048;
+				analyser.fftSize = 1024; // Smaller for faster processing
 				source.connect(analyser);
 
 				const bufferLength = analyser.frequencyBinCount;
@@ -1163,14 +1093,14 @@ async function monitorForInterruption(): Promise<boolean> {
 
 				let checkCount = 0;
 				let highEnergyCount = 0;
-				const maxChecks = 100; // Check for up to 5 seconds (100 * 50ms)
+				const maxChecks = 100;
+				const energyThreshold = 0.06; // Tuned threshold
 
 				const checkInterval = setInterval(() => {
-					// Stop monitoring if no audio is playing
-					if (!isPlayingQueue && !currentPlayingAudio) {
+					if (!audioManager.isActive()) {
 						clearInterval(checkInterval);
-						audioContext.close();
-						stream.getTracks().forEach((track) => track.stop());
+						try { audioContext.close(); } catch { /* ignore */ }
+						stream.getTracks().forEach((t) => t.stop());
 						resolve(false);
 						return;
 					}
@@ -1181,36 +1111,29 @@ async function monitorForInterruption(): Promise<boolean> {
 						sum += dataArray[i] * dataArray[i];
 					}
 					const rms = Math.sqrt(sum / bufferLength);
-					const energy = rms * 100;
 
-					if (energy > 8) {
-						// Lower threshold for faster interruption detection
+					if (rms > energyThreshold) {
 						highEnergyCount++;
-						if (highEnergyCount >= 1) {
-							// Require only 1 frame for immediate response
-							// Stop all audio playback and notify backend
+						if (highEnergyCount >= 2) { // Require 2 frames to avoid false positives
 							stopAudioPlayback();
-
-							// Clean up monitoring
 							clearInterval(checkInterval);
-							audioContext.close();
-							stream.getTracks().forEach((track) => track.stop());
-
+							try { audioContext.close(); } catch { /* ignore */ }
+							stream.getTracks().forEach((t) => t.stop());
 							resolve(true);
 							return;
 						}
 					} else {
-						highEnergyCount = 0; // Reset if energy drops
+						highEnergyCount = Math.max(0, highEnergyCount - 1); // Decay slowly
 					}
 
 					checkCount++;
 					if (checkCount >= maxChecks) {
 						clearInterval(checkInterval);
-						audioContext.close();
-						stream.getTracks().forEach((track) => track.stop());
+						try { audioContext.close(); } catch { /* ignore */ }
+						stream.getTracks().forEach((t) => t.stop());
 						resolve(false);
 					}
-				}, 50); // Check every 50ms for faster response
+				}, 40); // Check every 40ms
 			})
 			.catch((err) => {
 				console.error("Failed to monitor for interruption:", err);

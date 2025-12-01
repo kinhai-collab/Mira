@@ -14,19 +14,9 @@ from typing import Dict, Any, Optional
 dynamodb = boto3.resource('dynamodb')
 connections_table = dynamodb.Table(os.environ.get('CONNECTIONS_TABLE', 'mira-websocket-connections-dev'))
 
-# Import voice generation logic
-try:
-    # We'll need to adapt the WebSocket logic from voice_generation.py
-    from voice.voice_generation import (
-        process_voice_message,
-        _convert_webm_to_wav,
-        _transcribe_audio_whisper,
-        _generate_tts_audio,
-    )
-    VOICE_AVAILABLE = True
-except ImportError as e:
-    print(f"⚠️ Voice generation not available: {e}")
-    VOICE_AVAILABLE = False
+# Voice pipeline will use simpler direct implementation
+# We don't import the complex voice_generation module to keep Lambda package small
+VOICE_AVAILABLE = True  # Always True - we'll implement basic voice processing here
 
 
 def get_api_gateway_client(event: Dict[str, Any]):
@@ -79,7 +69,7 @@ def connect_handler(event, context):
         except Exception as e:
             print(f"⚠️ Could not extract user ID from token: {e}")
     
-    # Store connection in DynamoDB
+    # Store connection in DynamoDB with fresh, empty conversation history
     try:
         ttl = int((datetime.now() + timedelta(hours=2)).timestamp())
         connections_table.put_item(
@@ -87,10 +77,11 @@ def connect_handler(event, context):
                 'connectionId': connection_id,
                 'userId': user_id,
                 'connectedAt': datetime.now().isoformat(),
+                'conversationHistory': [],  # Initialize with empty history
                 'ttl': ttl
             }
         )
-        print(f"✅ Connection stored: {connection_id} (user: {user_id})")
+        print(f"✅ Connection stored: {connection_id} (user: {user_id}) with fresh history")
     except Exception as e:
         print(f"❌ Error storing connection: {e}")
         return {
@@ -149,10 +140,31 @@ def default_handler(event, context):
             'body': json.dumps({'error': 'Internal server error'})
         }
     
-    # Handle authorization (frontend sends this on connect)
-    if message_type == 'authorization':
+    # Handle authorization (frontend sends this on connect with 'type' field)
+    if message_type == 'authorization' or body.get('type') == 'authorization':
         print(f"✅ Authorization message received from {connection_id}")
-        # Just acknowledge - we already stored the connection in connect_handler
+        # Extract token if provided in message
+        token = body.get('token', '')
+        if token and token != 'anonymous':
+            try:
+                from settings import get_uid_from_token
+                user_id = get_uid_from_token(token) or 'anonymous'
+                # Update connection with user ID and clear conversation history for fresh session
+                try:
+                    connections_table.update_item(
+                        Key={'connectionId': connection_id},
+                        UpdateExpression='SET userId = :uid, conversationHistory = :history',
+                        ExpressionAttributeValues={
+                            ':uid': user_id,
+                            ':history': []  # Clear history on new authorization
+                        }
+                    )
+                    print(f"✅ Updated connection {connection_id} with user ID: {user_id} and cleared history")
+                except Exception as e:
+                    print(f"⚠️ Could not update user ID: {e}")
+            except Exception:
+                pass
+        # Just acknowledge
         return {'statusCode': 200, 'body': 'Authorization acknowledged'}
     
     # Handle ping/pong for keepalive
@@ -183,29 +195,75 @@ def default_handler(event, context):
             ))
             return {'statusCode': 200, 'body': 'Voice not available'}
         
-        # Get audio chunk data
-        audio_chunk = body.get('audio', body.get('chunk', ''))
-        if audio_chunk:
+        # Get audio chunk data - frontend uses 'audio_base_64' field
+        audio_chunk = body.get('audio_base_64', body.get('audio', body.get('chunk', '')))
+        is_commit = body.get('commit', False)
+        
+        if audio_chunk:  # Only store non-empty chunks
             # Store audio chunk in DynamoDB for accumulation
             try:
                 # Get existing chunks or create new list
                 conn_item = connections_table.get_item(Key={'connectionId': connection_id})
-                existing_chunks = conn_item.get('Item', {}).get('audioChunks', [])
-                existing_chunks.append(audio_chunk)
+                item = conn_item.get('Item', {})
+                existing_chunks = item.get('audioChunks', [])
+                
+                # Only append if chunk is not empty
+                if audio_chunk:
+                    existing_chunks.append(audio_chunk)
                 
                 # Update connection with accumulated chunks
                 connections_table.update_item(
                     Key={'connectionId': connection_id},
-                    UpdateExpression='SET audioChunks = :chunks',
-                    ExpressionAttributeValues={':chunks': existing_chunks}
+                    UpdateExpression='SET audioChunks = :chunks, commitFlag = :commit',
+                    ExpressionAttributeValues={
+                        ':chunks': existing_chunks,
+                        ':commit': is_commit
+                    }
                 )
-                print(f"📥 Stored audio chunk #{len(existing_chunks)} from {connection_id}")
+                print(f"📥 Stored audio chunk #{len(existing_chunks)} (commit={is_commit}) from {connection_id}")
             except Exception as e:
                 print(f"⚠️ Error storing audio chunk: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        # If commit flag is set, trigger transcription immediately
+        if is_commit:
+            print(f"🔄 Commit flag received, triggering transcription for {connection_id}")
+            # Get accumulated chunks and process
+            try:
+                conn_item = connections_table.get_item(Key={'connectionId': connection_id})
+                item = conn_item.get('Item', {})
+                user_id = item.get('userId', 'anonymous')
+                audio_chunks = item.get('audioChunks', [])
+                
+                if audio_chunks:
+                    # Combine all chunks
+                    audio_data = ''.join(audio_chunks)
+                    print(f"📦 Combining {len(audio_chunks)} chunks for transcription")
+                    
+                    # Clear chunks
+                    connections_table.update_item(
+                        Key={'connectionId': connection_id},
+                        UpdateExpression='REMOVE audioChunks, commitFlag'
+                    )
+                    
+                    # Process transcription
+                    asyncio.run(process_voice_message_async(
+                        apigw_client,
+                        connection_id,
+                        user_id,
+                        audio_data,
+                        []
+                    ))
+            except Exception as e:
+                print(f"⚠️ Error processing commit: {e}")
+                import traceback
+                traceback.print_exc()
         
         return {'statusCode': 200, 'body': 'Audio chunk received'}
     
     # Handle transcribe request (frontend sends this to trigger transcription)
+    # Frontend uses 'type' field, but we also check 'message_type' for compatibility
     if message_type == 'transcribe':
         if not VOICE_AVAILABLE:
             asyncio.run(send_message_to_connection(
@@ -215,35 +273,29 @@ def default_handler(event, context):
             ))
             return {'statusCode': 200, 'body': 'Voice not available'}
         
-        # Get user ID and accumulated audio chunks from connection
+        # Get user ID, accumulated audio chunks, and conversation history from connection
         try:
             conn_item = connections_table.get_item(Key={'connectionId': connection_id})
-            user_id = conn_item.get('Item', {}).get('userId', 'anonymous')
-            audio_chunks = conn_item.get('Item', {}).get('audioChunks', [])
+            item = conn_item.get('Item', {})
+            user_id = item.get('userId', 'anonymous')
+            audio_chunks = item.get('audioChunks', [])
+            conversation_history = item.get('conversationHistory', [])
         except Exception as e:
-            print(f"⚠️ Could not get user ID/chunks: {e}")
+            print(f"⚠️ Could not get user ID/chunks/history: {e}")
             user_id = 'anonymous'
             audio_chunks = []
+            conversation_history = []
         
         # Try to get audio from message body first, then from accumulated chunks
-        audio_data = body.get('audio', body.get('audio_data', body.get('audio_base64', '')))
+        audio_data = body.get('audio_base_64', body.get('audio', body.get('audio_data', body.get('audio_base64', ''))))
         
         if not audio_data and audio_chunks:
             # Combine all accumulated chunks
             audio_data = ''.join(audio_chunks)
-            print(f"📦 Combined {len(audio_chunks)} audio chunks")
-            
-            # Clear stored chunks after processing
-            try:
-                connections_table.update_item(
-                    Key={'connectionId': connection_id},
-                    UpdateExpression='REMOVE audioChunks'
-                )
-            except Exception:
-                pass
+            print(f"📦 Combined {len(audio_chunks)} audio chunks from storage")
         
         if not audio_data:
-            print(f"⚠️ No audio data available for transcription")
+            print(f"⚠️ No audio data available for transcription (chunks: {len(audio_chunks)})")
             asyncio.run(send_message_to_connection(
                 apigw_client,
                 connection_id,
@@ -251,14 +303,27 @@ def default_handler(event, context):
             ))
             return {'statusCode': 200, 'body': 'No audio data'}
         
+        print(f"🎤 Processing transcription with {len(audio_data)} chars of audio data, history: {len(conversation_history)} messages")
+        
         # Process the voice message (transcribe + generate response + TTS)
+        # Clear chunks only AFTER successful processing
         asyncio.run(process_voice_message_async(
             apigw_client,
             connection_id,
             user_id,
             audio_data,
-            body.get('history', [])
+            conversation_history  # Use stored history instead of body.get('history', [])
         ))
+        
+        # Clear audio chunks after processing completes
+        try:
+            connections_table.update_item(
+                Key={'connectionId': connection_id},
+                UpdateExpression='REMOVE audioChunks, commitFlag'
+            )
+            print(f"🧹 Cleared audio chunks for {connection_id}")
+        except Exception as e:
+            print(f"⚠️ Could not clear chunks: {e}")
         
         return {'statusCode': 200, 'body': 'Processing transcription'}
     
@@ -323,33 +388,72 @@ def default_handler(event, context):
 
 
 async def process_voice_message_async(apigw_client, connection_id: str, user_id: str, audio_base64: str, history: list):
-    """Process voice message: transcribe + generate response + TTS"""
+    """Process voice message: transcribe + generate response + TTS
+    Frontend sends PCM16 little-endian audio at 16kHz, base64 encoded
+    """
     import tempfile
-    import os
+    import struct
+    import wave
     
     try:
-        # Decode audio data
+        # Decode base64 audio data (PCM16 little-endian, 16kHz, mono)
         audio_bytes = base64.b64decode(audio_base64)
         
-        # Save to temp file
-        with tempfile.NamedTemporaryFile(suffix='.webm', delete=False) as temp_audio:
-            temp_audio.write(audio_bytes)
-            webm_path = temp_audio.name
+        if len(audio_bytes) < 100:  # Too short, likely empty
+            print(f"⚠️ Audio data too short: {len(audio_bytes)} bytes")
+            await send_message_to_connection(apigw_client, connection_id, {
+                'message_type': 'error',
+                'error': 'Audio data too short'
+            })
+            return
         
+        # Convert PCM16 bytes to WAV file for Whisper API
+        # PCM16 is 16-bit (2 bytes per sample), little-endian
+        wav_path = None
         try:
-            # Convert to WAV
-            wav_path = webm_path.replace('.webm', '.wav')
-            success = _convert_webm_to_wav(webm_path, wav_path)
+            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_wav:
+                wav_path = temp_wav.name
+                
+                # Write WAV header
+                sample_rate = 16000
+                num_channels = 1
+                bits_per_sample = 16
+                num_samples = len(audio_bytes) // 2  # 2 bytes per sample
+                byte_rate = sample_rate * num_channels * bits_per_sample // 8
+                block_align = num_channels * bits_per_sample // 8
+                data_size = num_samples * block_align
+                file_size = 36 + data_size
+                
+                # WAV header
+                temp_wav.write(b'RIFF')
+                temp_wav.write(struct.pack('<I', file_size))
+                temp_wav.write(b'WAVE')
+                temp_wav.write(b'fmt ')
+                temp_wav.write(struct.pack('<I', 16))  # fmt chunk size
+                temp_wav.write(struct.pack('<H', 1))   # audio format (PCM)
+                temp_wav.write(struct.pack('<H', num_channels))
+                temp_wav.write(struct.pack('<I', sample_rate))
+                temp_wav.write(struct.pack('<I', byte_rate))
+                temp_wav.write(struct.pack('<H', block_align))
+                temp_wav.write(struct.pack('<H', bits_per_sample))
+                temp_wav.write(b'data')
+                temp_wav.write(struct.pack('<I', data_size))
+                temp_wav.write(audio_bytes)
             
-            if not success:
-                await send_message_to_connection(apigw_client, connection_id, {
-                    'message_type': 'error',
-                    'error': 'Failed to convert audio'
-                })
-                return
+            print(f"📝 Created WAV file: {len(audio_bytes)} bytes PCM16 -> {wav_path}")
             
-            # Transcribe
-            transcript = _transcribe_audio_whisper(wav_path)
+            # Transcribe using OpenAI Whisper API
+            from openai import OpenAI
+            openai_client = OpenAI(api_key=os.environ.get('OPENAI_API_KEY'))
+            
+            with open(wav_path, 'rb') as audio_file:
+                transcript_response = openai_client.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=audio_file,
+                    language="en"  # Optional: specify language for better accuracy
+                )
+            
+            transcript = transcript_response.text
             
             if not transcript or len(transcript.strip()) < 2:
                 await send_message_to_connection(apigw_client, connection_id, {
@@ -358,33 +462,33 @@ async def process_voice_message_async(apigw_client, connection_id: str, user_id:
                 })
                 return
             
-            # Send transcript back
+            print(f"📝 Transcribed: {transcript}")
+            
+            # Send transcript back (frontend expects committed_transcript)
             await send_message_to_connection(apigw_client, connection_id, {
-                'message_type': 'transcript',
+                'message_type': 'committed_transcript',
+                'type': 'committed_transcript',
                 'text': transcript,
                 'userText': transcript
             })
             
-            # Generate AI response (import OpenAI client)
-            from openai import OpenAI
-            openai_client = OpenAI(api_key=os.environ.get('OPENAI_API_KEY'))
-            
-            # Build conversation
-            messages = []
-            messages.append({
-                "role": "system",
-                "content": "You are Mira, a helpful AI assistant. Keep responses concise and natural."
-            })
+            # Build conversation for AI response
+            messages = [
+                {
+                    "role": "system",
+                    "content": "You are Mira, a helpful AI assistant. Keep responses concise and natural."
+                }
+            ]
             
             # Add history
-            for msg in history[-10:]:  # Keep last 10 messages
+            for msg in history[-10:]:
                 if isinstance(msg, dict) and 'role' in msg and 'content' in msg:
                     messages.append(msg)
             
             # Add user message
             messages.append({"role": "user", "content": transcript})
             
-            # Get response
+            # Get AI response
             completion = openai_client.chat.completions.create(
                 model="gpt-4",
                 messages=messages,
@@ -393,31 +497,109 @@ async def process_voice_message_async(apigw_client, connection_id: str, user_id:
             )
             
             response_text = completion.choices[0].message.content
+            print(f"🤖 AI Response: {response_text}")
             
-            # Send text response
-            await send_message_to_connection(apigw_client, connection_id, {
-                'message_type': 'response',
-                'text': response_text,
-                'userText': transcript
-            })
+            # Update conversation history in DynamoDB
+            try:
+                new_history = history[-10:] if history else []  # Keep last 10 messages
+                new_history.append({"role": "user", "content": transcript})
+                new_history.append({"role": "assistant", "content": response_text})
+                
+                connections_table.update_item(
+                    Key={'connectionId': connection_id},
+                    UpdateExpression='SET conversationHistory = :history',
+                    ExpressionAttributeValues={':history': new_history}
+                )
+                print(f"💾 Updated conversation history ({len(new_history)} messages)")
+            except Exception as hist_err:
+                print(f"⚠️ Could not update history: {hist_err}")
             
-            # Generate TTS audio
-            audio_b64 = _generate_tts_audio(response_text)
+            # Generate TTS audio using ElevenLabs
+            elevenlabs_key = os.environ.get('ELEVENLABS_API_KEY')
+            elevenlabs_voice = os.environ.get('ELEVENLABS_VOICE_ID')
             
-            if audio_b64:
-                # Send audio response
+            if elevenlabs_key and elevenlabs_voice:
+                try:
+                    import httpx
+                    async with httpx.AsyncClient() as client:
+                        tts_response = await client.post(
+                            f"https://api.elevenlabs.io/v1/text-to-speech/{elevenlabs_voice}",
+                            headers={
+                                "xi-api-key": elevenlabs_key,
+                                "Content-Type": "application/json"
+                            },
+                            json={
+                                "text": response_text,
+                                "model_id": "eleven_multilingual_v2",  # Higher quality model (same as greeting)
+                                "output_format": "mp3_44100_192",  # Higher quality MP3: 44.1kHz, 192kbps (increased from 128kbps)
+                                "voice_settings": {
+                                    "stability": 0.65,  # Balanced stability (matched to greeting settings)
+                                    "similarity_boost": 0.8,  # Higher clarity
+                                    "style": 0.3,  # Slight style for natural speech
+                                    "use_speaker_boost": True  # Enhanced clarity
+                                }
+                            },
+                            timeout=30.0
+                        )
+                    
+                    if tts_response.status_code == 200:
+                        audio_bytes = tts_response.content
+                        audio_b64 = base64.b64encode(audio_bytes).decode()
+                        print(f"🔊 Generated TTS audio: {len(audio_bytes)} bytes ({len(audio_b64)} chars base64)")
+                        
+                        # Validate audio data
+                        if len(audio_bytes) < 100:
+                            print(f"⚠️ TTS audio too short: {len(audio_bytes)} bytes")
+                            # Send text-only response
+                            await send_message_to_connection(apigw_client, connection_id, {
+                                'message_type': 'response',
+                                'type': 'response',
+                                'text': response_text,
+                                'userText': transcript
+                            })
+                        else:
+                            # Send response with audio (frontend expects audio_base_64 field)
+                            await send_message_to_connection(apigw_client, connection_id, {
+                                'message_type': 'response',
+                                'type': 'response',
+                                'text': response_text,
+                                'audio': audio_b64,
+                                'audio_base_64': audio_b64,  # Frontend uses this field name
+                                'userText': transcript
+                            })
+                    else:
+                        # Send text-only response if TTS fails
+                        print(f"⚠️ TTS failed: {tts_response.status_code} - {tts_response.text[:200]}")
+                        await send_message_to_connection(apigw_client, connection_id, {
+                            'message_type': 'response',
+                            'type': 'response',
+                            'text': response_text,
+                            'userText': transcript
+                        })
+                except Exception as tts_error:
+                    print(f"⚠️ TTS error: {tts_error}")
+                    import traceback
+                    traceback.print_exc()
+                    # Send text-only response
+                    await send_message_to_connection(apigw_client, connection_id, {
+                        'message_type': 'response',
+                        'type': 'response',
+                        'text': response_text,
+                        'userText': transcript
+                    })
+            else:
+                # No TTS credentials, send text-only
                 await send_message_to_connection(apigw_client, connection_id, {
-                    'message_type': 'audio_response',
+                    'message_type': 'response',
+                    'type': 'response',
                     'text': response_text,
-                    'audio': audio_b64,
                     'userText': transcript
                 })
             
         finally:
             # Cleanup temp files
             try:
-                os.unlink(webm_path)
-                if os.path.exists(wav_path):
+                if wav_path and os.path.exists(wav_path):
                     os.unlink(wav_path)
             except Exception:
                 pass
@@ -429,7 +611,7 @@ async def process_voice_message_async(apigw_client, connection_id: str, user_id:
         
         await send_message_to_connection(apigw_client, connection_id, {
             'message_type': 'error',
-            'error': str(e)
+            'error': f'Processing failed: {str(e)}'
         })
 
 
@@ -465,23 +647,49 @@ async def process_text_query_async(apigw_client, connection_id: str, user_id: st
         
         response_text = completion.choices[0].message.content
         
-        # Send text response
+        # Generate TTS audio using ElevenLabs (same as voice pipeline)
+        elevenlabs_key = os.environ.get('ELEVENLABS_API_KEY')
+        elevenlabs_voice = os.environ.get('ELEVENLABS_VOICE_ID')
+        
+        audio_b64 = None
+        if elevenlabs_key and elevenlabs_voice:
+            try:
+                import httpx
+                async with httpx.AsyncClient() as client:
+                    tts_response = await client.post(
+                        f"https://api.elevenlabs.io/v1/text-to-speech/{elevenlabs_voice}",
+                        headers={
+                            "xi-api-key": elevenlabs_key,
+                            "Content-Type": "application/json"
+                        },
+                        json={
+                            "text": response_text,
+                            "model_id": "eleven_multilingual_v2",
+                            "output_format": "mp3_44100_192",
+                            "voice_settings": {
+                                "stability": 0.65,
+                                "similarity_boost": 0.8,
+                                "style": 0.3,
+                                "use_speaker_boost": True
+                            }
+                        },
+                        timeout=30.0
+                    )
+                
+                if tts_response.status_code == 200:
+                    audio_bytes = tts_response.content
+                    audio_b64 = base64.b64encode(audio_bytes).decode()
+            except Exception as tts_error:
+                print(f"⚠️ TTS error: {tts_error}")
+        
+        # Send response with audio
         await send_message_to_connection(apigw_client, connection_id, {
             'message_type': 'response',
             'text': response_text,
+            'audio': audio_b64,
+            'audio_base_64': audio_b64,
             'userText': text
         })
-        
-        # Generate TTS audio
-        audio_b64 = _generate_tts_audio(response_text)
-        
-        if audio_b64:
-            await send_message_to_connection(apigw_client, connection_id, {
-                'message_type': 'audio_response',
-                'text': response_text,
-                'audio': audio_b64,
-                'userText': text
-            })
         
     except Exception as e:
         print(f"❌ Error processing text query: {e}")

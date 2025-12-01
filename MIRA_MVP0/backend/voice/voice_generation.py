@@ -2646,8 +2646,8 @@ async def ws_voice_stt(websocket: WebSocket, language_code: str = "en"):
         # ✅ CHECK FOR DASHBOARD NAVIGATION COMMANDS (BEFORE viewing/streaming)
         # Match voice commands like "show mail list", "open settings", "go to calendar"
         nav_patterns = {
-            "emails": re.compile(r"(show|open|view|go to|display|navigate to).*(mail list|email list|emails|inbox)", re.I),
-            "calendar": re.compile(r"(show|open|view|go to|display|navigate to).*(calendar|my calendar|schedule)", re.I),
+            "emails": re.compile(r"(show|open|view|go to|display|navigate to).*(mail list|email list|emails|mails|inbox|my mail|my email)", re.I),
+            "calendar": re.compile(r"(show|open|view|go to|display|navigate to).*(calendar|my calendar|schedule|calendar events)", re.I),
             "settings": re.compile(r"(show|open|view|go to|display|navigate to).*(setting|settings|preferences)", re.I),
             "reminders": re.compile(r"(show|open|view|go to|display|navigate to).*(reminder|reminders|tasks)", re.I),
             "profile": re.compile(r"(show|open|view|go to|display|navigate to).*(profile|account|my profile)", re.I),
@@ -2735,9 +2735,9 @@ async def ws_voice_stt(websocket: WebSocket, language_code: str = "en"):
         
         # ✅ CHECK FOR EMAIL/CALENDAR VIEWING COMMANDS (BEFORE OpenAI streaming)
         # This matches the logic in /text-query endpoint to ensure consistent behavior
-        view_keywords = re.compile(r"(show|view|see|check|what|tell|read|summary|list|display).*(email|inbox|mail|messages|calendar|schedule|event|meeting)", re.I)
-        email_keywords = re.compile(r"(email|inbox|mail|messages)", re.I)
-        calendar_keywords = re.compile(r"(calendar|schedule|event|meeting)", re.I)
+        view_keywords = re.compile(r"(show|view|see|check|what|tell|read|summary|list|display).*(email|inbox|mail|mails|messages|calendar|schedule|event|meeting)", re.I)
+        email_keywords = re.compile(r"(email|inbox|mail|mails|messages)", re.I)
+        calendar_keywords = re.compile(r"(calendar|schedule|event|events|meeting)", re.I)
         has_view_intent = view_keywords.search(text)
         has_email_intent = email_keywords.search(text) and has_view_intent
         has_calendar_intent = calendar_keywords.search(text) and has_view_intent
@@ -2955,9 +2955,9 @@ Mischievous: "Oh, I see what you did there… clever move!"""
         min_tts_length = int(os.getenv("ELEVENLABS_MIN_TTS_LENGTH", "10"))  # Skip TTS for responses < 10 words
         
         if voice_id:
-            # Stream with TTS - using flash model (cheapest), balanced audio quality
-            # Use mp3_44100_64 for good quality/size balance, or mp3_44100_128 for highest quality
-            audio_format = os.getenv("ELEVENLABS_AUDIO_FORMAT", "mp3_44100_64")  # Balanced quality and cost
+            # Stream with TTS - using flash model with high quality audio
+            # Use mp3_44100_192 for high quality (matches greeting quality)
+            audio_format = os.getenv("ELEVENLABS_AUDIO_FORMAT", "mp3_44100_192")  # High quality audio
             # Note: output_format should be in BOS message, not URL for WebSocket streaming
             tts_ws_url = f"wss://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream-input?model_id=eleven_flash_v2_5"
             tts_headers = {"xi-api-key": api_key}
@@ -3185,8 +3185,8 @@ Mischievous: "Oh, I see what you did there… clever move!"""
                         await websocket.send_json({"message_type": "response", "text": response_text})
                     else:
                         el = get_elevenlabs_client()
-                        # Use flash model (cheaper) with balanced audio quality
-                        audio_format = os.getenv("ELEVENLABS_AUDIO_FORMAT", "mp3_44100_64")  # Better quality for fallback TTS
+                        # Use flash model with high quality audio (matches greeting quality)
+                        audio_format = os.getenv("ELEVENLABS_AUDIO_FORMAT", "mp3_44100_192")  # High quality for fallback TTS
                         stream = el.text_to_speech.convert(
                             voice_id=voice_id,
                             model_id="eleven_flash_v2_5",  # Changed from turbo to flash (cheaper)

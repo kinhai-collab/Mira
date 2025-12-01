@@ -2,6 +2,7 @@
 
 /**
  * WebSocket Manager with automatic reconnection, keepalive pings, and connection state management
+ * Optimized for voice pipeline with low-latency requirements
  */
 
 export enum ConnectionState {
@@ -9,6 +10,7 @@ export enum ConnectionState {
 	OPEN = 'OPEN',
 	CLOSED = 'CLOSED',
 	RECONNECTING = 'RECONNECTING',
+	ERROR = 'ERROR',
 }
 
 interface WebSocketManagerConfig {
@@ -17,10 +19,13 @@ interface WebSocketManagerConfig {
 	onMessage: (data: unknown) => void;
 	onStateChange?: (state: ConnectionState) => void;
 	onError?: (error: unknown) => void;
+	onConnectionLost?: () => void;
+	onConnectionRestored?: () => void;
 	maxReconnectAttempts?: number;
 	initialReconnectDelay?: number;
 	pingInterval?: number;
 	pongTimeout?: number;
+	connectTimeout?: number;
 }
 
 export class WebSocketManager {
@@ -28,24 +33,29 @@ export class WebSocketManager {
 	private config: WebSocketManagerConfig;
 	private state: ConnectionState = ConnectionState.CLOSED;
 	private reconnectAttempts = 0;
-	private reconnectTimer: NodeJS.Timeout | null = null;
-	private pingTimer: NodeJS.Timeout | null = null;
-	private pongTimer: NodeJS.Timeout | null = null;
+	private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+	private pingTimer: ReturnType<typeof setInterval> | null = null;
+	private pongTimer: ReturnType<typeof setTimeout> | null = null;
+	private connectTimer: ReturnType<typeof setTimeout> | null = null;
 	private shouldReconnect = true;
 	private messageQueue: unknown[] = [];
+	private wasConnected = false; // Track if we ever connected successfully
+	private lastMessageTime = 0;
 	
 	// Configuration with defaults
 	private readonly maxReconnectAttempts: number;
 	private readonly initialReconnectDelay: number;
 	private readonly pingInterval: number;
 	private readonly pongTimeout: number;
+	private readonly connectTimeout: number;
 
 	constructor(config: WebSocketManagerConfig) {
 		this.config = config;
 		this.maxReconnectAttempts = config.maxReconnectAttempts ?? 10;
 		this.initialReconnectDelay = config.initialReconnectDelay ?? 1000;
-		this.pingInterval = config.pingInterval ?? 30000; // 30 seconds (reduced frequency)
-		this.pongTimeout = config.pongTimeout ?? 20000; // 20 seconds (increased tolerance for slow responses)
+		this.pingInterval = config.pingInterval ?? 25000; // 25 seconds
+		this.pongTimeout = config.pongTimeout ?? 15000; // 15 seconds
+		this.connectTimeout = config.connectTimeout ?? 10000; // 10 seconds connect timeout
 	}
 
 	/**
@@ -70,6 +80,12 @@ export class WebSocketManager {
 			return;
 		}
 		
+		// Clear any existing connect timeout
+		if (this.connectTimer) {
+			clearTimeout(this.connectTimer);
+			this.connectTimer = null;
+		}
+		
 		try {
 			this.updateState(ConnectionState.CONNECTING);
 
@@ -81,15 +97,43 @@ export class WebSocketManager {
 			}
 
 			this.ws = new WebSocket(url);
+			
+			// Set connect timeout
+			this.connectTimer = setTimeout(() => {
+				if (this.state === ConnectionState.CONNECTING) {
+					console.warn('⏱️ WebSocket connect timeout');
+					try { this.ws?.close(); } catch { /* ignore */ }
+					this.updateState(ConnectionState.ERROR);
+					if (this.shouldReconnect && this.reconnectAttempts < this.maxReconnectAttempts) {
+						this.scheduleReconnect();
+					}
+				}
+			}, this.connectTimeout);
 
 			this.ws.onopen = () => {
+				// Clear connect timeout
+				if (this.connectTimer) {
+					clearTimeout(this.connectTimer);
+					this.connectTimer = null;
+				}
+				
 				this.reconnectAttempts = 0;
+				this.lastMessageTime = Date.now();
+				
+				// Notify if this is a reconnection
+				if (this.wasConnected && this.config.onConnectionRestored) {
+					this.config.onConnectionRestored();
+				}
+				this.wasConnected = true;
+				
 				this.updateState(ConnectionState.OPEN);
 				this.startKeepalive();
 				this.flushMessageQueue();
 			};
 
 			this.ws.onmessage = (event) => {
+				this.lastMessageTime = Date.now();
+				
 				try {
 					const data = JSON.parse(event.data);
 					
@@ -102,7 +146,8 @@ export class WebSocketManager {
 					// Forward all other messages
 					this.config.onMessage(data);
 				} catch (err) {
-					console.error('❌ Failed to parse WebSocket message:', err);
+					// Forward raw data if JSON parse fails
+					this.config.onMessage(event.data);
 				}
 			};
 
@@ -114,7 +159,19 @@ export class WebSocketManager {
 			};
 
 			this.ws.onclose = (event) => {
+				// Clear connect timeout
+				if (this.connectTimer) {
+					clearTimeout(this.connectTimer);
+					this.connectTimer = null;
+				}
+				
 				this.stopKeepalive();
+				
+				// Notify if connection was lost unexpectedly
+				if (this.wasConnected && !event.wasClean && this.config.onConnectionLost) {
+					this.config.onConnectionLost();
+				}
+				
 				this.updateState(ConnectionState.CLOSED);
 
 				// Attempt reconnection if enabled
@@ -122,6 +179,7 @@ export class WebSocketManager {
 					this.scheduleReconnect();
 				} else if (this.reconnectAttempts >= this.maxReconnectAttempts) {
 					console.error('❌ Max reconnection attempts reached. Please reconnect manually.');
+					this.updateState(ConnectionState.ERROR);
 				}
 			};
 
@@ -258,6 +316,11 @@ export class WebSocketManager {
 			clearTimeout(this.reconnectTimer);
 			this.reconnectTimer = null;
 		}
+		
+		if (this.connectTimer) {
+			clearTimeout(this.connectTimer);
+			this.connectTimer = null;
+		}
 
 		this.stopKeepalive();
 
@@ -271,6 +334,12 @@ export class WebSocketManager {
 		}
 
 		this.updateState(ConnectionState.CLOSED);
+		
+		// Clear message queue on permanent close
+		if (permanent) {
+			this.messageQueue = [];
+			this.wasConnected = false;
+		}
 	}
 
 	/**
@@ -304,5 +373,36 @@ export class WebSocketManager {
 	 */
 	public clearQueue(): void {
 		this.messageQueue = [];
+	}
+
+	/**
+	 * Get connection health metrics
+	 */
+	public getHealthMetrics(): {
+		state: ConnectionState;
+		reconnectAttempts: number;
+		lastMessageTime: number;
+		queuedMessages: number;
+		timeSinceLastMessage: number;
+	} {
+		return {
+			state: this.state,
+			reconnectAttempts: this.reconnectAttempts,
+			lastMessageTime: this.lastMessageTime,
+			queuedMessages: this.messageQueue.length,
+			timeSinceLastMessage: this.lastMessageTime > 0 ? Date.now() - this.lastMessageTime : -1,
+		};
+	}
+
+	/**
+	 * Check if the connection is healthy (receiving messages)
+	 */
+	public isHealthy(): boolean {
+		if (this.state !== ConnectionState.OPEN) return false;
+		if (this.lastMessageTime === 0) return true; // Just connected
+		
+		// Consider unhealthy if no message for 2x ping interval
+		const unhealthyThreshold = this.pingInterval * 2;
+		return Date.now() - this.lastMessageTime < unhealthyThreshold;
 	}
 }

@@ -1,5 +1,6 @@
 // Realtime WebAudio -> WebSocket STT client
-// - Captures microphone via getUserMedia
+// - Captures microphone via getUserMedia with optimized constraints
+// - Uses AudioWorklet for low-latency, glitch-free processing (with ScriptProcessor fallback)
 // - Mixes to mono, resamples to 16000 Hz, converts to PCM16 little-endian
 // - Chunks into fixed-size byte frames (default 4096) and sends JSON messages:
 //   { message_type: 'input_audio_chunk', audio_base_64: '<base64>', commit: false|true, sample_rate: 16000 }
@@ -9,7 +10,7 @@ import { WebSocketManager, ConnectionState } from './WebSocketManager';
 import { normalizeWebSocketUrl } from './websocketUrl';
 
 type RealtimeOptions = {
-  wsUrl?: string; // e.g. 'ws://127.0.0.1:8000/api/ws/voice-stt'
+  wsUrl?: string;
   token?: string | null;
   chunkSize?: number; // bytes per chunk
   onMessage?: (msg: unknown) => void;
@@ -21,6 +22,17 @@ type RealtimeOptions = {
   onAudioFinal?: () => void;
   onResponse?: (text: string, base64Audio?: string | null) => void;
   onStateChange?: (state: ConnectionState) => void;
+  onVAD?: (speaking: boolean, rms: number) => void;
+};
+
+// Optimized audio constraints for voice input
+const AUDIO_CONSTRAINTS: MediaTrackConstraints = {
+  echoCancellation: true,
+  noiseSuppression: true,
+  autoGainControl: true,
+  // Request specific sample rate if supported
+  sampleRate: { ideal: 48000 },
+  channelCount: { ideal: 1 },
 };
 
 export function arrayBufferToBase64(ab: ArrayBuffer): string {
@@ -34,6 +46,7 @@ export function arrayBufferToBase64(ab: ArrayBuffer): string {
   return btoa(result);
 }
 
+// Legacy resampling function for ScriptProcessor fallback
 function resampleFloat32ToInt16(input: Float32Array, inputRate: number, outputRate: number): Int16Array {
   if (input.length === 0) return new Int16Array(0);
   if (inputRate === outputRate) {
@@ -70,31 +83,38 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
     onOpen,
     onError,
     onStateChange,
+    onVAD,
   } = opts;
   
-  // Normalize WebSocket URL to use wss:// when page is loaded over HTTPS
   const wsUrl = normalizeWebSocketUrl(rawWsUrl);
-    
-    // new streaming callbacks
-    const onPartialResponse = opts.onPartialResponse;
-    const onAudioChunk = opts.onAudioChunk;
-    const onAudioFinal = opts.onAudioFinal;
-    const onResponse = opts.onResponse;
+  const onPartialResponse = opts.onPartialResponse;
+  const onAudioChunk = opts.onAudioChunk;
+  const onAudioFinal = opts.onAudioFinal;
+  const onResponse = opts.onResponse;
 
   let wsManager: WebSocketManager | null = null;
   let stream: MediaStream | null = null;
   let audioCtx: AudioContext | null = null;
   let sourceNode: MediaStreamAudioSourceNode | null = null;
+  
+  // AudioWorklet nodes
+  let workletNode: AudioWorkletNode | null = null;
+  
+  // Fallback ScriptProcessor nodes
   let processor: ScriptProcessorNode | null = null;
+  
   let isStreaming = false;
   let bufferedBytes = new Uint8Array(0);
-  // VAD (voice activity detection) state
+  let useWorklet = false;
+  
+  // VAD state for fallback mode
   let lastSpeechTimestamp = 0;
   let committedDueToSilence = false;
-  const silenceThreshold = 0.01; // RMS threshold roughly (tuneable)
-  const silenceTimeoutMs = 1200; // commit after 1.2s of silence
+  const silenceThreshold = 0.008; // Tuned threshold
+  const silenceTimeoutMs = 1200;
 
   function appendBytes(newBytes: Uint8Array) {
+    // Efficient buffer management - reuse when possible
     const tmp = new Uint8Array(bufferedBytes.length + newBytes.length);
     tmp.set(bufferedBytes, 0);
     tmp.set(newBytes, bufferedBytes.length);
@@ -107,88 +127,57 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
 
   function handleWebSocketMessage(parsed: Record<string, unknown>) {
     const msgType = parsed.message_type || parsed.type || parsed.event;
-    
 
-    // Handle pong - already handled by WebSocketManager
-    if (msgType === 'pong') {
-      return;
-    }
+    if (msgType === 'pong') return;
 
-    // New handlers for incremental streaming responses/audio
+    // Handle streaming responses
     if (msgType === 'partial_response') {
-      // Skip empty partial responses
       const text = typeof parsed.text === 'string' ? parsed.text : '';
-      if (!text || !text.trim()) {
-        return; // Don't process empty partial responses
-      }
-      try { if (onPartialResponse) onPartialResponse(text); } catch {
-        // Ignore errors in partial response handler
-      }
+      if (!text || !text.trim()) return;
+      try { if (onPartialResponse) onPartialResponse(text); } catch { /* ignore */ }
     } else if (msgType === 'audio_chunk') {
-      // support both `audio_base_64` and `audio` field names
       const audioB64 = (typeof parsed.audio_base_64 === 'string' ? parsed.audio_base_64 : null) ||
                        (typeof parsed.audio === 'string' ? parsed.audio : null) ||
-                       (typeof parsed.audio_base64 === 'string' ? parsed.audio_base64 : null) ||
-                       null;
-      try { if (onAudioChunk && audioB64) onAudioChunk(audioB64); } catch (error) { console.error('[realtimeSttClient] onAudioChunk error:', error); }
+                       (typeof parsed.audio_base64 === 'string' ? parsed.audio_base64 : null);
+      try { if (onAudioChunk && audioB64) onAudioChunk(audioB64); } catch (e) { console.error('[realtimeSttClient] onAudioChunk error:', e); }
     } else if (msgType === 'audio_final') {
-      try { if (onAudioFinal) onAudioFinal(); } catch (error) { console.error('[realtimeSttClient] onAudioFinal error:', error); }
+      try { if (onAudioFinal) onAudioFinal(); } catch (e) { console.error('[realtimeSttClient] onAudioFinal error:', e); }
     } else if (msgType === 'response') {
       const audioB64 = (typeof parsed.audio_base_64 === 'string' ? parsed.audio_base_64 : null) ||
                        (typeof parsed.audio === 'string' ? parsed.audio : null) ||
-                       (typeof parsed.audio_base64 === 'string' ? parsed.audio_base64 : null) ||
-                       null;
+                       (typeof parsed.audio_base64 === 'string' ? parsed.audio_base64 : null);
       const responseText = typeof parsed.text === 'string' ? parsed.text : '';
-      try { if (onResponse) onResponse(responseText, audioB64); } catch (error) { console.error('[realtimeSttClient] onResponse error:', error); }
-      // Note: Full parsed object (with action/actionData) is automatically forwarded to onMessage below
-      // since 'response' is not in the alreadyHandled list
+      try { if (onResponse) onResponse(responseText, audioB64); } catch (e) { console.error('[realtimeSttClient] onResponse error:', e); }
     }
 
-    // Existing STT/transcript and server message handling
+    // Handle transcripts
     if (msgType === 'session_started') {
-      // Session started - no logging needed
+      // Session ready
     } else if (msgType === 'partial_transcript' || msgType === 'transcription' || msgType === 'partial_transcription') {
-      // support `transcription` message_type forwarded from backend (partial or final)
-      // Reduced logging - partial transcripts are noisy
-      try { if (onMessage) onMessage(parsed); } catch {
-        // Ignore errors in message handler
-      }
-    } else if (msgType === 'committed_transcript' || msgType === 'committed_transcript_with_timestamps' || msgType === 'transcription' || msgType === 'transcribed' || msgType === 'final_transcript') {
-      const transcriptText = (typeof parsed.text === 'string' ? parsed.text : null) || (typeof parsed.partial === 'string' ? parsed.partial : null) || null;
-      // Skip empty/null transcripts to prevent glitches
-      if (!transcriptText || !transcriptText.trim()) {
-        return; // Don't forward empty transcripts - exit early
-      }
-      // Forward valid transcript to onMessage handler
-      try { if (onMessage) onMessage(parsed); } catch {
-        // Ignore errors in message handler
-      }
-      return; // Don't forward again at the end
-    } else if (msgType === 'error') {
-      // Error logged below
-    } else if (msgType === 'quota_exceeded_error') {
-      // Error logged below
+      try { if (onMessage) onMessage(parsed); } catch { /* ignore */ }
+    } else if (msgType === 'committed_transcript' || msgType === 'committed_transcript_with_timestamps' || 
+               msgType === 'transcribed' || msgType === 'final_transcript') {
+      const transcriptText = (typeof parsed.text === 'string' ? parsed.text : null) || 
+                            (typeof parsed.partial === 'string' ? parsed.partial : null);
+      if (!transcriptText || !transcriptText.trim()) return;
+      try { if (onMessage) onMessage(parsed); } catch { /* ignore */ }
+      return;
     }
 
-    // Check for errors - distinguish between server errors and ElevenLabs (upstream) errors
+    // Handle errors
     if (parsed.error || msgType === 'auth_error' || parsed.error_message) {
       const errorMsg = typeof parsed.error === 'string' ? parsed.error :
                        typeof parsed.message === 'string' ? parsed.message :
                        typeof parsed.error_message === 'string' ? parsed.error_message :
                        'Unknown error';
-
       if (msgType === 'auth_error' || errorMsg.includes('authenticated') || errorMsg.includes('ElevenLabs')) {
-        console.error('[realtimeSttClient] ⚠️ ElevenLabs authentication error (upstream):', errorMsg);
-        console.error('[realtimeSttClient] This means the server\'s ELEVENLABS_API_KEY is missing, invalid, or expired.');
-        console.error('[realtimeSttClient] Check: 1) Server .env has ELEVENLABS_API_KEY=sk_... 2) Server was restarted after .env changes 3) Key is valid for ElevenLabs realtime STT');
+        console.error('[realtimeSttClient] ElevenLabs auth error:', errorMsg);
       } else {
         console.error('[realtimeSttClient] Server error:', errorMsg);
       }
     }
 
-    // Forward the raw parsed message to the general onMessage handler
-    // BUT skip if we've already handled it above (committed_transcript, partial_response, etc.)
-    // This prevents duplicate processing
+    // Forward unhandled messages
     const alreadyHandled = (
       msgType === 'committed_transcript' || 
       msgType === 'committed_transcript_with_timestamps' || 
@@ -199,62 +188,36 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
     );
     
     if (!alreadyHandled) {
-      try { 
-        if (onMessage) {
-          onMessage(parsed);
-        }
-      } catch {
-        // Ignore errors in message handler
-      }
+      try { if (onMessage) onMessage(parsed); } catch { /* ignore */ }
     }
   }
 
   async function ensureWebSocket() {
     if (wsManager && wsManager.isReady()) return;
     
-    // Don't connect if document is not ready
-    if (typeof document !== 'undefined' && document.readyState === 'loading') {
-      return;
-    }
+    if (typeof document !== 'undefined' && document.readyState === 'loading') return;
     
-    // Create WebSocketManager with automatic reconnection
     wsManager = new WebSocketManager({
       wsUrl,
       token,
       onMessage: (data) => {
         try {
-          // Handle both parsed JSON and raw data
           if (typeof data === 'string') {
             try {
               const parsed = JSON.parse(data);
               handleWebSocketMessage(parsed);
             } catch {
-              if (onMessage) {
-                onMessage(data);
-              }
+              if (onMessage) onMessage(data);
             }
           } else if (data instanceof ArrayBuffer) {
-            // Binary audio data
-            try {
-              const b64 = arrayBufferToBase64(data);
-              if (onAudioChunk) {
-                try { onAudioChunk(b64); } catch {
-                  // Ignore errors in audio chunk handler
-                }
-              }
-              if (onMessage) {
-                try { onMessage({ message_type: 'audio_chunk', audio_base_64: b64 }); } catch {
-                  // Ignore errors in message handler
-                }
-              }
-            } catch (error) {
-              console.warn('[realtimeSttClient] Failed to convert binary audio to base64', error);
-              if (onMessage) {
-                onMessage(data);
-              }
+            const b64 = arrayBufferToBase64(data);
+            if (onAudioChunk) {
+              try { onAudioChunk(b64); } catch { /* ignore */ }
+            }
+            if (onMessage) {
+              try { onMessage({ message_type: 'audio_chunk', audio_base_64: b64 }); } catch { /* ignore */ }
             }
           } else if (isRecord(data)) {
-            // Already parsed JSON
             handleWebSocketMessage(data);
           }
         } catch (error) {
@@ -262,29 +225,21 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
         }
       },
       onStateChange: (state) => {
-        if (onStateChange) {
-          onStateChange(state);
-        }
+        if (onStateChange) onStateChange(state);
         if (state === ConnectionState.OPEN) {
-          // Send auth message when connected
           if (token) {
             try {
-              const authMsg = { type: 'authorization', token };
-              wsManager?.send(authMsg);
-            } catch (error) {
-              console.error('[realtimeSttClient] Failed to send auth message', error);
+              wsManager?.send({ type: 'authorization', token });
+            } catch (e) {
+              console.error('[realtimeSttClient] Failed to send auth:', e);
             }
           }
-          if (onOpen) {
-            onOpen();
-          }
+          if (onOpen) onOpen();
         }
       },
       onError: (err) => {
         console.error('[realtimeSttClient] WebSocket error:', err);
-        if (onError) {
-          onError(err);
-        }
+        if (onError) onError(err);
       },
       maxReconnectAttempts: 10,
       initialReconnectDelay: 1000,
@@ -295,184 +250,241 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
     await wsManager.connect();
   }
 
+  async function initAudioWorklet(ctx: AudioContext): Promise<boolean> {
+    try {
+      // Check if AudioWorklet is supported
+      if (!ctx.audioWorklet) {
+        console.log('[realtimeSttClient] AudioWorklet not supported, using fallback');
+        return false;
+      }
+      
+      await ctx.audioWorklet.addModule('/audio-processor.worklet.js');
+      return true;
+    } catch (e) {
+      console.warn('[realtimeSttClient] AudioWorklet init failed, using fallback:', e);
+      return false;
+    }
+  }
+
   async function start() {
     if (isStreaming) return;
     isStreaming = true;
     bufferedBytes = new Uint8Array(0);
+    lastSpeechTimestamp = 0;
+    committedDueToSilence = false;
 
     await ensureWebSocket();
 
-    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    // Get microphone with optimized constraints
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: AUDIO_CONSTRAINTS 
+      });
+    } catch (e) {
+      // Fallback to basic audio if constraints fail
+      console.warn('[realtimeSttClient] Advanced audio constraints failed, using basic:', e);
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    }
+
     const AudioCtx = (window.AudioContext || (window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext) as typeof AudioContext;
     audioCtx = new AudioCtx();
     if (!audioCtx) throw new Error('Failed to create AudioContext');
+    
     sourceNode = audioCtx.createMediaStreamSource(stream);
-
     const inputSampleRate = audioCtx.sampleRate || 48000;
-    const procBufferSize = 4096;
-    processor = audioCtx.createScriptProcessor(procBufferSize, sourceNode.channelCount || 1, 1);
 
-    processor.onaudioprocess = (ev: AudioProcessingEvent) => {
-      try {
-        const inBuf = ev.inputBuffer;
-        const numCh = inBuf.numberOfChannels;
-        const length = inBuf.length;
-        const mono = new Float32Array(length);
-        if (numCh === 1) mono.set(inBuf.getChannelData(0));
-        else {
-          for (let c = 0; c < numCh; c++) {
-            const ch = inBuf.getChannelData(c);
-            for (let i = 0; i < length; i++) mono[i] += ch[i] / numCh;
-          }
+    // Try to use AudioWorklet first
+    useWorklet = await initAudioWorklet(audioCtx);
+    
+    if (useWorklet) {
+      // Modern path: AudioWorklet (runs on separate thread)
+      workletNode = new AudioWorkletNode(audioCtx, 'audio-capture-processor', {
+        processorOptions: {
+          targetSampleRate: 16000,
+          silenceThreshold: silenceThreshold,
+          silenceTimeoutMs: silenceTimeoutMs,
         }
+      });
+      
+      workletNode.port.onmessage = async (event) => {
+        const { type, pcm16, rms, speaking } = event.data;
+        
+        if (type === 'vad' && onVAD) {
+          onVAD(speaking, rms);
+        } else if (type === 'silenceCommit') {
+          // Auto-commit on silence
+          try {
+            await flushChunks(true);
+            if (wsManager && wsManager.isReady()) {
+              wsManager.send({ type: 'transcribe', response_format: 'verbose' });
+            }
+          } catch (e) {
+            if (onError) onError(e);
+          }
+        } else if (type === 'audio' && pcm16) {
+          // Received PCM16 audio data
+          const bytes = new Uint8Array(pcm16);
+          appendBytes(bytes);
+          void flushChunks(false);
+        }
+      };
+      
+      sourceNode.connect(workletNode);
+      workletNode.connect(audioCtx.destination);
+      
+    } else {
+      // Fallback path: ScriptProcessorNode (deprecated but widely supported)
+      const procBufferSize = 4096;
+      processor = audioCtx.createScriptProcessor(procBufferSize, sourceNode.channelCount || 1, 1);
 
-        // Simple VAD: compute RMS on the mono buffer
+      processor.onaudioprocess = (ev: AudioProcessingEvent) => {
         try {
+          const inBuf = ev.inputBuffer;
+          const numCh = inBuf.numberOfChannels;
+          const length = inBuf.length;
+          const mono = new Float32Array(length);
+          
+          if (numCh === 1) {
+            mono.set(inBuf.getChannelData(0));
+          } else {
+            for (let c = 0; c < numCh; c++) {
+              const ch = inBuf.getChannelData(c);
+              for (let i = 0; i < length; i++) mono[i] += ch[i] / numCh;
+            }
+          }
+
+          // VAD
           let sum = 0;
           for (let i = 0; i < mono.length; i++) {
-            const s = mono[i];
-            sum += s * s;
+            sum += mono[i] * mono[i];
           }
           const rms = Math.sqrt(sum / Math.max(1, mono.length));
           const now = Date.now();
+          
           if (rms > silenceThreshold) {
             lastSpeechTimestamp = now;
-            // user spoke again, allow future commits
             committedDueToSilence = false;
+            if (onVAD) onVAD(true, rms);
           } else {
-            // If we've been silent long enough, auto-commit
             if (lastSpeechTimestamp > 0 && now - lastSpeechTimestamp > silenceTimeoutMs && !committedDueToSilence) {
               committedDueToSilence = true;
-              // Flush any buffered chunks and send a final commit; do not close the WS
-                void (async () => {
+              void (async () => {
                 try {
                   await flushChunks(true);
-                  try {
-                    if (wsManager && wsManager.isReady()) {
-                      wsManager.send({ type: 'transcribe', response_format: 'verbose' });
-                    }
-                  } catch {
-                    // Ignore errors when sending transcribe message
+                  if (wsManager && wsManager.isReady()) {
+                    wsManager.send({ type: 'transcribe', response_format: 'verbose' });
                   }
-                } catch (error) {
-                  if (onError) {
-                    onError(error);
-                  }
+                } catch (e) {
+                  if (onError) onError(e);
                 }
               })();
             }
           }
-        } catch {
-          // continue if VAD fails
+
+          const int16 = resampleFloat32ToInt16(mono, inputSampleRate, 16000);
+          const bytes = new Uint8Array(int16.buffer);
+          appendBytes(bytes);
+          void flushChunks(false);
+        } catch (err) {
+          if (onError) onError(err);
         }
+      };
 
-        const int16 = resampleFloat32ToInt16(mono, inputSampleRate, 16000);
-        const bytes = new Uint8Array(int16.buffer);
-        // append to internal buffer and attempt to send slices
-        appendBytes(bytes);
-        void flushChunks(false);
-      } catch (err) {
-        onError && onError(err);
-      }
-    };
-
-    sourceNode.connect(processor);
-    processor.connect(audioCtx.destination);
+      sourceNode.connect(processor);
+      processor.connect(audioCtx.destination);
+    }
   }
 
   async function flushChunks(commit: boolean) {
     if (!wsManager || !wsManager.isReady()) return;
+    
     while (bufferedBytes.length >= chunkSize) {
       const chunk = bufferedBytes.subarray(0, chunkSize);
       bufferedBytes = bufferedBytes.subarray(chunkSize);
-      await sendChunk(chunk.buffer, false);
+      await sendChunk(chunk.buffer.slice(chunk.byteOffset, chunk.byteOffset + chunk.byteLength), false);
     }
+    
     if (commit) {
-      // Send any remaining buffered bytes with commit: false
       if (bufferedBytes.length > 0) {
         const final = bufferedBytes;
         bufferedBytes = new Uint8Array(0);
-        await sendChunk(final.buffer, false);
+        await sendChunk(final.buffer.slice(final.byteOffset, final.byteOffset + final.byteLength), false);
       }
-      // Then send the final empty commit message
       await sendChunk(new ArrayBuffer(0), true);
     }
   }
 
   async function sendChunk(ab: ArrayBuffer, commit: boolean) {
-    if (!wsManager || !wsManager.isReady()) {
-      return;
-    }
-    const b64 = commit ? '' : arrayBufferToBase64(ab); // Empty string for final commit chunk
+    if (!wsManager || !wsManager.isReady()) return;
+    
+    const b64 = commit ? '' : arrayBufferToBase64(ab);
     const msg = {
       message_type: 'input_audio_chunk',
       audio_base_64: b64,
       commit: !!commit,
       sample_rate: 16000,
     };
+    
     try {
       wsManager.send(msg);
-      } catch (error) {
-        console.error('[realtimeSttClient] Error sending chunk:', error);
-        if (onError) {
-          onError(error);
-        }
-        return;
-      }
-    // Note: WebSocketManager doesn't expose bufferedAmount, but it has internal queue management
-    // backpressure is handled by the manager
-    await new Promise((r) => setTimeout(r, 10)); // Small delay for flow control
+    } catch (error) {
+      console.error('[realtimeSttClient] Error sending chunk:', error);
+      if (onError) onError(error);
+      return;
+    }
+    
+    // Small delay for flow control
+    await new Promise((r) => setTimeout(r, 5));
   }
 
   async function stop() {
     if (!isStreaming) return;
     isStreaming = false;
+    
     try {
-      // flush and send final commit (empty audio_base_64 with commit:true)
       await flushChunks(true);
-      // Optionally request transcription after commit
-      try { 
-        if (wsManager && wsManager.isReady()) {
-          wsManager.send({ type: 'transcribe', response_format: 'verbose' }); 
-        }
-      } catch {}
+      if (wsManager && wsManager.isReady()) {
+        wsManager.send({ type: 'transcribe', response_format: 'verbose' });
+      }
     } catch (error) {
-      if (onError) {
-        onError(error);
-      }
+      if (onError) onError(error);
     }
 
-    try {
-      if (processor) {
-        try { processor.disconnect(); } catch {}
-        processor.onaudioprocess = null as unknown as ((this: ScriptProcessorNode, ev: AudioProcessingEvent) => void) | null;
-        processor = null;
-      }
-      if (sourceNode) {
-        try { sourceNode.disconnect(); } catch {
-          // Ignore disconnect errors
-        }
-        sourceNode = null;
-      }
-      if (audioCtx) {
-        try { await audioCtx.close(); } catch {}
-        audioCtx = null;
-      }
-      if (stream) {
-        stream.getTracks().forEach((t) => t.stop());
-        stream = null;
-      }
-    } catch {
-      // swallow
+    // Cleanup AudioWorklet
+    if (workletNode) {
+      try {
+        workletNode.port.postMessage({ type: 'reset' });
+        workletNode.disconnect();
+      } catch { /* ignore */ }
+      workletNode = null;
+    }
+    
+    // Cleanup ScriptProcessor
+    if (processor) {
+      try { processor.disconnect(); } catch { /* ignore */ }
+      processor.onaudioprocess = null as unknown as ((this: ScriptProcessorNode, ev: AudioProcessingEvent) => void) | null;
+      processor = null;
+    }
+    
+    if (sourceNode) {
+      try { sourceNode.disconnect(); } catch { /* ignore */ }
+      sourceNode = null;
+    }
+    
+    if (audioCtx) {
+      try { await audioCtx.close(); } catch { /* ignore */ }
+      audioCtx = null;
+    }
+    
+    if (stream) {
+      stream.getTracks().forEach((t) => t.stop());
+      stream = null;
     }
 
-    try {
-      if (wsManager) {
-        // Disable auto-reconnect when stopping - only reconnect if user explicitly starts voice again
-        wsManager.close(true); // Close and prevent auto-reconnection
-        wsManager = null;
-      }
-    } catch {}
+    if (wsManager) {
+      wsManager.close(true);
+      wsManager = null;
+    }
   }
 
   return {
@@ -483,3 +495,4 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
     forceReconnect: () => wsManager?.forceReconnect(),
   };
 }
+
