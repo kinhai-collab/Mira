@@ -97,16 +97,13 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
     bufferedBytes = tmp;
   }
 
+  function isRecord(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+  }
+
   function handleWebSocketMessage(parsed: Record<string, unknown>) {
     const msgType = parsed.message_type || parsed.type || parsed.event;
     
-    // Debug: Log all incoming JSON messages
-    console.log('[realtimeSttClient] 📨 JSON message:', {
-      msgType,
-      hasAudio: !!(parsed.audio || parsed.audio_base_64 || parsed.audio_base64),
-      audioField: parsed.audio ? 'audio' : parsed.audio_base_64 ? 'audio_base_64' : parsed.audio_base64 ? 'audio_base64' : 'none',
-      keys: Object.keys(parsed)
-    });
 
     // Handle pong - already handled by WebSocketManager
     if (msgType === 'pong') {
@@ -120,7 +117,6 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
       if (!text || !text.trim()) {
         return; // Don't process empty partial responses
       }
-      console.log('[realtimeSttClient] 📝 partial_response detected');
       try { if (onPartialResponse) onPartialResponse(text); } catch {
         // Ignore errors in partial response handler
       }
@@ -130,20 +126,14 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
                        (typeof parsed.audio === 'string' ? parsed.audio : null) ||
                        (typeof parsed.audio_base64 === 'string' ? parsed.audio_base64 : null) ||
                        null;
-      console.log('[realtimeSttClient] 🔊 audio_chunk detected! Has audio:', !!audioB64, 'Length:', audioB64?.length || 0);
       try { if (onAudioChunk && audioB64) onAudioChunk(audioB64); } catch (error) { console.error('[realtimeSttClient] onAudioChunk error:', error); }
     } else if (msgType === 'audio_final') {
-      console.log('[realtimeSttClient] 🏁 audio_final detected!');
       try { if (onAudioFinal) onAudioFinal(); } catch (error) { console.error('[realtimeSttClient] onAudioFinal error:', error); }
     } else if (msgType === 'response') {
       const audioB64 = (typeof parsed.audio_base_64 === 'string' ? parsed.audio_base_64 : null) ||
                        (typeof parsed.audio === 'string' ? parsed.audio : null) ||
                        (typeof parsed.audio_base64 === 'string' ? parsed.audio_base64 : null) ||
                        null;
-      // Only log response details if it has action or is important
-      if (parsed.action || !audioB64) {
-        console.log('[realtimeSttClient] 💬 response detected! Has audio:', !!audioB64, 'Has action:', !!parsed.action);
-      }
       const responseText = typeof parsed.text === 'string' ? parsed.text : '';
       try { if (onResponse) onResponse(responseText, audioB64); } catch (error) { console.error('[realtimeSttClient] onResponse error:', error); }
       // Note: Full parsed object (with action/actionData) is automatically forwarded to onMessage below
@@ -163,14 +153,7 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
       const transcriptText = (typeof parsed.text === 'string' ? parsed.text : null) || (typeof parsed.partial === 'string' ? parsed.partial : null) || null;
       // Skip empty/null transcripts to prevent glitches
       if (!transcriptText || !transcriptText.trim()) {
-        console.debug('[realtimeSttClient] ⏭️ Skipping empty committed transcript');
         return; // Don't forward empty transcripts - exit early
-      }
-      // Only log if transcript is meaningful (not fragments from VAD splitting)
-      if (transcriptText.length > 10) {
-        console.log('[realtimeSttClient] ✅ Committed transcript:', transcriptText);
-      } else {
-        console.debug('[realtimeSttClient] 📝 Short transcript (likely fragment):', transcriptText);
       }
       // Forward valid transcript to onMessage handler
       try { if (onMessage) onMessage(parsed); } catch {
@@ -178,9 +161,9 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
       }
       return; // Don't forward again at the end
     } else if (msgType === 'error') {
-      console.error('[realtimeSttClient] ElevenLabs error:', parsed.error);
+      // Error logged below
     } else if (msgType === 'quota_exceeded_error') {
-      console.error('[realtimeSttClient] ⚠️ ElevenLabs quota exceeded:', parsed.error);
+      // Error logged below
     }
 
     // Check for errors - distinguish between server errors and ElevenLabs (upstream) errors
@@ -227,11 +210,8 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
     
     // Don't connect if document is not ready
     if (typeof document !== 'undefined' && document.readyState === 'loading') {
-      console.warn('[realtimeSttClient] Skipping WebSocket connection - document still loading');
       return;
     }
-    
-    console.log('[realtimeSttClient] Creating WebSocket connection...');
     
     // Create WebSocketManager with automatic reconnection
     wsManager = new WebSocketManager({
@@ -245,14 +225,12 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
               const parsed = JSON.parse(data);
               handleWebSocketMessage(parsed);
             } catch {
-              console.log('[realtimeSttClient] Received non-JSON message:', data);
               if (onMessage) {
                 onMessage(data);
               }
             }
           } else if (data instanceof ArrayBuffer) {
             // Binary audio data
-            console.log('[realtimeSttClient] Received binary message, length:', data.byteLength);
             try {
               const b64 = arrayBufferToBase64(data);
               if (onAudioChunk) {
@@ -271,7 +249,7 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
                 onMessage(data);
               }
             }
-          } else if (typeof data === 'object') {
+          } else if (isRecord(data)) {
             // Already parsed JSON
             handleWebSocketMessage(data);
           }
@@ -280,7 +258,6 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
         }
       },
       onStateChange: (state) => {
-        console.log('[realtimeSttClient] Connection state:', state);
         if (onStateChange) {
           onStateChange(state);
         }
@@ -289,7 +266,6 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
           if (token) {
             try {
               const authMsg = { type: 'authorization', token };
-              console.log('[realtimeSttClient] Sending auth message');
               wsManager?.send(authMsg);
             } catch (error) {
               console.error('[realtimeSttClient] Failed to send auth message', error);
@@ -421,7 +397,6 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
 
   async function sendChunk(ab: ArrayBuffer, commit: boolean) {
     if (!wsManager || !wsManager.isReady()) {
-      console.warn('[realtimeSttClient] Cannot send chunk - WebSocket not ready');
       return;
     }
     const b64 = commit ? '' : arrayBufferToBase64(ab); // Empty string for final commit chunk
@@ -432,13 +407,6 @@ export function createRealtimeSttClient(opts: RealtimeOptions = {}) {
       sample_rate: 16000,
     };
     try {
-      if (commit || ab.byteLength > 0) {
-        console.debug('[realtimeSttClient] Sending chunk:', {
-          commit,
-          audioLength: ab.byteLength,
-          b64Length: b64.length,
-        });
-      }
       wsManager.send(msg);
       } catch (error) {
         console.error('[realtimeSttClient] Error sending chunk:', error);

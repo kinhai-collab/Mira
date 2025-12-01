@@ -1286,6 +1286,17 @@ async def _call_calendar_action_endpoint(
     using the same Authorization token that the voice request received.
     """
     base_url = os.getenv("API_BASE_URL", "http://127.0.0.1:8000")
+    
+    # Normalize base_url - ensure it doesn't have trailing slash
+    base_url = base_url.rstrip("/")
+    
+    # Validate base_url format
+    if not base_url.startswith(("http://", "https://")):
+        print(f"⚠️ Invalid API_BASE_URL format: {base_url}, defaulting to http://127.0.0.1:8000")
+        base_url = "http://127.0.0.1:8000"
+    
+    full_url = f"{base_url}{endpoint}"
+    print(f"🔗 Calling calendar endpoint: {full_url}")
 
     if not auth_header:
         raise HTTPException(status_code=401, detail="Missing Authorization header for calendar action")
@@ -1295,8 +1306,19 @@ async def _call_calendar_action_endpoint(
         "Content-Type": "application/json",
     }
 
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        resp = await client.post(f"{base_url}{endpoint}", headers=headers, json=payload)
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(full_url, headers=headers, json=payload)
+    except httpx.ConnectError as e:
+        error_msg = f"Failed to connect to calendar API at {full_url}. "
+        error_msg += f"Error: {str(e)}. "
+        error_msg += "Please check that API_BASE_URL is correct and the server is running."
+        print(f"❌ {error_msg}")
+        raise HTTPException(status_code=503, detail=error_msg)
+    except Exception as e:
+        error_msg = f"Unexpected error calling calendar API: {str(e)}"
+        print(f"❌ {error_msg}")
+        raise HTTPException(status_code=500, detail=error_msg)
 
     if resp.status_code >= 400:
         # Try to parse error detail for better error messages
