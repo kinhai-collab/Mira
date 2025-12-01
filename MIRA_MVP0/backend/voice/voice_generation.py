@@ -91,7 +91,7 @@ def cache_openai_response(prompt: str, response: str, user_id: str = None, **kwa
         'response': response,
         'timestamp': time.time()
     }
-    logging.info(f"💾 Cached OpenAI response for user {user_id}")
+    logging.debug(f"💾 Cached OpenAI response for user {user_id}")
 
 def get_cached_tts_audio(text: str, voice_id: str = None, **kwargs) -> Optional[str]:
     """Get cached TTS audio (base64) if available"""
@@ -111,26 +111,30 @@ def cache_tts_audio(text: str, audio_base64: str, voice_id: str = None, **kwargs
         'audio': audio_base64,
         'timestamp': time.time()
     }
-    logging.info(f"💾 Cached TTS audio for text: {text[:50]}...")
+    logging.debug(f"💾 Cached TTS audio for text: {text[:50]}...")
 
-def get_cached_dashboard_data(user_id: str) -> Optional[tuple]:
-    """Get cached dashboard data if available"""
+def get_cached_dashboard_data(user_id: str, has_email: bool = False, has_calendar: bool = False) -> Optional[tuple]:
+    """Get cached dashboard data if available - cache key includes what data was requested"""
     _cleanup_old_cache_entries(_dashboard_cache, _dashboard_cache_ttl)
-    if user_id in _dashboard_cache:
-        entry = _dashboard_cache[user_id]
+    # Create cache key that includes what data is being requested
+    cache_key = f"{user_id}|email:{has_email}|calendar:{has_calendar}"
+    if cache_key in _dashboard_cache:
+        entry = _dashboard_cache[cache_key]
         if time.time() - entry['timestamp'] < _dashboard_cache_ttl:
-            logging.info(f"✅ Dashboard cache HIT for user {user_id}")
+            logging.info(f"✅ Dashboard cache HIT for user {user_id} (email:{has_email}, calendar:{has_calendar})")
             return entry['emails'], entry['calendar_events']
     return None
 
-def cache_dashboard_data(user_id: str, emails: List, calendar_events: List):
-    """Cache dashboard data"""
-    _dashboard_cache[user_id] = {
+def cache_dashboard_data(user_id: str, emails: List, calendar_events: List, has_email: bool = False, has_calendar: bool = False):
+    """Cache dashboard data - cache key includes what data was requested"""
+    # Create cache key that includes what data is being requested
+    cache_key = f"{user_id}|email:{has_email}|calendar:{has_calendar}"
+    _dashboard_cache[cache_key] = {
         'emails': emails,
         'calendar_events': calendar_events,
         'timestamp': time.time()
     }
-    logging.info(f"💾 Cached dashboard data for user {user_id}")
+    logging.debug(f"💾 Cached dashboard data for user {user_id} (email:{has_email}, calendar:{has_calendar})")
 
 # ============================================================================
 # End of Caching Infrastructure
@@ -727,7 +731,7 @@ async def fetch_dashboard_data(user_token: str, has_email: bool, has_calendar: b
     """
     Fetches live Gmail and Calendar data for the logged-in user.
     Calls internal dashboard endpoints with authentication.
-    OPTIMIZED: Uses 30-second cache to prevent redundant API calls.
+    Uses a short-lived cache (30 seconds) to prevent redundant API calls.
     """
     # Extract user ID for cache key
     user_id = None
@@ -736,9 +740,9 @@ async def fetch_dashboard_data(user_token: str, has_email: bool, has_calendar: b
     except Exception:
         pass
     
-    # Check cache first (30-second TTL)
+    # Check cache first (30-second TTL) - cache key includes what data is requested
     if user_id:
-        cached_data = get_cached_dashboard_data(user_id)
+        cached_data = get_cached_dashboard_data(user_id, has_email, has_calendar)
         if cached_data:
             return cached_data  # Return cached emails, calendar_events
     
@@ -775,8 +779,6 @@ async def fetch_dashboard_data(user_token: str, has_email: bool, has_calendar: b
     if not base_url:
         base_url = "http://127.0.0.1:8000"
     
-    print(f"🔗 fetch_dashboard_data using base_url: {base_url}")
-    
     headers = {
         "Authorization": f"Bearer {user_token}",
         "Content-Type": "application/json",
@@ -784,58 +786,77 @@ async def fetch_dashboard_data(user_token: str, has_email: bool, has_calendar: b
 
     emails = []
     calendar_events = []
+    
+    # Track if we had any successful fetches
+    email_success = False
+    calendar_success = False
 
     # Increase timeout for Lambda environments (Lambda self-calls can be slow)
     timeout_duration = 30.0 if is_lambda else 10.0
-    print(f"⏱️ Using timeout: {timeout_duration}s (Lambda: {is_lambda})")
+
+    # Helper function for retrying with exponential backoff
+    async def fetch_with_retry(client, url, max_retries=2):
+        """Fetch with retry logic for transient failures"""
+        for attempt in range(max_retries + 1):
+            try:
+                res = await client.get(url, headers=headers)
+                return res
+            except (httpx.ConnectError, httpx.TimeoutException) as e:
+                if attempt < max_retries:
+                    wait_time = 0.5 * (2 ** attempt)  # Exponential backoff: 0.5s, 1s
+                    logging.warning(f"Dashboard request failed (attempt {attempt + 1}/{max_retries + 1}), retrying in {wait_time}s: {e}")
+                    await asyncio.sleep(wait_time)
+                else:
+                    logging.error(f"Dashboard request failed after {max_retries + 1} attempts: {e}")
+                    raise
     
     async with httpx.AsyncClient(timeout=timeout_duration) as client:
         if has_email:
             try:
                 email_url = f"{base_url}/dashboard/emails/list"
-                print(f"📧 Fetching emails from: {email_url}")
-                res = await client.get(email_url, headers=headers)
-                print(f"📧 Email response status: {res.status_code}")
+                res = await fetch_with_retry(client, email_url)
                 if res.status_code == 200:
                     data = res.json()
                     # Extract emails from nested structure: {status: "success", data: {emails: [...]}}
                     emails = data.get("data", {}).get("emails", [])
-                    print(f"✅ Successfully fetched {len(emails)} emails")
+                    email_success = True
                 else:
                     error_text = await res.atext()
-                    print(f"⚠️ Email fetch returned {res.status_code}: {error_text}")
-                    emails = []  # Return empty list on error
+                    logging.warning(f"Email fetch returned {res.status_code}: {error_text}")
+                    emails = []
             except (httpx.ConnectError, httpx.TimeoutException) as e:
-                print(f"⚠️ Email fetch failed (network error): {e}")
-                print(f"   This is expected if running locally and API_BASE_URL points to a remote endpoint.")
-                emails = []  # Return empty list on network error
+                logging.warning(f"Email fetch failed after retries (network error): {e}")
+                emails = []
             except Exception as e:
-                print(f"⚠️ Email fetch failed: {e}")
-                import traceback
-                traceback.print_exc()
-                emails = []  # Return empty list on any error
+                logging.exception(f"Email fetch failed with unexpected error: {e}")
+                emails = []
 
         if has_calendar:
             try:
                 events_url = f"{base_url}/dashboard/events"
-                print(f"📅 Fetching events from: {events_url}")
-                res = await client.get(events_url, headers=headers)
-                print(f"📅 Events response status: {res.status_code}")
+                res = await fetch_with_retry(client, events_url)
                 if res.status_code == 200:
                     data = res.json()
                     # Extract events from nested structure: {status: "success", data: {events: [...]}}
                     calendar_events = data.get("data", {}).get("events", [])
-                    print(f"✅ Successfully fetched {len(calendar_events)} calendar events")
+                    calendar_success = True
                 else:
                     error_text = await res.atext()
-                    print(f"⚠️ Calendar fetch returned {res.status_code}: {error_text}")
-                    calendar_events = []  # Return empty list on error
+                    logging.warning(f"Calendar fetch returned {res.status_code}: {error_text}")
+                    calendar_events = []
+            except (httpx.ConnectError, httpx.TimeoutException) as e:
+                logging.warning(f"Calendar fetch failed after retries (network error): {e}")
+                calendar_events = []
             except Exception as e:
-                print("âš ï¸ Calendar fetch failed:", e)
+                logging.exception(f"Calendar fetch failed with unexpected error: {e}")
+                calendar_events = []
 
-    # Cache the results for 30 seconds
-    if user_id:
-        cache_dashboard_data(user_id, emails, calendar_events)
+    # Only cache if we had at least one successful fetch (to avoid caching failures)
+    if user_id and (email_success or calendar_success):
+        cache_dashboard_data(user_id, emails, calendar_events, has_email, has_calendar)
+        print(f"💾 Cached dashboard data for user {user_id} (email:{has_email}, calendar:{has_calendar})")
+    elif user_id:
+        print(f"⚠️ Not caching data due to fetch failures")
     
     return emails, calendar_events
 
@@ -2834,7 +2855,7 @@ Mischievous: "Oh, I see what you did there… clever move!"""
         if enable_memory_retrieval:
             # Start memory retrieval in parallel (non-blocking, will use if ready in time)
             memory_task = asyncio.create_task(get_memory_context_async())
-            logging.info(f"⏱️ Memory retrieval started (async) at: {time.time() - start_time:.2f}s")
+            logging.debug(f"⏱️ Memory retrieval started (async) at: {time.time() - start_time:.2f}s")
         else:
             memory_task = None
             memory_context = ""
@@ -2845,18 +2866,18 @@ Mischievous: "Oh, I see what you did there… clever move!"""
         voice_id = os.getenv("ELEVENLABS_VOICE_ID")
         
         # ULTRA-LOW LATENCY: Start OpenAI immediately, TTS connects in parallel
-        logging.info(f"⏱️ Starting OpenAI/TTS streaming at: {time.time() - start_time:.2f}s")
+        logging.debug(f"⏱️ Starting OpenAI/TTS streaming at: {time.time() - start_time:.2f}s")
         
         # Try to get memory context quickly (50ms max)
         memory_context = ""
         if memory_task:
             try:
                 memory_context = await asyncio.wait_for(memory_task, timeout=0.05)
-                logging.info(f"⏱️ Memory retrieved in: {time.time() - start_time:.2f}s")
+                logging.debug(f"⏱️ Memory retrieved in: {time.time() - start_time:.2f}s")
                 if memory_context:
                     system_prompt += f"\n\nRelevant context from previous conversations:\n{memory_context}"
             except asyncio.TimeoutError:
-                logging.info(f"⏱️ Memory retrieval timeout after 50ms, continuing without context")
+                logging.debug(f"⏱️ Memory retrieval timeout after 50ms, continuing without context")
                 memory_task.cancel()
             except Exception as e:
                 logging.debug(f"Error waiting for memory: {e}")
@@ -2885,9 +2906,9 @@ Mischievous: "Oh, I see what you did there… clever move!"""
             def sync_openai_call():
                 oa = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
                 if cached_openai_response:
-                    logging.info(f"⚠️ OpenAI cache exists but streaming requires fresh call for: '{text[:50]}...'")
+                    logging.debug(f"⚠️ OpenAI cache exists but streaming requires fresh call for: '{text[:50]}...'")
                 else:
-                    logging.info(f"⏱️ Calling OpenAI chat completion at: {time.time() - start_time:.2f}s")
+                    logging.debug(f"⏱️ Calling OpenAI chat completion at: {time.time() - start_time:.2f}s")
                 return oa.chat.completions.create(
                     model="gpt-4o-mini",
                     messages=messages,
@@ -2928,11 +2949,11 @@ Mischievous: "Oh, I see what you did there… clever move!"""
                         }
                     }
                     await tts_upstream.send(json.dumps(bos_msg))
-                    logging.info(f"⏱️ TTS BOS sent at: {time.time() - start_time:.2f}s")
+                    logging.debug(f"⏱️ TTS BOS sent at: {time.time() - start_time:.2f}s")
                     
                     # Now wait for OpenAI (should be ready soon or already done)
                     stream = await openai_task
-                    logging.info(f"⏱️ OpenAI stream started at: {time.time() - start_time:.2f}s")
+                    logging.debug(f"⏱️ OpenAI stream started at: {time.time() - start_time:.2f}s")
                     # Start forwarding TTS audio
                     async def forward_tts_audio():
                         first_audio_received = False
@@ -2949,7 +2970,7 @@ Mischievous: "Oh, I see what you did there… clever move!"""
                                     audio_chunk_count += 1
                                     # Raw audio bytes - encode to base64 and send
                                     audio_b64 = base64.b64encode(msg).decode("ascii")
-                                    logging.info(f"⏱️ Audio chunk #{audio_chunk_count} received at {time.time() - start_time:.2f}s (size: {len(msg)} bytes)")
+                                    logging.debug(f"⏱️ Audio chunk #{audio_chunk_count} received at {time.time() - start_time:.2f}s (size: {len(msg)} bytes)")
                                     
                                     # CRITICAL FIX: Add backpressure handling and error recovery
                                     try:
@@ -2974,7 +2995,7 @@ Mischievous: "Oh, I see what you did there… clever move!"""
                                             
                                             audio_chunk_count += 1
                                             audio_b64 = msg_json["audio"]
-                                            logging.info(f"⏱️ Audio chunk #{audio_chunk_count} received at {time.time() - start_time:.2f}s (JSON format)")
+                                            logging.debug(f"⏱️ Audio chunk #{audio_chunk_count} received at {time.time() - start_time:.2f}s (JSON format)")
                                             
                                             # CRITICAL FIX: Add backpressure handling
                                             try:
@@ -2993,10 +3014,10 @@ Mischievous: "Oh, I see what you did there… clever move!"""
                                         pass
                             
                             # Stream ended - send audio_final if not already sent
-                            logging.info(f"⏱️ TTS stream ended at {time.time() - start_time:.2f}s (total chunks: {audio_chunk_count}), sending audio_final")
+                            logging.debug(f"⏱️ TTS stream ended at {time.time() - start_time:.2f}s (total chunks: {audio_chunk_count}), sending audio_final")
                             try:
                                 await websocket.send_json({"message_type": "audio_final"})
-                                logging.info(f"⏱️ audio_final sent at {time.time() - start_time:.2f}s")
+                                logging.debug(f"⏱️ audio_final sent at {time.time() - start_time:.2f}s")
                             except Exception as e:
                                 logging.warning(f"Failed to send final audio_final: {e}")
                         except Exception:
@@ -3048,7 +3069,7 @@ Mischievous: "Oh, I see what you did there… clever move!"""
                                         "flush": True
                                     }
                                     await tts_upstream.send(json.dumps(text_msg))
-                                    logging.info(f"⏱️ Sent chunk #{chunk_count} ({word_count}w) to TTS at {time.time() - start_time:.2f}s: '{delta_buffer.strip()[:40]}...'")
+                                    logging.debug(f"⏱️ Sent chunk #{chunk_count} ({word_count}w) to TTS at {time.time() - start_time:.2f}s: '{delta_buffer.strip()[:40]}...'")
                                     
                                     # Send partial response to client
                                     await websocket.send_json({"message_type": "partial_response", "text": response_text})
@@ -3070,8 +3091,8 @@ Mischievous: "Oh, I see what you did there… clever move!"""
                         # Send EOS (End of Stream) to TTS
                         eos_msg = {"text": ""}
                         await tts_upstream.send(json.dumps(eos_msg))
-                        logging.info(f"⏱️ TTS EOS sent at: {time.time() - start_time:.2f}s")
-                        logging.info(f"⏱️ Total response text length: {len(response_text)} chars")
+                        logging.debug(f"⏱️ TTS EOS sent at: {time.time() - start_time:.2f}s")
+                        logging.debug(f"⏱️ Total response text length: {len(response_text)} chars")
                         
                         # Cost optimization: Check if response is too short for TTS
                         word_count = len(response_text.split())
@@ -3188,7 +3209,7 @@ Mischievous: "Oh, I see what you did there… clever move!"""
             if enable_memory_storage and get_memory_service():
                 memory_service = get_memory_service()
                 try:
-                    logging.info(f"💾 Memory storage: storing conversation (async)")
+                    logging.debug(f"💾 Memory storage: storing conversation (async)")
                     asyncio.create_task(memory_service.store_conversation_memory_async(
                         user_id=user_id,
                         user_message=text,
@@ -3204,7 +3225,7 @@ Mischievous: "Oh, I see what you did there… clever move!"""
             if enable_intelligent_learner and get_intelligent_learner():
                 intelligent_learner = get_intelligent_learner()
                 try:
-                    logging.info(f"🧠 Intelligent learner: analyzing conversation (async)")
+                    logging.debug(f"🧠 Intelligent learner: analyzing conversation (async)")
                     asyncio.create_task(intelligent_learner.analyze_conversation(
                         user_id=user_id,
                         user_message=text,
@@ -3216,7 +3237,7 @@ Mischievous: "Oh, I see what you did there… clever move!"""
                 logging.debug("🧠 Intelligent learner: disabled via ENABLE_INTELLIGENT_LEARNER env var")
 
     try:
-        async with _wslib.connect(ws_url, additional_headers=headers) as upstream:
+        async with _wslib.connect(ws_url, extra_headers=headers) as upstream:
             logging.info("ws_voice_stt: connected to ElevenLabs")
 
             async def forward_upstream_to_client():

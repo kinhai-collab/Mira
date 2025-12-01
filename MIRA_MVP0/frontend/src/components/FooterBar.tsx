@@ -29,7 +29,7 @@ export default function FooterBar({
 	setIsConversationActive: (value: boolean) => void;
 	setIsMuted: (value: boolean) => void;
 	startMiraVoice: () => void;
-	stopMiraVoice: () => void;
+	stopMiraVoice: (permanent?: boolean) => void;
 	setMiraMute: (value: boolean) => void;
 	input: string;
 	setInput: (value: string) => void;
@@ -87,6 +87,8 @@ export default function FooterBar({
 								setIsListening(true);
 								setIsTextMode(false);
 								setIsConversationActive(true);
+								setIsMuted(false); // Unmute when switching to voice mode
+								setMiraMute(false); // Unmute Mira when switching to voice mode
 								startMiraVoice();
 							}}
 							className={`w-[55px] h-[26px] flex items-center justify-center rounded-full transition ${
@@ -112,9 +114,9 @@ export default function FooterBar({
 								setIsTextMode(true);
 								setIsListening(false);
 								setIsConversationActive(false);
-								stopMiraVoice();
-								setIsMuted(false);
-								setMiraMute(false);
+								stopMiraVoice(true); // true = permanent stop for text mode
+								setIsMuted(true); // Mute Mira in text mode
+								setMiraMute(true); // Mute Mira in text mode
 							}}
 							className={`w-[55px] h-[26px] flex items-center justify-center rounded-full transition ${
 								isTextMode ? "bg-black" : "bg-white"
@@ -177,6 +179,8 @@ export default function FooterBar({
 								setIsListening(true);
 								setIsTextMode(false);
 								setIsConversationActive(true);
+								setIsMuted(false); // Unmute when switching to voice mode
+								setMiraMute(false); // Unmute Mira when switching to voice mode
 								startMiraVoice();
 							}}
 							className={`w-10 h-10 flex items-center justify-center rounded-lg border shadow-sm transition ${
@@ -203,9 +207,9 @@ export default function FooterBar({
 								setIsTextMode(true);
 								setIsListening(false);
 								setIsConversationActive(false);
-								stopMiraVoice();
-								setIsMuted(false);
-								setMiraMute(false);
+								stopMiraVoice(true); // true = permanent stop for text mode
+								setIsMuted(true); // Mute Mira in text mode
+								setMiraMute(true); // Mute Mira in text mode
 							}}
 							className={`w-10 h-10 flex items-center justify-center rounded-lg border shadow-sm transition ${
 								isTextMode

@@ -140,7 +140,7 @@ function playNextInQueue() {
 	const audio = audioQueue.shift()!;
 	currentPlayingAudio = audio;
 
-	console.log(`▶️ Playing chunk (${audioQueue.length} remaining)`);
+	// Removed repetitive log: Playing chunk
 
 	// Pre-buffer next chunk immediately when this one starts playing
 	const preloadNext = () => {
@@ -150,13 +150,13 @@ function playNextInQueue() {
 			if (nextAudio.readyState < 2) {
 				// If not already loaded
 				nextAudio.load();
-				console.log("🔄 Pre-loading next chunk in parallel");
+				// Removed repetitive log: Pre-loading next chunk
 			}
 		}
 	};
 
 	audio.onended = () => {
-		console.log("✅ Chunk complete");
+		// Removed repetitive log: Chunk complete
 		try {
 			URL.revokeObjectURL(audio.src);
 		} catch {
@@ -191,7 +191,7 @@ function playNextInQueue() {
 	audio
 		.play()
 		.then(() => {
-			console.log("✅ Playback started");
+			// Removed repetitive log: Playback started
 			if (firstAudioPlayTime === 0 && firstChunkReceivedTime > 0) {
 				firstAudioPlayTime = performance.now();
 				const totalLatency = firstAudioPlayTime - firstChunkReceivedTime;
@@ -232,7 +232,7 @@ function handleAudioChunk(base64: string) {
 			console.log("⏱️ First audio chunk received from backend");
 		}
 
-		console.log(`✅ Audio chunk received (${base64.length} bytes)`);
+		// Removed repetitive log: Audio chunk received
 
 		// Convert base64 to blob - MP3 format
 		const binaryString = atob(base64);
@@ -252,11 +252,11 @@ function handleAudioChunk(base64: string) {
 		// This starts decoding ASAP, not waiting until play() is called
 		void audio.load();
 
-		console.log("🎵 Created Audio element (preloading started)");
+		// Removed repetitive log: Created Audio element (preloading started)
 
 		// Add to queue
 		audioQueue.push(audio);
-		console.log(`📦 Queued (${audioQueue.length} in queue)`);
+		// Removed repetitive log: Queued
 
 		// Start playing if not already playing
 		if (!isPlayingQueue) {
@@ -324,7 +324,7 @@ function writeString(view: DataView, offset: number, string: string) {
 }
 
 function handleAudioFinal() {
-	console.log("🏁 Audio stream complete");
+	// Removed repetitive log: Audio stream complete
 	// Buffer queue will drain naturally
 }
 
@@ -354,7 +354,7 @@ function stopAudioPlayback() {
 	}
 
 	// Clear entire queue - don't play old chunks
-	console.log(`🗑️ Clearing ${audioQueue.length} queued audio chunks`);
+	// Removed repetitive log: Clearing queued audio chunks
 	audioQueue.forEach((audio) => {
 		try {
 			// Mute first for safety
@@ -397,7 +397,7 @@ function stopAudioPlayback() {
 }
 
 function resetAudioState() {
-	console.log("🔄 Resetting audio");
+	// Removed repetitive log: Resetting audio
 
 	// Reset interrupt flag
 	isAudioInterrupted = false;
@@ -1112,8 +1112,15 @@ export async function startMiraVoice() {
 				onError: (err: unknown) => {
 					try {
 						logDetailedError("WS stt error:", err);
+						// Reset conversation state on error to allow retry
+						if (isConversationActive) {
+							console.log("🔄 Resetting conversation state due to WebSocket error");
+							isConversationActive = false;
+						}
 					} catch (logErr) {
 						console.error("WS stt error (logging failed)", logErr, err);
+						// Reset state even if logging fails
+						isConversationActive = false;
 					}
 				},
 				onClose: (ev?: CloseEvent) => {
@@ -1127,6 +1134,12 @@ export async function startMiraVoice() {
 							  }
 							: ""
 					);
+					// Reset conversation state if connection closed unexpectedly
+					// Code 1006 means connection failed (no close frame received)
+					if (ev && !ev.wasClean && ev.code === 1006) {
+						console.log("🔄 Resetting conversation state - connection failed (1006)");
+						isConversationActive = false;
+					}
 				},
 				onOpen: () => console.log("WS stt open"),
 				onStateChange: (state: ConnectionState) => {
@@ -1147,7 +1160,13 @@ export async function startMiraVoice() {
 				).wsController = wsController;
 			}
 
-			await wsController.start();
+			try {
+				await wsController.start();
+			} catch (startError) {
+				console.error("Failed to start WebSocket connection:", startError);
+				isConversationActive = false;
+				throw startError; // Re-throw to be caught by outer try-catch
+			}
 
 			// Keep loop alive while conversation active; monitor interruption
 			while (isConversationActive) {
@@ -1174,7 +1193,7 @@ export async function startMiraVoice() {
 }
 
 /* ---------------------- Stop Mira Voice ---------------------- */
-export function stopMiraVoice() {
+export function stopMiraVoice(permanent: boolean = false) {
 	isConversationActive = false;
 	isAudioPlaying = false; // Stop waiting for audio playback
 
@@ -1195,8 +1214,18 @@ export function stopMiraVoice() {
 		activeStream = null;
 	}
 
+	// If permanent stop (e.g., switching to text mode), close WebSocket permanently
+	if (permanent && wsController) {
+		console.log("🔌 Permanently closing WebSocket for text mode");
+		const ws = wsController.getWebSocket();
+		if (ws && typeof (ws as any).close === 'function') {
+			(ws as any).close(true); // true = permanent close, no reconnect
+		}
+		wsController = null;
+	}
+
 	stopVoice();
-	console.log("🛑 Conversation manually stopped.");
+	console.log(`🛑 Conversation manually stopped.${permanent ? ' (permanent)' : ''}`);
 }
 
 /* ---------------------- Audio Energy Detection ---------------------- */

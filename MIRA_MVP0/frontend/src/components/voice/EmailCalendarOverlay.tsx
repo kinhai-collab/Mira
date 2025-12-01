@@ -218,17 +218,6 @@ function SummaryCard({
 	const hasEmails = !!emails?.length;
 	const hasEvents = !!calendarEvents?.length;
 
-	// Debug logging
-	React.useEffect(() => {
-		console.log("📊 SummaryCard rendered:", {
-			emailCount: emails?.length || 0,
-			eventCount: calendarEvents?.length || 0,
-			hasEmails,
-			hasEvents,
-			stage,
-		});
-	}, [emails?.length, calendarEvents?.length, hasEmails, hasEvents, stage]);
-
 	const safeEmails: VoiceSummaryEmail[] = Array.isArray(emails) ? emails : [];
 
 	// Use provided value or fallback
@@ -534,9 +523,11 @@ function SummaryCard({
 					<p className="font-medium text-[#272829] mb-2">
 						No priority items found
 					</p>
+					<p className="text-xs text-[#5a5c61] mb-3">
+						This could mean there are no recent emails or upcoming events, or there was an issue fetching your data.
+					</p>
 					<p className="text-xs text-[#5a5c61]">
-						Try asking &quot;Show me my emails and calendar&quot; to get your
-						latest updates.
+						Try refreshing the page or asking again: &quot;Show me my emails and calendar&quot;
 					</p>
 				</div>
 			)}
