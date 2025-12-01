@@ -2,7 +2,7 @@
 "use client";
 
 import Image from "next/image";
-import { EventItem } from "../components/types";
+import { EventItem, ConflictInfo } from "./types";
 
 /* ------------------------------------------
    ICONS
@@ -14,51 +14,21 @@ function getProviderIcon(provider: string) {
 			return "/Icons/Email/Google-Meet.png";
 		case "teams":
 		case "microsoft":
+		case "outlook":
 			return "/Icons/Email/Microsoft-Teams.png";
 		default:
 			return "/Icons/Email/Google-Meet.png";
 	}
 }
 
-/* ------------------------------------------
-   TIME PARSER
-------------------------------------------- */
-function parseTime(str: string) {
-	const [hRaw, modifier] = str.trim().split(" ");
-	let hour = parseInt(hRaw, 10);
-
-	if (modifier === "pm" && hour !== 12) hour += 12;
-	if (modifier === "am" && hour === 12) hour = 0;
-
-	return hour * 60;
-}
-
-/* ------------------------------------------
-   FIND CONFLICTS
-------------------------------------------- */
-function findConflicts(events: EventItem[]) {
-	if (!Array.isArray(events)) return [];
-
-	const conflicts = new Set<string>();
-
-	for (let i = 0; i < events.length; i++) {
-		const [startA, endA] = events[i].time.split(" - ");
-		const aStart = parseTime(startA);
-		const aEnd = parseTime(endA);
-
-		for (let j = i + 1; j < events.length; j++) {
-			const [startB, endB] = events[j].time.split(" - ");
-			const bStart = parseTime(startB);
-			const bEnd = parseTime(endB);
-
-			if (aStart < bEnd && bStart < aEnd) {
-				conflicts.add(events[i].id);
-				conflicts.add(events[j].id);
-			}
-		}
+function getCalendarIcon(provider?: string) {
+	switch (provider) {
+		case "outlook":
+			return "/Icons/Email/vscode-icons_file-type-outlook.png";
+		case "google":
+		default:
+			return "/Icons/Email/skill-icons_gmail-light.png";
 	}
-
-	return Array.from(conflicts);
 }
 
 /* ------------------------------------------
@@ -66,10 +36,14 @@ function findConflicts(events: EventItem[]) {
 ------------------------------------------- */
 interface Props {
 	events: EventItem[];
+	conflicts: ConflictInfo[];
 	totalEvents: number;
 	totalMeet: number;
 	totalTeams: number;
 	nextEventTitle: string;
+	onReschedule: (conflict: ConflictInfo, eventToReschedule: EventItem) => void;
+	onCancel: (event: EventItem) => void;
+	isLoading?: boolean;
 }
 
 /* ------------------------------------------
@@ -77,13 +51,37 @@ interface Props {
 ------------------------------------------- */
 export default function CalendarConflictDetection({
 	events,
+	conflicts,
 	totalEvents,
 	totalMeet,
 	totalTeams,
 	nextEventTitle,
+	onReschedule,
+	onCancel,
+	isLoading = false,
 }: Props) {
-	const conflictIds = findConflicts(events);
-	const hasConflict = conflictIds.length > 0;
+	const hasConflict = conflicts.length > 0;
+
+	// Get IDs of all events that are part of conflicts
+	const conflictEventIds = new Set<string>();
+	conflicts.forEach((c) => {
+		conflictEventIds.add(c.eventA.id);
+		conflictEventIds.add(c.eventB.id);
+	});
+
+	if (isLoading) {
+		return (
+			<div className="bg-white rounded-[24px] border border-[#E5E5E5] shadow-[0_4px_12px_rgba(0,0,0,0.04)] p-6 w-full max-w-[900px] mx-auto">
+				<div className="animate-pulse">
+					<div className="h-6 bg-gray-200 rounded w-3/4 mb-4"></div>
+					<div className="space-y-3">
+						<div className="h-4 bg-gray-200 rounded w-full"></div>
+						<div className="h-4 bg-gray-200 rounded w-5/6"></div>
+					</div>
+				</div>
+			</div>
+		);
+	}
 
 	return (
 		<div className="bg-white rounded-[24px] border border-[#E5E5E5] shadow-[0_4px_12px_rgba(0,0,0,0.04)] p-6 w-full max-w-[900px] mx-auto">
@@ -106,25 +104,29 @@ export default function CalendarConflictDetection({
 						</p>
 					</div>
 
-					<div className="flex items-center gap-3">
-						<Image
-							src="/Icons/Property 1=Done in circle.svg"
-							alt="done"
-							width={20}
-							height={20}
-						/>
-						<p className="text-[16px] text-[#1F1F1F]">
-							Reviewed today’s calendar events.
-						</p>
-					</div>
+				<div className="flex items-center gap-3">
+					<Image
+						src="/Icons/Property 1=Done in circle.svg"
+						alt="done"
+						width={20}
+						height={20}
+					/>
+					<p className="text-[16px] text-[#1F1F1F]">
+						Reviewed today's calendar events.
+					</p>
+				</div>
 				</div>
 			</div>
 
-			<div className="mt-[10px] flex items-center gap-1 cursor-pointer group w-fit ml-[24px]">
-				<p className="text-[14px] font-medium text-[#735FF8] group-hover:underline underline-offset-2">
-					See More
-				</p>
-				<svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+			<div className="mt-[10px] flex items-center gap-1 w-fit ml-[24px]">
+				<p className="text-[14px] font-medium text-[#735FF8]">See More</p>
+				<svg
+					width="14"
+					height="14"
+					viewBox="0 0 24 24"
+					fill="none"
+					className="transition-transform rotate-90"
+				>
 					<path
 						d="M6 9L12 15L18 9"
 						stroke="#735FF8"
@@ -176,7 +178,7 @@ export default function CalendarConflictDetection({
 			{/* EVENT GRID */}
 			<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 				{events.map((event) => {
-					const isConflict = conflictIds.includes(event.id);
+					const isConflict = conflictEventIds.has(event.id);
 
 					return (
 						<div
@@ -195,12 +197,28 @@ export default function CalendarConflictDetection({
 									height={28}
 								/>
 								<div>
-									<p className="text-[15px] font-medium text-[#1F1F1F]">
-										{event.title}
-									</p>
+									<div className="flex items-center gap-2">
+										<p className="text-[15px] font-medium text-[#1F1F1F]">
+											{event.title}
+										</p>
+										{event.calendarProvider && (
+											<Image
+												src={getCalendarIcon(event.calendarProvider)}
+												alt={event.calendarProvider}
+												width={14}
+												height={14}
+												className="opacity-70"
+											/>
+										)}
+									</div>
 									<p className="text-[14px] text-[#6B6B6B]">
 										{event.time} | {event.attendee}
 									</p>
+									{isConflict && (
+										<span className="inline-flex items-center text-[12px] text-[#BE4B48] mt-1">
+											⚠️ Overlapping event
+										</span>
+									)}
 								</div>
 							</div>
 						</div>
@@ -208,68 +226,134 @@ export default function CalendarConflictDetection({
 				})}
 			</div>
 
-			{/* CONFLICT SECTION */}
-			{hasConflict && (
-				<>
-					<div className="flex items-start gap-2 mt-6 ml-[4px]">
-						<span className="text-[#BE4B48] text-lg">⚠️</span>
-						<p className="text-[15px] text-[#2D2D2D]">
-							Found an overlapping event today.
+		{/* CONFLICT SECTION – aligned with Figma "Calendar Conflicts Identified" */}
+		{hasConflict && (
+			<div className="mt-6 space-y-2">
+				{/* Warning line with purple border */}
+				<div className="pl-[4px]">
+					<div className="border-l border-[#382099] pl-[24px] flex items-center gap-2">
+						<svg
+							width="18"
+							height="18"
+							viewBox="0 0 32 32"
+							fill="none"
+							className="shrink-0"
+						>
+							<path
+								d="M16 8V16M16 20H16.01M28 16C28 22.6274 22.6274 28 16 28C9.37258 28 4 22.6274 4 16C4 9.37258 9.37258 4 16 4C22.6274 4 28 9.37258 28 16Z"
+								stroke="#382099"
+								strokeWidth="2"
+								strokeLinecap="round"
+								strokeLinejoin="round"
+							/>
+						</svg>
+						<p className="text-[16px] text-[#282829]">
+							Found an overlapping event at{" "}
+							{conflicts[0]?.overlapStart &&
+								new Date(conflicts[0].overlapStart).toLocaleTimeString(
+									"en-US",
+									{
+										hour: "numeric",
+										minute: "2-digit",
+										hour12: true,
+									}
+								)}
+							-
+							{conflicts[0]?.overlapEnd &&
+								new Date(conflicts[0].overlapEnd).toLocaleTimeString("en-US", {
+									hour: "numeric",
+									minute: "2-digit",
+									hour12: true,
+								})}{" "}
+							today.
 						</p>
 					</div>
+				</div>
 
-					<div className="flex gap-3 pl-1 mt-1">
-						<div className="relative">
-							<div className="absolute left-[7px] top-[12px] bottom-0 w-[2px] bg-[#C9BDFC]" />
-							<div className="w-[10px] h-[10px] rounded-full bg-[#9E2A2F] mt-[2px]" />
+				{/* Rescheduling status with purple dot */}
+				<div className="flex items-center gap-[16px]">
+					<div className="w-3 h-3 rounded-full bg-[#382099] shrink-0" />
+					<p className="text-[18px] font-medium text-[#282829]">
+						Rescheduling the meeting...
+					</p>
+				</div>
+
+				{/* Reasoning Process with purple border */}
+				<div className="pl-[4px]">
+					<div className="border-l border-[#382099] pl-[24px] space-y-2">
+						<div className="flex items-center gap-2">
+							<Image
+								src="/Icons/Property 1=Done in circle.svg"
+								alt="done"
+								width={16}
+								height={16}
+							/>
+							<p className="text-[16px] text-[#282829]">
+								Checked which meeting is scheduled next.
+							</p>
 						</div>
 
-						<div className="space-y-3 text-[#1F1F1F]">
-							<p className="text-[16px] font-semibold">
-								Rescheduling the meeting…
+						<div className="flex items-center gap-2">
+							<Image
+								src="/Icons/Property 1=Done in circle.svg"
+								alt="done"
+								width={16}
+								height={16}
+							/>
+							<p className="text-[16px] text-[#282829]">
+								Reviewed your availability tomorrow.
 							</p>
-
-							<div className="flex items-center gap-3">
-								<Image
-									src="/Icons/Property 1=Done in circle.svg"
-									alt="done"
-									width={18}
-									height={18}
-								/>
-								<p className="text-[15px] text-[#303030]">
-									Checked which meeting is scheduled next.
-								</p>
-							</div>
-
-							<div className="flex items-center gap-3">
-								<Image
-									src="/Icons/Property 1=Done in circle.svg"
-									alt="done"
-									width={18}
-									height={18}
-								/>
-								<p className="text-[15px] text-[#303030]">
-									Reviewed your availability tomorrow.
-								</p>
-							</div>
-
-							<button className="text-[#735FF8] text-[14px] font-medium flex items-center gap-[2px] group">
-								<span className="group-hover:underline underline-offset-2">
-									See More
-								</span>
-								<svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-									<path d="M6 9L12 15L18 9" stroke="#735FF8" strokeWidth="2" />
-								</svg>
-							</button>
 						</div>
 					</div>
 
-					<div className="mt-6 pl-[22px]">
-						<button className="border border-[#CECECE] text-[#2B2B2B] px-5 py-[10px] rounded-full text-[15px]">
-							Cancel
+					{/* See More button */}
+					<div className="pl-[8px] mt-2">
+						<button className="flex items-center gap-1 px-4 py-2 rounded-full hover:bg-gray-50 transition">
+							<p className="text-[16px] text-[#735FF8]">See More</p>
+							<svg
+								width="18"
+								height="18"
+								viewBox="0 0 24 24"
+								fill="none"
+								className="transform rotate-90"
+							>
+								<path
+									d="M6 9L12 15L18 9"
+									stroke="#735FF8"
+									strokeWidth="2"
+									strokeLinecap="round"
+									strokeLinejoin="round"
+								/>
+							</svg>
 						</button>
 					</div>
-				</>
+				</div>
+
+				{/* Cancel button */}
+				<div className="pl-[24px] pt-4">
+					<button
+						onClick={() => {
+							const first = conflicts[0];
+							if (first) onCancel(first.eventA);
+						}}
+						className="bg-white border border-[#464647] text-[#282829] px-4 py-2 rounded-full text-[18px] hover:bg-gray-50 transition"
+					>
+						Cancel
+					</button>
+				</div>
+			</div>
+		)}
+
+			{/* No conflicts message */}
+			{!hasConflict && events.length > 0 && (
+				<div className="mt-6 p-4 bg-[#F0FFF4] rounded-xl border border-[#95D6A4]">
+					<div className="flex items-center gap-2">
+						<span className="text-[#22C55E]">✓</span>
+						<p className="text-[15px] text-[#1F1F1F]">
+							No scheduling conflicts found. Your calendar looks good!
+						</p>
+					</div>
+				</div>
 			)}
 		</div>
 	);

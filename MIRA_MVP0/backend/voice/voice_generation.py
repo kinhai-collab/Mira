@@ -1328,23 +1328,28 @@ async def _call_calendar_action_endpoint(
     }
 
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(full_url, headers=headers, json=payload)
     except httpx.ConnectError as e:
         error_msg = f"Failed to connect to calendar API at {full_url}. "
         error_msg += f"Error: {str(e)}. "
         error_msg += "Please check that API_BASE_URL is correct and the server is running."
-        print(f"❌ {error_msg}")
+        print(f"❌ Calendar API Connection Error: {error_msg}")
         raise HTTPException(status_code=503, detail=error_msg)
+    except httpx.TimeoutException as e:
+        error_msg = f"Calendar API timeout at {full_url}: {str(e)}"
+        print(f"❌ Calendar API Timeout: {error_msg}")
+        raise HTTPException(status_code=504, detail=error_msg)
     except Exception as e:
         error_msg = f"Unexpected error calling calendar API: {str(e)}"
-        print(f"❌ {error_msg}")
+        print(f"❌ Calendar API Unexpected Error: {error_msg}")
         raise HTTPException(status_code=500, detail=error_msg)
 
     if resp.status_code >= 400:
         # Try to parse error detail for better error messages
         try:
             error_data = resp.json()
+            print(f"❌ Calendar API returned {resp.status_code}: {error_data}")
             if isinstance(error_data, dict) and "detail" in error_data:
                 detail = error_data["detail"]
                 # If detail is a dict (like our conflict errors), extract the message
@@ -1368,8 +1373,11 @@ async def _call_calendar_action_endpoint(
         )
 
     try:
-        return resp.json()
-    except Exception:
+        result_json = resp.json()
+        print(f"✅ Calendar API returned 200: {result_json}")
+        return result_json
+    except Exception as e:
+        print(f"⚠️ Calendar API returned 200 but failed to parse JSON: {str(e)}")
         return {}
 
 # Helper: interpret and execute voice calendar commands
@@ -1771,25 +1779,72 @@ async def _handle_calendar_voice_command(
                     conflict_count = he.detail.get("conflict_count", 0)
                     conflicts = he.detail.get("conflicts", [])
                     message = he.detail.get("message", "Schedule conflict detected")
-                    
+                    error = he.detail.get("error", "Schedule conflict detected")
+
                     # Build a user-friendly message
                     if conflicts:
-                        conflict_names = [c.get("summary", "an event") for c in conflicts[:3]]  # Show up to 3
+                        conflict_names = [
+                            c.get("summary", "an event") for c in conflicts[:3]
+                        ]  # Show up to 3
                         if len(conflicts) > 3:
                             conflict_names.append(f"and {len(conflicts) - 3} more")
                         conflict_list = ", ".join(conflict_names)
-                        natural_response = f"I can't schedule that time because you already have {conflict_count} conflicting event{'s' if conflict_count > 1 else ''}: {conflict_list}. Please choose a different time."
+                        natural_response = (
+                            "I can't schedule that time because you already have "
+                            f"{conflict_count} conflicting event"
+                            f"{'s' if conflict_count > 1 else ''}: {conflict_list}. "
+                            "Please choose a different time."
+                        )
                     else:
-                        natural_response = f"I can't schedule that time because it conflicts with an existing event. Please choose a different time."
+                        natural_response = (
+                            "I can't schedule that time because it conflicts with an "
+                            "existing event. Please choose a different time."
+                        )
+
+                    # Expose structured conflict info to the frontend so it can render
+                    # the detailed conflict UI (conflicting events, counts, etc.).
+                    result = {
+                        "status": "error",
+                        "error": error,
+                        "message": message,
+                        "conflict_count": conflict_count,
+                        "conflicts": conflicts,
+                    }
                 else:
                     # Fallback for string detail
-                    natural_response = f"I can't schedule that time because it conflicts with an existing event. Please choose a different time."
+                    natural_response = (
+                        "I can't schedule that time because it conflicts with an "
+                        "existing event. Please choose a different time."
+                    )
+                    result = {
+                        "status": "error",
+                        "error": "Schedule conflict detected",
+                        "message": str(he.detail),
+                        "conflict_count": 0,
+                        "conflicts": [],
+                    }
             except Exception:
-                natural_response = f"I can't schedule that time because it conflicts with an existing event. Please choose a different time."
+                natural_response = (
+                    "I can't schedule that time because it conflicts with an "
+                    "existing event. Please choose a different time."
+                )
+                result = {
+                    "status": "error",
+                    "error": "Schedule conflict detected",
+                    "message": str(he.detail),
+                    "conflict_count": 0,
+                    "conflicts": [],
+                }
         else:
             # Other errors
-            natural_response = f"I tried to update your calendar but got an error: {he.detail}"
-        result = None
+            natural_response = (
+                f"I tried to update your calendar but got an error: {he.detail}"
+            )
+            result = {
+                "status": "error",
+                "error": "Calendar action failed",
+                "message": str(he.detail),
+            }
     except Exception as e:
         logging.exception(f"Calendar action execution failed: {e}")
         natural_response = "I ran into an error while trying to update your calendar."

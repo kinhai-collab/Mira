@@ -551,8 +551,49 @@ export default function Home() {
 				}),
 			});
 
-			// ✅ log backend response status and any text before throwing
+			// ✅ Handle conflict errors (409) - navigate to smart-scheduling page
 			if (!response.ok) {
+				if (response.status === 409) {
+					// Conflict detected - navigate to smart-scheduling page
+					try {
+						const errorData = await response.json();
+						const conflictError = errorData.detail || errorData;
+
+						// Show conflict message in chat
+						const conflictMessage =
+							conflictError.message ||
+							conflictError.natural_response ||
+							"I can't schedule that time because there's a conflict with an existing event. Let me show you the conflicts...";
+
+						setTextMessages((prev) => [
+							...prev,
+							{ role: "assistant", content: conflictMessage },
+						]);
+
+						// Store conflict info in sessionStorage for smart-scheduling page
+						if (typeof window !== "undefined") {
+							sessionStorage.setItem(
+								"mira_calendar_conflict",
+								JSON.stringify({
+									hasConflict: true,
+									conflicts: conflictError.conflicts || [],
+									conflictCount: conflictError.conflict_count || 0,
+									message: conflictMessage,
+								})
+							);
+						}
+
+						// Navigate to smart-scheduling page to show conflicts
+						setTimeout(() => {
+							router.push("/scenarios/smart-scheduling");
+						}, 1000); // Small delay to show the message first
+
+						return;
+					} catch (parseError) {
+						console.error("Error parsing conflict response:", parseError);
+					}
+				}
+
 				const errorText = await response.text();
 				console.error("❌ Backend returned error:", response.status, errorText);
 				throw new Error(`Backend returned ${response.status}: ${errorText}`);
@@ -606,6 +647,57 @@ export default function Home() {
 						{ role: "assistant", content: data.text },
 					]);
 				}
+
+				// Determine if this looks like a schedule conflict
+				const textLower = (data.text || "").toLowerCase();
+				const looksLikeConflictText = textLower.includes(
+					"can't schedule that time"
+				);
+
+				const hasStructuredConflict =
+					!!data.actionResult &&
+					(data.actionResult.error === "Schedule conflict detected" ||
+						data.actionResult.conflict_count > 0 ||
+						(data.actionResult.status === "error" &&
+							data.actionResult.message?.includes("conflict")));
+
+				const isScheduleAction = data.action === "calendar_schedule";
+
+				if (isScheduleAction && (hasStructuredConflict || looksLikeConflictText)) {
+					// Conflict detected (via structured data or natural_response)
+					if (typeof window !== "undefined") {
+						sessionStorage.setItem(
+							"mira_calendar_conflict",
+							JSON.stringify({
+								hasConflict: true,
+								conflicts: data.actionResult?.conflicts || [],
+								conflictCount: data.actionResult?.conflict_count || 0,
+								message:
+									data.text ||
+									"I can't schedule that time because there's a conflict with an existing event.",
+							})
+						);
+					}
+
+					// Navigate to smart-scheduling page to show conflicts
+					setTimeout(() => {
+						router.push("/scenarios/smart-scheduling");
+					}, 800); // Small delay to show the message first
+
+					// Still dispatch the event for other components
+					if (typeof window !== "undefined") {
+						window.dispatchEvent(
+							new CustomEvent("miraCalendarUpdated", {
+								detail: {
+									action: data.action,
+									result: data.actionResult,
+								},
+							})
+						);
+					}
+					return;
+				}
+
 				// Log the action result for debugging
 				if (data.actionResult) {
 					console.log(
@@ -614,6 +706,7 @@ export default function Home() {
 						data.actionResult
 					);
 				}
+
 				// ✅ Dispatch event to refresh dashboard and calendar page
 				if (typeof window !== "undefined") {
 					window.dispatchEvent(
