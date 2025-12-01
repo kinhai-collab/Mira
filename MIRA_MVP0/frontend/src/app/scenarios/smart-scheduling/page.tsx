@@ -265,9 +265,7 @@ export default function SmartSchedulingPage() {
 
 		// Get first attendee name or use "You"
 		const attendee =
-			event.attendees?.[0]?.displayName ||
-			event.attendees?.[0]?.email ||
-			"You";
+			event.attendees?.[0]?.displayName || event.attendees?.[0]?.email || "You";
 
 		return {
 			id: event.id,
@@ -332,13 +330,13 @@ export default function SmartSchedulingPage() {
 			try {
 				// Check if we came from homepage with a conflict
 				let hasStoredConflict = hasExternalConflictSource;
-				let storedConflictEventsRaw: any[] =
-					externalConflictRawEvents || [];
+				let storedConflictEventsRaw: any[] = externalConflictRawEvents || [];
 
 				// Only read from sessionStorage the first time; after that rely on state.
 				if (!hasStoredConflict && typeof window !== "undefined") {
-					const storedConflict =
-						sessionStorage.getItem("mira_calendar_conflict");
+					const storedConflict = sessionStorage.getItem(
+						"mira_calendar_conflict"
+					);
 					if (storedConflict) {
 						try {
 							const conflictData = JSON.parse(storedConflict);
@@ -432,7 +430,8 @@ export default function SmartSchedulingPage() {
 									endDate: end,
 									location: c.location || existingEvent.location,
 									description: c.description || existingEvent.description,
-									calendarProvider: c.calendar || existingEvent.calendarProvider,
+									calendarProvider:
+										c.calendar || existingEvent.calendarProvider,
 								};
 
 								return {
@@ -442,7 +441,10 @@ export default function SmartSchedulingPage() {
 									overlapEnd: end,
 								} as ConflictInfo;
 							} catch (err) {
-								console.error("Error constructing conflict from backend data:", err);
+								console.error(
+									"Error constructing conflict from backend data:",
+									err
+								);
 								return null;
 							}
 						})
@@ -747,7 +749,7 @@ export default function SmartSchedulingPage() {
 
 						// Refresh events to get the latest state and detect conflicts
 						const updatedEvents = await refreshEvents();
-						
+
 						// Detect conflicts with the freshly loaded events
 						const updatedConflicts = detectConflicts(updatedEvents);
 						if (updatedConflicts.length > 0) {
@@ -802,7 +804,7 @@ export default function SmartSchedulingPage() {
 				} else {
 					// Refresh events after successful calendar action
 					const updatedEvents = await refreshEvents();
-					
+
 					// Check if there are now conflicts after the action
 					const updatedConflicts = detectConflicts(updatedEvents);
 					if (updatedConflicts.length > 0) {
@@ -876,39 +878,15 @@ export default function SmartSchedulingPage() {
 			</div>
 
 			{/* Main */}
-			<main className="max-sm:mt-6 flex-1 flex flex-col items-center px-2 sm:px-4 md:px-6 pt-20">
-				{/* Action buttons */}
-				<div className="w-full max-w-[900px] mx-auto mb-4 flex gap-3 justify-end px-4">
-					<button
-						onClick={() => setStage("add-event")}
-						className="px-4 py-2 bg-[#735FF8] text-white rounded-full text-[14px] font-medium hover:bg-[#6350E0] transition flex items-center gap-2"
-					>
-						<span>+</span> Add Event
-					</button>
-					<button
-						onClick={refreshEvents}
-						disabled={isLoadingEvents}
-						className="px-4 py-2 border border-gray-300 text-gray-700 rounded-full text-[14px] font-medium hover:bg-gray-50 transition flex items-center gap-2 disabled:opacity-50"
-					>
-						{isLoadingEvents ? (
-							<div className="w-4 h-4 rounded-full border-2 border-gray-400 border-t-transparent animate-spin" />
-						) : (
-							<span>↻</span>
-						)}
-						Refresh
-					</button>
-				</div>
-
+			<main className="max-sm:mt-6 flex-1 flex flex-col items-center px-2 sm:px-4 md:px-6">
 				{/* SCALE CONTAINER */}
-				<div className="scale-[0.90] flex flex-col items-center w-full max-w-[900px] mx-auto px-4">
-					{/* ORB */}
+				<div className="scale-[0.85] flex flex-col items-center w-full max-w-[900px] mx-auto px-4">
+					{/* ORB (must NOT be fixed) */}
 					<div className="mt-4 relative flex flex-col items-center">
 						<div
-							className={`w-32 h-32 sm:w-44 sm:h-44 rounded-full bg-gradient-to-br 
-							from-[#C4A0FF] via-[#E1B5FF] to-[#F5C5E5]
-							shadow-[0_0_80px_15px_rgba(210,180,255,0.45)] ${
-								stage === "loading" ? "animate-pulse" : ""
-							}`}
+							className="w-32 h-32 sm:w-44 sm:h-44 rounded-full bg-gradient-to-br 
+        from-[#C4A0FF] via-[#E1B5FF] to-[#F5C5E5]
+        shadow-[0_0_80px_15px_rgba(210,180,255,0.45)] animate-pulse"
 						></div>
 					</div>
 
@@ -972,7 +950,9 @@ export default function SmartSchedulingPage() {
 												onConfirmReschedule={handleConfirmReschedule}
 												onCancel={() => {
 													setEventToReschedule(null);
-													setStage(conflicts.length > 0 ? "conflict" : "summary");
+													setStage(
+														conflicts.length > 0 ? "conflict" : "summary"
+													);
 												}}
 												isRescheduling={isRescheduling}
 											/>
@@ -995,7 +975,9 @@ export default function SmartSchedulingPage() {
 												onSchedule={handleScheduleEvent}
 												onCancel={() => {
 													setScheduleConflictError(null);
-													setStage(conflicts.length > 0 ? "conflict" : "summary");
+													setStage(
+														conflicts.length > 0 ? "conflict" : "summary"
+													);
 												}}
 												isScheduling={isScheduling}
 												conflictError={scheduleConflictError}
@@ -1009,30 +991,30 @@ export default function SmartSchedulingPage() {
 				</div>
 			</main>
 
-		<Sidebar />
+			<Sidebar />
 
-		{/* FooterBar - Hide when viewing conflict panel */}
-		{stage !== "conflict" && (
-			<div className="fixed bottom-4 left-0 w-full flex justify-center z-50">
-				<FooterBar
-					alwaysShowInput={true}
-					isListening={isListening}
-					isTextMode={isTextMode}
-					setIsListening={setIsListening}
-					setIsTextMode={setIsTextMode}
-					setIsConversationActive={setIsConversationActive}
-					setIsMuted={setIsMuted}
-					startMiraVoice={startMiraVoice}
-					stopMiraVoice={stopMiraVoice}
-					setMiraMute={setMiraMute}
-				input={input}
-				setInput={setInput}
-				handleTextSubmit={handleTextSubmit}
-				isLoadingResponse={isLoadingResponse}
-				textMessages={textMessages}
-			/>
-			</div>
-		)}
-	</div>
-);
+			{/* FooterBar - Hide when viewing conflict panel */}
+			{stage !== "conflict" && (
+				<div className="fixed bottom-4 left-0 w-full flex justify-center z-50">
+					<FooterBar
+						alwaysShowInput={true}
+						isListening={isListening}
+						isTextMode={isTextMode}
+						setIsListening={setIsListening}
+						setIsTextMode={setIsTextMode}
+						setIsConversationActive={setIsConversationActive}
+						setIsMuted={setIsMuted}
+						startMiraVoice={startMiraVoice}
+						stopMiraVoice={stopMiraVoice}
+						setMiraMute={setMiraMute}
+						input={input}
+						setInput={setInput}
+						handleTextSubmit={handleTextSubmit}
+						isLoadingResponse={isLoadingResponse}
+						textMessages={textMessages}
+					/>
+				</div>
+			)}
+		</div>
+	);
 }
