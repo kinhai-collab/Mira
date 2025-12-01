@@ -442,7 +442,7 @@ export default function Home() {
 					setSummaryEmails(data.emails ?? []);
 					setSummaryEvents(normalizedCalendarEvents);
 					setSummaryFocus(data.focus ?? null);
-					setSummaryStage("thinking");
+
 					setSummaryOverlayVisible(true);
 					setSummaryRunId((id) => id + 1);
 
@@ -457,6 +457,27 @@ export default function Home() {
 		}
 	}, []);
 
+	// Format a friendly date string for the provided timezone.
+	const getFormattedDate = (tz: string) => {
+		try {
+			const now = new Date();
+			return new Intl.DateTimeFormat("en-US", {
+				weekday: "short",
+				month: "short",
+				day: "numeric",
+				timeZone: tz,
+			}).format(now);
+		} catch {
+			// Fallback to local formatting if Intl fails for some reason
+			return new Date().toLocaleDateString(undefined, {
+				weekday: "short",
+				month: "short",
+				day: "numeric",
+			});
+		}
+	};
+
+	// emails
 	useEffect(() => {
 		const handler = async (event: Event) => {
 			const customEvent = event as CustomEvent<VoiceSummaryEventDetail>;
@@ -469,12 +490,6 @@ export default function Home() {
 			// in the detail.calendarEvents array, so we can use it directly
 			const normalizedCalendarEvents: VoiceSummaryCalendarEvent[] =
 				Array.isArray(detail.calendarEvents) ? detail.calendarEvents : [];
-
-			console.log("📧 Smart Summary: Received email/calendar data via event:", {
-				emails: detail.emails?.length || 0,
-				events: normalizedCalendarEvents.length || 0,
-				steps: rawSteps.length,
-			});
 
 			setSummarySteps(prepareVoiceSteps(rawSteps));
 			setSummaryEmails(detail.emails ?? []);
@@ -490,9 +505,6 @@ export default function Home() {
 				"miraEmailCalendarSummary",
 				handler as EventListener
 			);
-			console.log(
-				"✅ Smart Summary: Event listener registered for miraEmailCalendarSummary"
-			);
 		}
 
 		return () => {
@@ -501,7 +513,6 @@ export default function Home() {
 					"miraEmailCalendarSummary",
 					handler as EventListener
 				);
-				console.log("🔄 Smart Summary: Event listener cleaned up");
 			}
 		};
 	}, []); // No dependencies needed since we're just using the event detail directly
@@ -552,33 +563,51 @@ export default function Home() {
 			setPendingSummaryMessage(null);
 		}
 	}, [summaryStage, pendingSummaryMessage]);
+	useEffect(() => {
+		const loadFreshSummary = async () => {
+			try {
+				const apiBase = (
+					process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+				).replace(/\/+$/, "");
 
-	// Format a friendly date string for the provided timezone.
-	const getFormattedDate = (tz: string) => {
-		try {
-			const now = new Date();
-			return new Intl.DateTimeFormat("en-US", {
-				weekday: "short",
-				month: "short",
-				day: "numeric",
-				timeZone: tz,
-			}).format(now);
-		} catch {
-			// Fallback to local formatting if Intl fails for some reason
-			return new Date().toLocaleDateString(undefined, {
-				weekday: "short",
-				month: "short",
-				day: "numeric",
-			});
+				const { getValidToken } = await import("@/utils/auth");
+				const token = await getValidToken();
+
+				const detectedTimezone =
+					Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+				const response = await fetch(`${apiBase}/api/email-calendar-latest`, {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+						Authorization: `Bearer ${token}`,
+					},
+					body: JSON.stringify({ timezone: detectedTimezone }),
+				});
+
+				if (!response.ok) return;
+
+				const data = await response.json();
+
+				setSummaryEmails(data.emails || []);
+				setSummaryEvents(data.calendarEvents || []);
+				setSummaryFocus(data.focus || null);
+			} catch (err) {
+				console.error("Failed to refresh summary:", err);
+			}
+		};
+
+		if (summaryStage === "thinking") {
+			loadFreshSummary();
 		}
-	};
+	}, [summaryStage]);
 
 	// Handle text input submission
 	const handleTextSubmit = async (text?: string) => {
 		const queryText = text || input.trim();
 		if (!queryText) return;
 
-		// Add user message
+		// Add user message to conversation
 		setTextMessages((prev) => [...prev, { role: "user", content: queryText }]);
 		setInput("");
 		setIsLoadingResponse(true);
@@ -587,10 +616,10 @@ export default function Home() {
 			const apiBase = (
 				process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
 			).replace(/\/+$/, "");
-
 			const { getValidToken } = await import("@/utils/auth");
 			const token = await getValidToken();
 
+			// Auto-detect timezone from browser
 			const detectedTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 			const response = await fetch(`${apiBase}/api/text-query`, {
@@ -599,95 +628,111 @@ export default function Home() {
 					"Content-Type": "application/json",
 					...(token ? { Authorization: `Bearer ${token}` } : {}),
 				},
-				credentials: "include",
+				credentials: "include", // ✅ Include cookies (needed for Outlook ms_access_token)
 				body: JSON.stringify({
 					query: queryText,
 					history: textMessages,
-					token,
-					timezone: detectedTimezone,
+					token, // ✅ include token in body for backend
+					timezone: detectedTimezone, // 🌍 Auto-detect and send timezone
 				}),
 			});
 
+			// ✅ log backend response status and any text before throwing
 			if (!response.ok) {
-				const err = await response.text();
-				console.error("Backend error:", err);
-				throw new Error(err);
+				const errorText = await response.text();
+				console.error("❌ Backend returned error:", response.status, errorText);
+				throw new Error(`Backend returned ${response.status}: ${errorText}`);
 			}
 
-			const data = await response.json();
+			let data;
+			try {
+				data = await response.json();
+			} catch (err) {
+				console.error("❌ Failed to parse JSON from backend:", err);
+				throw new Error("Invalid JSON in backend response");
+			}
 
-			// ----- NAVIGATION ACTIONS -----
+			// ✅ Handle navigation actions
 			if (data.action === "navigate" && data.actionTarget) {
-				setTimeout(() => router.push(data.actionTarget), 300);
-				setTextMessages((p) => [
-					...p,
+				setTimeout(() => router.push(data.actionTarget), 500);
+				setTextMessages((prev) => [
+					...prev,
 					{ role: "assistant", content: data.text || "Navigating..." },
 				]);
 				return;
 			}
-
 			if (data.action === "calendar_flow") {
 				router.push("/scenarios/smart-scheduling");
 				return;
 			}
 
-			if (data.action === "open_smart_summary") {
-				setTextMessages((p) => [
-					...p,
-					{ role: "assistant", content: data.text || "" },
-				]);
+			// ✅ Handle calendar/email summary
+			if (data.action === "email_calendar_summary") {
+				console.log(
+					"📧 Home: Received email_calendar_summary action",
+					data.actionData
+				);
+				if (data.text) setPendingSummaryMessage(data.text);
+
+				// Store data in sessionStorage for the smart-summary page to pick up
+				if (typeof window !== "undefined" && data.actionData) {
+					sessionStorage.setItem(
+						"mira_email_calendar_data",
+						JSON.stringify(data.actionData)
+					);
+					console.log("💾 Home: Stored email/calendar data in sessionStorage");
+				}
+
+				// Navigate to the smart-summary page
+				console.log("🔄 Home: Navigating to /scenarios/smart-summary");
 				router.push("/scenarios/smart-summary");
 				return;
 			}
 
-			// ----- SMART SUMMARY ACTION -----
-			if (data.action === "email_calendar_summary") {
-				console.log(
-					"📧 Smart Summary Page: Received email_calendar_summary action",
-					data.actionData
-				);
-
+			// ✅ Handle calendar actions (schedule, cancel, reschedule)
+			if (data.action && data.action.startsWith("calendar_")) {
+				// Display the response text from Mira
 				if (data.text) {
-					setPendingSummaryMessage(data.text);
+					setTextMessages((prev) => [
+						...prev,
+						{ role: "assistant", content: data.text },
+					]);
 				}
-
-				// Directly update state since we're already on the smart-summary page
-				if (data.actionData) {
-					const detail = data.actionData;
-					const rawSteps = detail.steps?.length
-						? detail.steps
-						: DEFAULT_SUMMARY_STEPS;
-					const normalizedCalendarEvents: VoiceSummaryCalendarEvent[] =
-						Array.isArray(detail.calendarEvents) ? detail.calendarEvents : [];
-
-					console.log("📧 Smart Summary Page: Setting state directly", {
-						emails: detail.emails?.length || 0,
-						events: normalizedCalendarEvents.length || 0,
-					});
-
-					setSummarySteps(prepareVoiceSteps(rawSteps));
-					setSummaryEmails(detail.emails ?? []);
-					setSummaryEvents(normalizedCalendarEvents);
-					setSummaryFocus(detail.focus ?? null);
-					setSummaryStage("thinking");
-					setSummaryOverlayVisible(true);
-					setSummaryRunId((id) => id + 1);
+				// Log the action result for debugging
+				if (data.actionResult) {
+					console.log(
+						"Calendar action completed:",
+						data.action,
+						data.actionResult
+					);
 				}
-
+				// ✅ Dispatch event to refresh dashboard and calendar page
+				if (typeof window !== "undefined") {
+					window.dispatchEvent(
+						new CustomEvent("miraCalendarUpdated", {
+							detail: {
+								action: data.action,
+								result: data.actionResult,
+							},
+						})
+					);
+				}
 				return;
 			}
 
-			// Default assistant reply
+			// ✅ Default case — add assistant text reply
 			if (data.text) {
-				setTextMessages((p) => [
-					...p,
+				setTextMessages((prev) => [
+					...prev,
 					{ role: "assistant", content: data.text },
 				]);
+			} else {
+				console.warn("⚠️ No text returned from backend:", data);
 			}
-		} catch (err) {
-			console.error("Error:", err);
-			setTextMessages((p) => [
-				...p,
+		} catch (error) {
+			console.error("🚨 Error sending text query:", error);
+			setTextMessages((prev) => [
+				...prev,
 				{
 					role: "assistant",
 					content: "Sorry, I encountered an error processing your request.",
@@ -731,6 +776,7 @@ export default function Home() {
 		shadow-[0_0_80px_15px_rgba(210,180,255,0.45)] animate-pulse"
 						></div>
 					</div>
+					{/* PANEL CONTAINER */}
 					{/* PANEL CONTAINER */}
 					<div className="w-full mt-10 flex justify-center mt-0">
 						<div className="w-full max-w-[800px] mx-auto">
