@@ -361,15 +361,17 @@ export async function findAvailableSlots(
 		if (currentTime < event.start) {
 			const gapMinutes =
 				(event.start.getTime() - currentTime.getTime()) / (1000 * 60);
-			if (gapMinutes >= durationMinutes) {
-				// This gap can fit the meeting
-				const slotEnd = new Date(
-					currentTime.getTime() + durationMinutes * 60 * 1000
-				);
+			
+			// Generate multiple slots in this gap (every 30 minutes)
+			let slotStart = new Date(currentTime);
+			while (slotStart.getTime() + durationMinutes * 60 * 1000 <= event.start.getTime()) {
+				const slotEnd = new Date(slotStart.getTime() + durationMinutes * 60 * 1000);
 				availableSlots.push({
-					start: new Date(currentTime),
+					start: new Date(slotStart),
 					end: slotEnd,
 				});
+				// Move to next slot (30 minute intervals)
+				slotStart = new Date(slotStart.getTime() + 30 * 60 * 1000);
 			}
 		}
 		// Move current time to end of this event
@@ -380,16 +382,16 @@ export async function findAvailableSlots(
 
 	// Check gap after last event until end of day
 	if (currentTime < dayEnd) {
-		const gapMinutes =
-			(dayEnd.getTime() - currentTime.getTime()) / (1000 * 60);
-		if (gapMinutes >= durationMinutes) {
-			const slotEnd = new Date(
-				currentTime.getTime() + durationMinutes * 60 * 1000
-			);
+		// Generate multiple slots until end of day (every 30 minutes)
+		let slotStart = new Date(currentTime);
+		while (slotStart.getTime() + durationMinutes * 60 * 1000 <= dayEnd.getTime()) {
+			const slotEnd = new Date(slotStart.getTime() + durationMinutes * 60 * 1000);
 			availableSlots.push({
-				start: new Date(currentTime),
+				start: new Date(slotStart),
 				end: slotEnd,
 			});
+			// Move to next slot (30 minute intervals)
+			slotStart = new Date(slotStart.getTime() + 30 * 60 * 1000);
 		}
 	}
 

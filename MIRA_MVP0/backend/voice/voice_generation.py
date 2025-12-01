@@ -727,7 +727,7 @@ async def stream_voice(text: str = "Hello from Mira!"):
         raise HTTPException(status_code=500, detail=f"Voice generation failed: {e}")
 
 
-async def fetch_dashboard_data(user_token: str, has_email: bool, has_calendar: bool, request: Request = None):
+async def fetch_dashboard_data(user_token: str, has_email: bool, has_calendar: bool, request: Request = None, user_timezone: str = "UTC"):
     """
     Fetches live Gmail and Calendar data for the logged-in user.
     Calls internal dashboard endpoints with authentication.
@@ -833,7 +833,8 @@ async def fetch_dashboard_data(user_token: str, has_email: bool, has_calendar: b
 
         if has_calendar:
             try:
-                events_url = f"{base_url}/dashboard/events"
+                # ✅ Pass timezone parameter to events endpoint
+                events_url = f"{base_url}/dashboard/events?user_timezone={user_timezone}"
                 res = await fetch_with_retry(client, events_url)
                 if res.status_code == 200:
                     data = res.json()
@@ -1155,7 +1156,7 @@ async def text_query_pipeline(request: Request):
                 steps.append({"id": "conflicts", "label": "Noting any schedule conflicts..."})
 
             # ✅ Fetch live data from dashboard routes
-            emails, calendar_events = await fetch_dashboard_data(user_token, has_email_intent, has_calendar_intent, request)
+            emails, calendar_events = await fetch_dashboard_data(user_token, has_email_intent, has_calendar_intent, request, detected_timezone or "UTC")
 
             action_data = {
                 "steps": steps,
@@ -1920,6 +1921,16 @@ async def voice_pipeline(
 
     # Preserve raw metadata form (if provided) for fallback uid extraction
     metadata_raw = metadata
+    
+    # ✅ Extract timezone from metadata (if provided)
+    detected_timezone = "UTC"
+    if metadata:
+        try:
+            import json
+            meta_dict = json.loads(metadata) if isinstance(metadata, str) else metadata
+            detected_timezone = meta_dict.get("timezone", "UTC")
+        except Exception:
+            detected_timezone = "UTC"
 
     user_token = None
     if auth_header:
@@ -2116,7 +2127,7 @@ async def voice_pipeline(
                 steps.append({"id": "conflicts", "label": "Noting any schedule conflicts..."})
 
             # ✅ Fetch live data from dashboard routes
-            emails, calendar_events = await fetch_dashboard_data(user_token, has_email_intent, has_calendar_intent, request)
+            emails, calendar_events = await fetch_dashboard_data(user_token, has_email_intent, has_calendar_intent, request, detected_timezone or "UTC")
 
             action_data = {
                 "steps": steps,
@@ -2599,6 +2610,8 @@ async def ws_voice_stt(websocket: WebSocket, language_code: str = "en"):
         # This must run BEFORE summary check to catch action commands
         user_token = client_token if client_token else None
         auth_header = f"Bearer {user_token}" if user_token else None
+        # ✅ Default timezone for websocket (client should send timezone in future)
+        detected_timezone = "UTC"
         
         if auth_header:
             try:
@@ -2818,7 +2831,7 @@ async def ws_voice_stt(websocket: WebSocket, language_code: str = "en"):
                         steps.append({"id": "conflicts", "label": "Noting any schedule conflicts..."})
                     
                     # ✅ Fetch live data from dashboard routes
-                    emails, calendar_events = await fetch_dashboard_data(user_token, has_email_intent, has_calendar_intent, None)
+                    emails, calendar_events = await fetch_dashboard_data(user_token, has_email_intent, has_calendar_intent, None, detected_timezone or "UTC")
                     
                     action_data = {
                         "steps": steps,

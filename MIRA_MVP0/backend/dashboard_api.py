@@ -276,11 +276,15 @@ def analyze_email_priority(subject: str, sender: str, labels: Optional[list] = N
 
 
 @router.get("/dashboard/emails")
-async def get_email_stats(request: Request, authorization: Optional[str] = Header(default=None)):
+async def get_email_stats(
+    request: Request, 
+    authorization: Optional[str] = Header(default=None),
+    user_timezone: str = "UTC"  # ✅ Accept timezone parameter from frontend
+):
     """Get email statistics for dashboard from both Gmail and Outlook."""
     try:
         user = get_user_from_token(authorization)
-        print(f"📧 Dashboard: Fetching email stats for user {user['id']} ({user['email']})")
+        print(f"📧 Dashboard: Fetching email stats for user {user['id']} ({user['email']}) in timezone {user_timezone}")
         
         gmail_service = None
         outlook_token = None
@@ -331,8 +335,14 @@ async def get_email_stats(request: Request, authorization: Optional[str] = Heade
         unread_count = 0
         important_count = 0
         
-        # Get messages from last 24 hours
-        yesterday = datetime.now(timezone.utc) - timedelta(days=1)
+        # ✅ Get messages from last 24 hours based on user's timezone
+        try:
+            user_tz = ZoneInfo(user_timezone)
+        except Exception as e:
+            print(f"⚠️ Invalid timezone '{user_timezone}', falling back to UTC: {e}")
+            user_tz = timezone.utc
+        
+        yesterday = datetime.now(user_tz) - timedelta(days=1)
         
         # FETCH FROM GMAIL
         if gmail_service:
@@ -480,11 +490,15 @@ async def get_email_stats(request: Request, authorization: Optional[str] = Heade
 
 
 @router.get("/dashboard/events")
-async def get_event_stats(request: Request, authorization: Optional[str] = Header(default=None)):
+async def get_event_stats(
+    request: Request, 
+    authorization: Optional[str] = Header(default=None),
+    user_timezone: str = "UTC"  # ✅ Accept timezone parameter from frontend
+):
     """Get event statistics for dashboard from both Google Calendar and Outlook Calendar."""
     try:
         user = get_user_from_token(authorization)
-        print(f"📅 Dashboard: Fetching event stats for user {user['id']} ({user['email']})")
+        print(f"📅 Dashboard: Fetching event stats for user {user['id']} ({user['email']}) in timezone {user_timezone}")
         
         calendar_service = None
         outlook_token = None
@@ -534,10 +548,19 @@ async def get_event_stats(request: Request, authorization: Optional[str] = Heade
         raise HTTPException(status_code=500, detail=f"Error fetching event stats: {str(e)}")
     
     try:
-        # Get today's events
-        now = datetime.now(timezone.utc)
+        # ✅ Get today's events based on user's timezone
+        try:
+            user_tz = ZoneInfo(user_timezone)
+        except Exception as e:
+            print(f"⚠️ Invalid timezone '{user_timezone}', falling back to UTC: {e}")
+            user_tz = ZoneInfo("UTC")
+        
+        # Calculate "today" in user's timezone
+        now = datetime.now(user_tz)
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         today_end = today_start + timedelta(days=1)
+        
+        print(f"📅 Dashboard: Fetching events from {today_start} to {today_end} (user timezone: {user_timezone})")
         
         # Combined events list
         all_events = []

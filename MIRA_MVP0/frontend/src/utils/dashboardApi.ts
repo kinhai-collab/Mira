@@ -95,10 +95,13 @@ export async function fetchEmailStats(): Promise<EmailStats> {
 			};
 		}
 
-		const endpoint = buildApiUrl("dashboard/emails");
-		console.log("Fetching email stats from:", endpoint);
+	// ✅ Get user's timezone from browser
+	const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+	
+	const endpoint = buildApiUrl(`dashboard/emails?user_timezone=${encodeURIComponent(userTimezone)}`);
+	console.log("Fetching email stats from:", endpoint);
 
-		const response = await fetch(endpoint, {
+	const response = await fetch(endpoint, {
 			method: "GET",
 			headers: {
 				Authorization: `Bearer ${token}`,
@@ -165,7 +168,10 @@ export async function fetchEventStats(): Promise<EventStats> {
 			};
 		}
 
-		const endpoint = buildApiUrl("dashboard/events");
+		// ✅ Get user's timezone from browser
+		const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+		
+		const endpoint = buildApiUrl(`dashboard/events?user_timezone=${encodeURIComponent(userTimezone)}`);
 		console.log("Fetching event stats from:", endpoint);
 
 		const response = await fetch(endpoint, {

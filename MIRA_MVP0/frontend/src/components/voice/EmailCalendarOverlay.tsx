@@ -605,9 +605,20 @@ function SummaryCard({
 					<div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
 						{calendarEvents?.map((event) => {
 							const provider = resolveCalendarEventProvider(event);
+							
+							// ✅ Strip HTML tags from note field
+							const cleanNote = event.note
+								? event.note
+										.replace(/<[^>]*>/g, '') // Remove all HTML tags
+										.replace(/&nbsp;/g, ' ') // Replace &nbsp; with space
+										.replace(/\s+/g, ' ') // Collapse multiple spaces
+										.trim()
+										.substring(0, 150) + (event.note.length > 150 ? '...' : '') // Limit length
+								: '';
+							
 							const detailSegments = [
 								event.timeRange,
-								event.note,
+								cleanNote, // Use cleaned note
 								event.location,
 							].filter(Boolean) as string[];
 							const hasSegments = detailSegments.length > 0;
@@ -617,7 +628,7 @@ function SummaryCard({
 									key={event.id}
 									className="flex h-full gap-3 rounded-[18px] border border-[#e6e9f0] bg-white p-5 shadow-[0_8px_18px_rgba(39,40,41,0.05)] transition hover:shadow-md"
 								>
-									<div className="flex h-10 w-10 items-center justify-center rounded-full border border-[#eceff4] bg-[#f5f7fb]">
+									<div className="flex h-10 w-10 items-center justify-center rounded-full border border-[#eceff4] bg-[#f5f7fb] shrink-0">
 										<Image
 											src={provider.icon.src}
 											alt={`${provider.icon.alt} icon`}
@@ -627,18 +638,20 @@ function SummaryCard({
 										/>
 									</div>
 
-									<div className="flex-1 space-y-2">
-										<div className="flex items-start justify-between gap-2">
+									<div className="flex-1 min-w-0 space-y-2">
+										{/* Title and Join Button Row */}
+										<div className="flex items-start gap-2">
 											<div className="flex items-start gap-2 flex-1 min-w-0">
 												<span className="mt-[6px] inline-flex size-2 shrink-0 rounded-full bg-[#6a80ff]" />
-												<div className="flex items-center gap-2 min-w-0 flex-1">
-													<p className="font-['Outfit',sans-serif] text-[14px] font-medium text-[#272829] truncate">
+												<div className="flex flex-col gap-2 min-w-0 flex-1">
+													{/* Title - allows wrapping */}
+													<p className="font-['Outfit',sans-serif] text-[14px] font-medium text-[#272829] line-clamp-2 leading-tight">
 														{event.title}
 													</p>
 													{/* Calendar Provider Badge */}
 													{event.calendar_provider && (
 														<span
-															className={`text-[11px] px-2 py-0.5 rounded-full font-medium shrink-0 ${
+															className={`text-[11px] px-2 py-0.5 rounded-full font-medium shrink-0 inline-flex self-start ${
 																event.calendar_provider === "google"
 																	? "bg-blue-100 text-blue-700"
 																	: "bg-purple-100 text-purple-700"
@@ -651,12 +664,13 @@ function SummaryCard({
 													)}
 												</div>
 											</div>
+											{/* Join Button - properly positioned */}
 											{event.meetingLink && (
 												<a
 													href={event.meetingLink}
 													target="_blank"
 													rel="noopener noreferrer"
-													className="shrink-0 inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-white bg-[#382099] rounded-md hover:bg-[#2d1a7a] transition-colors"
+													className="shrink-0 inline-flex items-center gap-1 px-3 py-1.5 text-[11px] font-medium text-white bg-[#382099] rounded-md hover:bg-[#2d1a7a] transition-colors"
 												>
 													Join
 													<svg
@@ -671,6 +685,7 @@ function SummaryCard({
 												</a>
 											)}
 										</div>
+										{/* Event Details */}
 										{hasSegments && (
 											<div className="flex flex-wrap items-center gap-2 text-[13px] font-light text-[#5a5c61]">
 												{detailSegments.map((segment, index) => (
