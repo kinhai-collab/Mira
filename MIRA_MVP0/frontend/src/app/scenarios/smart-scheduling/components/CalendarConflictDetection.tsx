@@ -270,77 +270,28 @@ export default function CalendarConflictDetection({
 					</div>
 				</div>
 
-				{/* Rescheduling status with purple dot */}
-				<div className="flex items-center gap-[16px]">
-					<div className="w-3 h-3 rounded-full bg-[#382099] shrink-0" />
-					<p className="text-[18px] font-medium text-[#282829]">
-						Rescheduling the meeting...
-					</p>
-				</div>
-
-				{/* Reasoning Process with purple border */}
-				<div className="pl-[4px]">
-					<div className="border-l border-[#382099] pl-[24px] space-y-2">
-						<div className="flex items-center gap-2">
-							<Image
-								src="/Icons/Property 1=Done in circle.svg"
-								alt="done"
-								width={16}
-								height={16}
-							/>
-							<p className="text-[16px] text-[#282829]">
-								Checked which meeting is scheduled next.
-							</p>
-						</div>
-
-						<div className="flex items-center gap-2">
-							<Image
-								src="/Icons/Property 1=Done in circle.svg"
-								alt="done"
-								width={16}
-								height={16}
-							/>
-							<p className="text-[16px] text-[#282829]">
-								Reviewed your availability tomorrow.
-							</p>
-						</div>
-					</div>
-
-					{/* See More button */}
-					<div className="pl-[8px] mt-2">
-						<button className="flex items-center gap-1 px-4 py-2 rounded-full hover:bg-gray-50 transition">
-							<p className="text-[16px] text-[#735FF8]">See More</p>
-							<svg
-								width="18"
-								height="18"
-								viewBox="0 0 24 24"
-								fill="none"
-								className="transform rotate-90"
-							>
-								<path
-									d="M6 9L12 15L18 9"
-									stroke="#735FF8"
-									strokeWidth="2"
-									strokeLinecap="round"
-									strokeLinejoin="round"
-								/>
-							</svg>
-						</button>
-					</div>
-				</div>
-
-				{/* Cancel button */}
-				<div className="pl-[24px] pt-4">
-					<button
-						onClick={() => {
-							const first = conflicts[0];
-							if (first) onCancel(first.eventA);
-						}}
-						className="bg-white border border-[#464647] text-[#282829] px-4 py-2 rounded-full text-[18px] hover:bg-gray-50 transition"
-					>
-						Cancel
-					</button>
-				</div>
+			{/* Action buttons */}
+			<div className="pl-[24px] pt-4 flex gap-3">
+				<button
+					onClick={() => {
+						const first = conflicts[0];
+						if (first) onReschedule(first, first.eventA);
+					}}
+					className="bg-[#464647] text-white px-4 py-2 rounded-full text-[18px] hover:bg-[#3a3a3b] transition"
+				>
+					Reschedule Event
+				</button>
+				<button
+					onClick={() => {
+						if (typeof window !== "undefined") {
+							window.location.href = "/";
+						}
+					}}
+					className="bg-white border border-[#464647] text-[#282829] px-4 py-2 rounded-full text-[18px] hover:bg-gray-50 transition"
+				>
+					Cancel
+				</button>
+			</div>
 			</div>
 		)}
 
