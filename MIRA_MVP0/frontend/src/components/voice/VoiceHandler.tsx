@@ -31,7 +31,6 @@ export default function VoiceHandler() {
 				if (token) headers.Authorization = `Bearer ${token}`;
 			} catch (e) {
 				// token retrieval failed — proceed without header
-				console.warn('Could not get auth token for voice request', e);
 			}
 
 			try {
@@ -51,14 +50,12 @@ export default function VoiceHandler() {
 						for (let i = 0; i < audioBinary.length; i++) view[i] = audioBinary.charCodeAt(i);
 						const blob = new Blob([view], { type: 'audio/mpeg' });
 						const url = URL.createObjectURL(blob);
-						const audioEl = new Audio(url);
-						audioEl.play().catch((e) => console.warn('Audio play failed', e));
-					} catch (e) {
-						console.warn('Failed to decode/play audio from server', e, result);
-					}
-				} else {
-					console.log('WS result:', result);
+					const audioEl = new Audio(url);
+					audioEl.play().catch(() => {});
+				} catch (e) {
+					// Failed to decode/play audio from server
 				}
+			}
 			} catch (e) {
 				console.error('Voice WS upload failed', e);
 			}

@@ -276,15 +276,6 @@ export async function startWsVoiceStt(options: Options = {}) {
 
     // base64-encode PCM16 ArrayBuffer payload (empty string for commit)
     const b64 = commit ? '' : arrayBufferToBase64(ab);
-    // Debug: log the very first chunk and the auth/handshake shape so server expectations are visible
-    try {
-      if (!debugLoggedFirstChunk) {
-        debugLoggedFirstChunk = true;
-        console.debug('[wsVoiceStt] sendAppendChunk: first chunk ->', { byteLength: ab.byteLength, commit, sample_rate: 16000, preview_b64: commit ? '(empty commit)' : b64.slice(0, 64) });
-      }
-    } catch {
-      // ignore logging failures
-    }
     const msg = {
       message_type: 'input_audio_chunk',
       audio_base_64: b64,
@@ -343,11 +334,10 @@ export async function startWsVoiceStt(options: Options = {}) {
         // if it's plain text, forward raw
         if (onTranscript) onTranscript(evt.data);
       }
-    } else {
-      // binary server messages: ignore or handle if needed
-      // some server might send binary audio back for TTS — we ignore here
-      console.warn('Received binary message from server (ignored)');
-    }
+      } else {
+        // binary server messages: ignore or handle if needed
+        // some server might send binary audio back for TTS — we ignore here
+      }
   }
 
   async function initWebSocket() {
@@ -392,10 +382,9 @@ export async function startWsVoiceStt(options: Options = {}) {
           if (token) {
             try {
               const authMsg = { type: 'authorization', token };
-              console.debug('[wsVoiceStt] ws.onopen: sending auth message', authMsg);
               ws?.send(JSON.stringify(authMsg));
             } catch (e) {
-              console.warn('Failed to send auth message', e);
+              // Failed to send auth message
             }
           }
           ws!.onmessage = handleServerMessage;
@@ -550,9 +539,9 @@ export async function startWsVoiceStt(options: Options = {}) {
         stream.getTracks().forEach((t) => t.stop());
         stream = null;
       }
-    } catch (e) {
-      console.warn('Failed to stop audio capture', e);
-    }
+      } catch (e) {
+        // Failed to stop audio capture
+      }
     // keep the ws open to receive transcripts; caller may call closeWs to close
   }
 
@@ -561,7 +550,7 @@ export async function startWsVoiceStt(options: Options = {}) {
       if (ws && ws.readyState === WebSocket.OPEN) ws.close();
       ws = null;
     } catch (e) {
-      console.warn('Error closing ws', e);
+      // Error closing ws
     }
   }
 
@@ -662,13 +651,6 @@ export async function sendBlobOnce(
             commit: false,
             sample_rate: 16000,
           };
-          // Debug: log the first outgoing chunk message
-          try {
-            if (!sendBlobOnceLoggedFirstChunk) {
-              sendBlobOnceLoggedFirstChunk = true;
-              console.debug('[wsVoiceStt] sendBlobOnce: first message ->', { preview: JSON.stringify({ ...msg, audio_base_64: msg.audio_base_64.slice(0, 64) }) });
-            }
-          } catch {}
           ws!.send(JSON.stringify(msg));
 
           // backpressure

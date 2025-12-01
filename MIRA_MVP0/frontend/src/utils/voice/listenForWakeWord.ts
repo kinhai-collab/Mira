@@ -12,8 +12,6 @@ export async function listenForWakeWord() {
 		source.connect(processor);
 		processor.connect(audioContext.destination);
 
-		console.log("🎧 Listening for 'Hey Mira'...");
-
 		let listening = true;
 
 		processor.onaudioprocess = async (event) => {
@@ -24,7 +22,6 @@ export async function listenForWakeWord() {
 				100;
 
 			if (rms > 12) {
-				console.log("🟣 Wake word detected – start recording...");
 				listening = false;
 				processor.disconnect();
 				source.disconnect();
@@ -32,7 +29,6 @@ export async function listenForWakeWord() {
                 await startMiraVoice();
 
 				setTimeout(() => {
-					console.log("✅ Ready to listen again...");
 					listenForWakeWord(); // restart listening loop
 				}, 3000);
 			}

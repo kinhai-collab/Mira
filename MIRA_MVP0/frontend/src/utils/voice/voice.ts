@@ -7,7 +7,6 @@ let currentUrl: string | null = null;
 export async function playVoice(text: string) {
 	// Don't play if muted
 	if (isMiraMuted) {
-		console.log('🔇 Skipping playVoice - Mira is muted');
 		return;
 	}
 	

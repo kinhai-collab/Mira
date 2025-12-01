@@ -53,7 +53,6 @@ export class WebSocketManager {
 	 */
 	public async connect(): Promise<void> {
 		if (this.ws && (this.state === ConnectionState.OPEN || this.state === ConnectionState.CONNECTING)) {
-			console.log('⚠️ WebSocket already connected or connecting');
 			return;
 		}
 
@@ -68,13 +67,11 @@ export class WebSocketManager {
 	private async createConnection(): Promise<void> {
 		// Don't connect if document is not ready
 		if (typeof document !== 'undefined' && document.readyState === 'loading') {
-			console.warn('⚠️ Skipping WebSocket connection - document still loading');
 			return;
 		}
 		
 		try {
 			this.updateState(ConnectionState.CONNECTING);
-			console.log('🔌 Connecting to WebSocket...', this.config.wsUrl);
 
 			// Build URL with token if provided
 			let url = this.config.wsUrl;
@@ -86,7 +83,6 @@ export class WebSocketManager {
 			this.ws = new WebSocket(url);
 
 			this.ws.onopen = () => {
-				console.log('✅ WebSocket connected');
 				this.reconnectAttempts = 0;
 				this.updateState(ConnectionState.OPEN);
 				this.startKeepalive();
@@ -99,7 +95,6 @@ export class WebSocketManager {
 					
 					// Handle pong response
 					if (data.message_type === 'pong') {
-						console.debug('🏓 Pong received');
 						this.clearPongTimer();
 						return;
 					}
@@ -119,12 +114,6 @@ export class WebSocketManager {
 			};
 
 			this.ws.onclose = (event) => {
-				console.log('🔌 WebSocket closed:', {
-					code: event.code,
-					reason: event.reason,
-					wasClean: event.wasClean,
-				});
-				
 				this.stopKeepalive();
 				this.updateState(ConnectionState.CLOSED);
 
@@ -162,7 +151,6 @@ export class WebSocketManager {
 			30000 // Cap at 30 seconds
 		);
 
-		console.log(`🔄 Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
 		this.updateState(ConnectionState.RECONNECTING);
 
 		this.reconnectTimer = setTimeout(() => {
@@ -178,12 +166,10 @@ export class WebSocketManager {
 
 		this.pingTimer = setInterval(() => {
 			if (this.state === ConnectionState.OPEN && this.ws) {
-				console.debug('🏓 Sending ping');
 				this.send({ message_type: 'ping' });
 				
 				// Set pong timeout
 				this.pongTimer = setTimeout(() => {
-					console.warn('⚠️ Pong timeout - connection appears dead, reconnecting...');
 					this.forceReconnect();
 				}, this.pongTimeout);
 			}
@@ -224,7 +210,6 @@ export class WebSocketManager {
 			}
 		} else {
 			// Buffer message if not connected
-			console.warn('⚠️ WebSocket not open, buffering message');
 			this.messageQueue.push(data);
 		}
 	}
@@ -239,8 +224,6 @@ export class WebSocketManager {
 			} catch (err) {
 				console.error('❌ Failed to send binary WebSocket message:', err);
 			}
-		} else {
-			console.warn('⚠️ WebSocket not open, cannot send binary data');
 		}
 	}
 
@@ -249,7 +232,6 @@ export class WebSocketManager {
 	 */
 	private flushMessageQueue(): void {
 		if (this.messageQueue.length > 0) {
-			console.log(`📤 Flushing ${this.messageQueue.length} buffered messages`);
 			while (this.messageQueue.length > 0) {
 				const msg = this.messageQueue.shift();
 				this.send(msg);
@@ -261,7 +243,6 @@ export class WebSocketManager {
 	 * Force an immediate reconnection (e.g., manual reconnect button)
 	 */
 	public forceReconnect(): void {
-		console.log('🔄 Forcing reconnection...');
 		this.reconnectAttempts = 0; // Reset counter for manual reconnect
 		this.close(false);
 		this.connect();
@@ -298,8 +279,6 @@ export class WebSocketManager {
 	private updateState(newState: ConnectionState): void {
 		if (this.state !== newState) {
 			this.state = newState;
-			console.log(`🔄 Connection state: ${newState}`);
-			
 			if (this.config.onStateChange) {
 				this.config.onStateChange(newState);
 			}
@@ -325,6 +304,5 @@ export class WebSocketManager {
 	 */
 	public clearQueue(): void {
 		this.messageQueue = [];
-		console.log('🗑️ Message queue cleared');
 	}
 }

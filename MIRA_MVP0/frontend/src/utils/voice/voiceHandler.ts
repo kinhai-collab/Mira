@@ -11,7 +11,6 @@ export let isMiraMuted = false;
 
 export function setMiraMute(mute: boolean) {
 	isMiraMuted = mute;
-	console.log(`Mira mute state set to: ${mute}`);
 
 	// If muting, stop any currently playing audio
 	if (mute) {
@@ -23,7 +22,7 @@ export function setMiraMute(mute: boolean) {
 				currentPlayingAudio.volume = 0;
 				currentPlayingAudio.muted = true;
 			} catch (e) {
-				console.debug("Failed to stop audio when muting:", e);
+				// Failed to stop audio when muting
 			}
 		}
 
@@ -51,8 +50,6 @@ export function setMiraMute(mute: boolean) {
 
 		// Stop greeting voice if playing
 		stopVoice();
-
-		console.log("🔇 Stopped all audio playback due to mute");
 	}
 }
 
@@ -106,7 +103,6 @@ const TRANSCRIPT_CACHE_TTL = 5000; // 5 seconds - ignore duplicates within 5 sec
 function playNextInQueue() {
 	// Block playback if user interrupted
 	if (isAudioInterrupted) {
-		console.log("🚫 Blocked playNextInQueue - user interrupted");
 		isPlayingQueue = false;
 		currentPlayingAudio = null;
 		return;
@@ -114,7 +110,6 @@ function playNextInQueue() {
 
 	// Block playback if muted
 	if (isMiraMuted) {
-		console.log("🔇 Blocked playNextInQueue - Mira is muted");
 		isPlayingQueue = false;
 		currentPlayingAudio = null;
 		// Clear the queue when muted
@@ -130,7 +125,6 @@ function playNextInQueue() {
 	}
 
 	if (audioQueue.length === 0) {
-		console.log("✅ Queue empty");
 		isPlayingQueue = false;
 		currentPlayingAudio = null;
 		return;
@@ -140,8 +134,6 @@ function playNextInQueue() {
 	const audio = audioQueue.shift()!;
 	currentPlayingAudio = audio;
 
-	// Removed repetitive log: Playing chunk
-
 	// Pre-buffer next chunk immediately when this one starts playing
 	const preloadNext = () => {
 		if (audioQueue.length > 0 && !isAudioInterrupted) {
@@ -150,13 +142,11 @@ function playNextInQueue() {
 			if (nextAudio.readyState < 2) {
 				// If not already loaded
 				nextAudio.load();
-				// Removed repetitive log: Pre-loading next chunk
 			}
 		}
 	};
 
 	audio.onended = () => {
-		// Removed repetitive log: Chunk complete
 		try {
 			URL.revokeObjectURL(audio.src);
 		} catch {
@@ -166,8 +156,6 @@ function playNextInQueue() {
 		// Don't continue queue if interrupted
 		if (!isAudioInterrupted) {
 			playNextInQueue();
-		} else {
-			console.log("🚫 Skipping next chunk - user interrupted");
 		}
 	};
 
@@ -191,11 +179,8 @@ function playNextInQueue() {
 	audio
 		.play()
 		.then(() => {
-			// Removed repetitive log: Playback started
 			if (firstAudioPlayTime === 0 && firstChunkReceivedTime > 0) {
 				firstAudioPlayTime = performance.now();
-				const totalLatency = firstAudioPlayTime - firstChunkReceivedTime;
-				console.log(`⏱️ 🎯 TOTAL LATENCY: ${totalLatency.toFixed(1)}ms`);
 			}
 			// Start pre-loading next chunk NOW while this one plays
 			preloadNext();
@@ -212,13 +197,11 @@ function handleAudioChunk(base64: string) {
 	try {
 		// Ignore chunks if user has interrupted
 		if (isAudioInterrupted) {
-			console.log("🚫 Ignoring audio chunk - user interrupted");
 			return;
 		}
 
 		// Ignore chunks if muted
 		if (isMiraMuted) {
-			console.log("🔇 Ignoring audio chunk - Mira is muted");
 			return;
 		}
 
@@ -229,10 +212,7 @@ function handleAudioChunk(base64: string) {
 
 		if (firstChunkReceivedTime === 0) {
 			firstChunkReceivedTime = performance.now();
-			console.log("⏱️ First audio chunk received from backend");
 		}
-
-		// Removed repetitive log: Audio chunk received
 
 		// Convert base64 to blob - MP3 format
 		const binaryString = atob(base64);
@@ -252,11 +232,8 @@ function handleAudioChunk(base64: string) {
 		// This starts decoding ASAP, not waiting until play() is called
 		void audio.load();
 
-		// Removed repetitive log: Created Audio element (preloading started)
-
 		// Add to queue
 		audioQueue.push(audio);
-		// Removed repetitive log: Queued
 
 		// Start playing if not already playing
 		if (!isPlayingQueue) {
@@ -324,13 +301,10 @@ function writeString(view: DataView, offset: number, string: string) {
 }
 
 function handleAudioFinal() {
-	// Removed repetitive log: Audio stream complete
 	// Buffer queue will drain naturally
 }
 
 function stopAudioPlayback() {
-	console.log("🛑 Stopping audio playback - user interruption");
-
 	// Set interrupt flag to ignore incoming chunks from old response
 	isAudioInterrupted = true;
 
@@ -346,15 +320,13 @@ function stopAudioPlayback() {
 			currentPlayingAudio.load(); // Force reset
 			currentPlayingAudio.remove(); // Remove from DOM if attached
 			URL.revokeObjectURL(currentPlayingAudio.src);
-			console.log("✅ Forcefully stopped current audio");
 		} catch (e) {
-			console.debug("Failed to stop current audio:", e);
+			// Failed to stop audio
 		}
 		currentPlayingAudio = null;
 	}
 
 	// Clear entire queue - don't play old chunks
-	// Removed repetitive log: Clearing queued audio chunks
 	audioQueue.forEach((audio) => {
 		try {
 			// Mute first for safety
@@ -378,9 +350,8 @@ function stopAudioPlayback() {
 		try {
 			currentAudio.pause();
 			currentAudio.currentTime = 0;
-			console.log("✅ Stopped HTML5 audio");
 		} catch (error) {
-			console.warn("Failed to stop HTML5 audio:", error);
+			// Failed to stop HTML5 audio
 		}
 		currentAudio = null;
 	}
@@ -389,16 +360,13 @@ function stopAudioPlayback() {
 	if (wsController && typeof wsController.send === "function") {
 		try {
 			void wsController.send({ message_type: "stop_audio" });
-			console.log("📤 Sent stop_audio signal to backend");
 		} catch (error) {
-			console.warn("Failed to send stop_audio signal:", error);
+			// Failed to send stop_audio signal
 		}
 	}
 }
 
 function resetAudioState() {
-	// Removed repetitive log: Resetting audio
-
 	// Reset interrupt flag
 	isAudioInterrupted = false;
 
@@ -432,7 +400,6 @@ function resetAudioState() {
 async function playAudio(base64: string) {
 	// Don't play if muted
 	if (isMiraMuted) {
-		console.log("🔇 Skipping playAudio - Mira is muted");
 		return;
 	}
 
@@ -473,7 +440,6 @@ function playNonStreamingAudio(audioBase64: string) {
 
 	// Clear streaming audio queue
 	if (isPlayingQueue || audioQueue.length > 0) {
-		console.log("🧹 Clearing audio queue for calendar/email action");
 		audioQueue.forEach((audio) => {
 			try {
 				URL.revokeObjectURL(audio.src);
@@ -516,7 +482,6 @@ function playNonStreamingAudio(audioBase64: string) {
 			if (playPromise !== undefined) {
 				playPromise
 					.then(() => {
-						console.log("✅ Calendar/email audio playing");
 						audio.addEventListener("ended", () => {
 							isAudioPlaying = false;
 							currentAudio = null;
@@ -537,7 +502,6 @@ function playNonStreamingAudio(audioBase64: string) {
 			} else {
 				isAudioPlaying = false;
 				currentAudio = null;
-				console.warn("⚠️ audio.play() returned undefined");
 			}
 		};
 
@@ -560,48 +524,13 @@ async function processServerResponse(data: any) {
 	try {
 		if (!data) return;
 
-		// Debug: Only log important messages (actions, errors, audio) - reduce noise for normal flow
-		try {
-			const msgType = data.message_type || data.type || data.event;
-			const isImportant =
-				msgType === "response" ||
-				msgType === "error" ||
-				msgType === "session_started" ||
-				data.action ||
-				data.error ||
-				!!(data.audio || data.audio_base_64 || data.audio_base64);
-			if (isImportant) {
-				const logData =
-					typeof data === "object"
-						? {
-								message_type: data.message_type,
-								type: data.type,
-								event: data.event,
-								hasAudio: !!(
-									data.audio ||
-									data.audio_base_64 ||
-									data.audio_base64
-								),
-								action: data.action,
-								error: data.error,
-								text: data.text ? data.text.substring(0, 50) + "..." : null,
-						  }
-						: data;
-				console.log("📥 WS Message (important):", logData);
-			}
-		} catch {
-			// Silent catch for logging errors
-		}
+		// Only log errors - reduce noise for normal flow
 
 		// Handle ElevenLabs-specific message types (forwarded by server)
 		const msgType = data.message_type || data.type || data.event;
 
 		// Handle ElevenLabs session_started confirmation
 		if (msgType === "session_started") {
-			console.log("✅ ElevenLabs session started successfully:", {
-				session_id: data.session_id,
-				sample_rate: data.config?.sample_rate,
-			});
 			// Session is ready, we can start sending audio
 			return; // Don't process as a regular response
 		}
@@ -613,10 +542,6 @@ async function processServerResponse(data: any) {
 			msgType === "partial_transcription"
 		) {
 			// Real-time partial transcript - could show in UI as "typing" indicator
-			console.debug(
-				"📝 Partial transcript:",
-				data.text || data.partial || null
-			);
 			// You might want to update UI with partial text here
 			if (typeof window !== "undefined") {
 				window.dispatchEvent(
@@ -633,17 +558,12 @@ async function processServerResponse(data: any) {
 			// Track first partial response for latency measurement
 			if (firstChunkReceivedTime === 0) {
 				firstChunkReceivedTime = performance.now();
-				console.log(
-					"⏱️ First partial_response received - response generation started"
-				);
 			}
 
 			// Skip empty partial responses
 			if (!data.text || !data.text.trim()) {
 				return;
 			}
-
-			console.debug("📝 Partial response:", data.text?.substring(0, 50) || "");
 			lastPartialResponseText = data.text || "";
 
 			// Dispatch event for UI
@@ -663,7 +583,6 @@ async function processServerResponse(data: any) {
 			// Final committed transcript - this is the complete transcription
 			// Skip empty/null transcripts to prevent glitches
 			if (!data.text || !data.text.trim()) {
-				console.debug("⏭️ Skipping empty committed transcript");
 				return;
 			}
 
@@ -676,13 +595,6 @@ async function processServerResponse(data: any) {
 				lastProcessedTime &&
 				currentTime - lastProcessedTime < TRANSCRIPT_CACHE_TTL
 			) {
-				const timeSince = ((currentTime - lastProcessedTime) / 1000).toFixed(2);
-				console.debug(
-					`⏭️ Skipping duplicate transcript (processed ${timeSince}s ago): '${data.text.substring(
-						0,
-						50
-					)}...'`
-				);
 				return; // Don't process duplicate
 			}
 
@@ -699,10 +611,6 @@ async function processServerResponse(data: any) {
 				}
 			}
 
-			// Only log final transcript if it's meaningful
-			if (data.text && data.text.trim().length > 10) {
-				console.log("📝 Final transcript:", data.text);
-			}
 			// Update data structure to match what processServerResponse expects
 			if (data.text && !data.userText) {
 				// This is the transcribed user speech
@@ -714,17 +622,7 @@ async function processServerResponse(data: any) {
 		// Audio chunk streaming from backend (ElevenLabs TTS chunks)
 		// NOTE: Chunks are already accumulated by onAudioChunk callback,
 		// so we just return here to avoid double-accumulation
-		if (msgType === "audio_chunk") {
-			console.log(
-				"🔉 audio_chunk in processServerResponse (already handled by callback)"
-			);
-			return;
-		}
-
-		if (msgType === "audio_final") {
-			console.log(
-				"🏁 audio_final in processServerResponse (already handled by callback)"
-			);
+		if (msgType === "audio_chunk" || msgType === "audio_final") {
 			return;
 		} // Log ElevenLabs upstream errors with helpful context
 		if (
@@ -755,7 +653,6 @@ async function processServerResponse(data: any) {
 
 		// Handle navigation actions (e.g., morning brief)
 		if (data.action === "navigate" && data.actionTarget) {
-			console.log("🧭 Navigating to:", data.actionTarget);
 			setTimeout(() => {
 				if (typeof window !== "undefined") {
 					window.location.href = data.actionTarget;
@@ -777,10 +674,9 @@ async function processServerResponse(data: any) {
 					window.dispatchEvent(
 						new CustomEvent("miraCalendarModify", { detail })
 					);
-					console.log("📤 Dispatched miraCalendarModify event:", detail);
 				}
 			} catch (e) {
-				console.warn("Failed to dispatch calendar modify event", e);
+				// Failed to dispatch calendar modify event
 			}
 		}
 
@@ -798,17 +694,15 @@ async function processServerResponse(data: any) {
 							},
 						})
 					);
-					console.log("📤 Dispatched navigation event:", route);
 				}
 			} catch (e) {
-				console.warn("Failed to dispatch navigation event", e);
+				// Failed to dispatch navigation event
 			}
 
 			// Play navigation audio if available
 			const audioField =
 				data.audio || data.audio_base_64 || data.audio_base64 || null;
 			if (audioField && !isMiraMuted && hasUserInteracted) {
-				console.log("🔊 Playing navigation audio");
 				playNonStreamingAudio(audioField);
 			}
 			return; // Exit early
@@ -822,10 +716,9 @@ async function processServerResponse(data: any) {
 							detail: data.actionData ?? {},
 						})
 					);
-					console.log("📤 Dispatched miraEmailCalendarSummary event");
 				}
 			} catch (e) {
-				console.warn("Failed to dispatch email/calendar summary event", e);
+				// Failed to dispatch email/calendar summary event
 			}
 
 			// CRITICAL FIX: Handle audio for calendar/email actions ONLY HERE (not in text processing below)
@@ -833,7 +726,6 @@ async function processServerResponse(data: any) {
 			const audioField =
 				data.audio || data.audio_base_64 || data.audio_base64 || null;
 			if (audioField && !isMiraMuted && hasUserInteracted) {
-				console.log("🔊 Playing calendar/email action audio");
 				playNonStreamingAudio(audioField);
 			}
 			return; // Exit early - don't process in the text section below
@@ -855,22 +747,13 @@ async function processServerResponse(data: any) {
 			const audioField =
 				data.audio || data.audio_base_64 || data.audio_base64 || null;
 			if (audioField) {
-				console.log(
-					"🔊 Audio received (non-streaming), hasUserInteracted:",
-					hasUserInteracted
-				);
-
 				// Don't play if muted
 				if (isMiraMuted) {
-					console.log("🔇 Skipping non-streaming audio - Mira is muted");
 					return;
 				}
 
 				// Don't play if queue is already active
 				if (isPlayingQueue || currentPlayingAudio) {
-					console.warn(
-						"⚠️ Skipping non-streaming audio - queue already playing"
-					);
 					return;
 				}
 
@@ -882,9 +765,6 @@ async function processServerResponse(data: any) {
 				}
 
 				if (!hasUserInteracted) {
-					console.warn(
-						"⚠️ Audio available but user hasn't interacted yet - storing for later"
-					);
 					localStorage.setItem("pending_audio", data.audio);
 					hasUserInteracted = true;
 				}
@@ -924,13 +804,12 @@ async function processServerResponse(data: any) {
 								.catch((err) => {
 									isAudioPlaying = false;
 									currentAudio = null;
-									console.error("❌ Audio playback failed:", err);
+									console.error("Audio playback failed:", err);
 									URL.revokeObjectURL(url);
 								});
 						} else {
 							isAudioPlaying = false;
 							currentAudio = null;
-							console.warn("⚠️ audio.play() returned undefined");
 						}
 					};
 
@@ -942,13 +821,9 @@ async function processServerResponse(data: any) {
 						if (audio.readyState >= 2 && audio.paused) playAudio();
 					}, 100);
 				} catch (err) {
-					console.error("❌ Audio creation/decode failed:", err);
+					console.error("Audio creation/decode failed:", err);
 				}
-			} else {
-				console.log("⚠️ No audio in response");
 			}
-		} else {
-			console.log("No meaningful response, skipping update");
 		}
 	} catch (err) {
 		console.error("processServerResponse error:", err);
@@ -1001,7 +876,6 @@ if (typeof window !== "undefined") {
 export async function startMiraVoice() {
 	try {
 		if (isConversationActive) {
-			console.log("Mira already active.");
 			return;
 		}
 
@@ -1027,7 +901,6 @@ export async function startMiraVoice() {
 					audio
 						.play()
 						.then(() => {
-							console.log("✅ Playing pending audio");
 							localStorage.removeItem("pending_audio");
 							audio.addEventListener("ended", () => {
 								isAudioPlaying = false;
@@ -1038,7 +911,7 @@ export async function startMiraVoice() {
 						.catch((err) => {
 							isAudioPlaying = false;
 							currentAudio = null;
-							console.warn("Failed to play pending audio:", err);
+							// Failed to play pending audio
 							URL.revokeObjectURL(url);
 						});
 				} catch (err) {
@@ -1049,7 +922,6 @@ export async function startMiraVoice() {
 		}
 
 		isConversationActive = true;
-		console.log("🎧 Conversation (realtime) started.");
 
 		try {
 			// initialize realtime STT client
@@ -1069,7 +941,6 @@ export async function startMiraVoice() {
 				},
 				onPartialResponse: (text: string) => {
 					try {
-						console.debug("Partial response:", text);
 						if (typeof window !== "undefined") {
 							window.dispatchEvent(
 								new CustomEvent("miraPartialResponse", { detail: text })
@@ -1093,15 +964,9 @@ export async function startMiraVoice() {
 				},
 				onResponse: (text: string, audioB64?: string | null) => {
 					try {
-						console.log("Realtime response received:", text);
-
 						if (audioB64 && !isMiraMuted) {
 							// non-streaming audio, play as a single chunk (only if not muted)
 							void playAudio(audioB64);
-						} else if (audioB64 && isMiraMuted) {
-							console.log(
-								"🔇 Skipping audio playback in onResponse - Mira is muted"
-							);
 						}
 						// also forward to the usual processor so conversation state updates
 						void processServerResponse({ text, audio: audioB64 });
@@ -1114,7 +979,6 @@ export async function startMiraVoice() {
 						logDetailedError("WS stt error:", err);
 						// Reset conversation state on error to allow retry
 						if (isConversationActive) {
-							console.log("🔄 Resetting conversation state due to WebSocket error");
 							isConversationActive = false;
 						}
 					} catch (logErr) {
@@ -1124,26 +988,13 @@ export async function startMiraVoice() {
 					}
 				},
 				onClose: (ev?: CloseEvent) => {
-					console.log(
-						"WS stt closed",
-						ev
-							? {
-									code: ev.code,
-									reason: ev.reason,
-									wasClean: ev.wasClean,
-							  }
-							: ""
-					);
-					// Reset conversation state if connection closed unexpectedly
-					// Code 1006 means connection failed (no close frame received)
-					if (ev && !ev.wasClean && ev.code === 1006) {
-						console.log("🔄 Resetting conversation state - connection failed (1006)");
-						isConversationActive = false;
-					}
-				},
-				onOpen: () => console.log("WS stt open"),
-				onStateChange: (state: ConnectionState) => {
-					console.log("🔄 WebSocket state changed:", state);
+			// Reset conversation state if connection closed unexpectedly
+			// Code 1006 means connection failed (no close frame received)
+			if (ev && !ev.wasClean && ev.code === 1006) {
+				isConversationActive = false;
+			}
+		},
+		onStateChange: (state: ConnectionState) => {
 					// Dispatch event for UI components
 					if (typeof window !== "undefined") {
 						window.dispatchEvent(
@@ -1173,15 +1024,13 @@ export async function startMiraVoice() {
 				// Monitor for interruption when audio is playing
 				if (isPlayingQueue || currentPlayingAudio) {
 					const interrupted = await monitorForInterruption();
-					if (interrupted) {
-						console.log("🛑 Audio interrupted by user");
-						// stopAudioPlayback() already called in monitorForInterruption
-					}
+				if (interrupted) {
+					// stopAudioPlayback() already called in monitorForInterruption
+				}
 				}
 				await new Promise((res) => setTimeout(res, 100)); // Check more frequently
 			}
 
-			console.log("🪞 Realtime conversation ended.");
 		} catch (err) {
 			logDetailedError("Conversation (realtime) error:", err);
 			isConversationActive = false;
@@ -1216,7 +1065,6 @@ export function stopMiraVoice(permanent: boolean = false) {
 
 	// If permanent stop (e.g., switching to text mode), close WebSocket permanently
 	if (permanent && wsController) {
-		console.log("🔌 Permanently closing WebSocket for text mode");
 		const ws = wsController.getWebSocket();
 		if (ws && typeof (ws as any).close === 'function') {
 			(ws as any).close(true); // true = permanent close, no reconnect
@@ -1225,7 +1073,6 @@ export function stopMiraVoice(permanent: boolean = false) {
 	}
 
 	stopVoice();
-	console.log(`🛑 Conversation manually stopped.${permanent ? ' (permanent)' : ''}`);
 }
 
 /* ---------------------- Audio Energy Detection ---------------------- */
@@ -1341,13 +1188,6 @@ async function monitorForInterruption(): Promise<boolean> {
 						highEnergyCount++;
 						if (highEnergyCount >= 1) {
 							// Require only 1 frame for immediate response
-							console.log(
-								"🎤 User interruption detected, energy:",
-								energy.toFixed(2),
-								"frames:",
-								highEnergyCount
-							);
-
 							// Stop all audio playback and notify backend
 							stopAudioPlayback();
 
@@ -1410,22 +1250,10 @@ async function recordOnce(): Promise<void> {
 			activeRecorder.onstop = async () => {
 				// User is speaking - reset interrupt flag for new AI response
 				isAudioInterrupted = false;
-				console.log("🎭 Reset audio interrupt flag - ready for new response");
 
 				// Stop energy analysis and get stats
 				const { maxEnergy, avgEnergy, speechFrames } = energyAnalyzer.stop();
 				const audioBlob = new Blob(chunks, { type: "audio/webm" });
-
-				console.log(
-					"🎙️ Segment recorded - size:",
-					audioBlob.size,
-					"bytes, max energy:",
-					maxEnergy.toFixed(2),
-					"avg energy:",
-					avgEnergy.toFixed(2),
-					"speech frames:",
-					speechFrames
-				);
 
 				// 💡 Skip short/silent audio (<20 KB) - increased threshold
 				if (audioBlob.size < 20000) {
@@ -1441,9 +1269,6 @@ async function recordOnce(): Promise<void> {
 
 				// 💡 Skip low-energy audio (likely silence/noise)
 				// Require at least some frames with speech energy and decent average
-				if (speechFrames < 1) {
-					console.warn("Low energy — but sending anyway.");
-				}
 
 				const formData = new FormData();
 				formData.append("audio", audioBlob, "user_input.webm");
@@ -1469,7 +1294,6 @@ async function recordOnce(): Promise<void> {
 							timeoutMs: 30000,
 						});
 						data = wsResult ?? {};
-						console.log("🪞 WS server response:", data);
 					} catch (e) {
 						console.error("Voice pipeline WS error", e);
 						resolve();
@@ -1491,7 +1315,6 @@ async function recordOnce(): Promise<void> {
 
 			// Start recording
 			activeRecorder!.start();
-			console.log("🎧 Listening...");
 
 			// ⏱️ Auto-stop after 5 seconds
 			setTimeout(() => {

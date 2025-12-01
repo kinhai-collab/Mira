@@ -21,7 +21,6 @@ export function useVoiceNavigation() {
 			const detail = customEvent.detail || {};
 			
 			if (detail.route) {
-				console.log("🧭 Voice navigation command received:", detail.route);
 				router.push(detail.route);
 			}
 		};
