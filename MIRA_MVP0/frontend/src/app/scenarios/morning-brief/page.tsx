@@ -50,7 +50,6 @@ interface MorningBriefData {
 
 export default function MorningBrief() {
 	useVoiceNavigation();
-
 	const router = useRouter();
 	const [stage, setStage] = useState<
 		"thinking" | "recommendation" | "confirmation"
@@ -386,12 +385,12 @@ export default function MorningBrief() {
 	}, [router]);
 
 	// Stop any active voice when entering morning brief page
-	useEffect(() => {
-		// Stop voice handler on mount to avoid conflicts with brief audio
-		stopMiraVoice();
-		setIsMuted(false);
-		setMiraMute(false);
-	}, []);
+	// useEffect(() => {
+	// Stop voice handler on mount to avoid conflicts with brief audio
+	// 	stopMiraVoice();
+	// 	setIsMuted(false);
+	// 	setMiraMute(false);
+	// }, []);
 
 	// Fetch morning brief data on mount
 	useEffect(() => {
@@ -428,10 +427,6 @@ export default function MorningBrief() {
 							Authorization: `Bearer ${token}`,
 							"Content-Type": "application/json",
 						},
-						body: JSON.stringify({
-							latitude,
-							longitude,
-						}),
 					}
 				);
 
@@ -498,7 +493,9 @@ export default function MorningBrief() {
 									audioRef.current.addEventListener(
 										"ended",
 										() => {
-											URL.revokeObjectURL(url);
+											setMiraMute(false);
+											setIsListening(true); // Re-enable mic
+											startMiraVoice();
 										},
 										{ once: true }
 									);
@@ -536,7 +533,8 @@ export default function MorningBrief() {
 
 							// Stop voice handler while brief audio is playing (one-time listener)
 							const handlePlay = () => {
-								stopMiraVoice();
+								setIsListening(false); // UI mic OFF
+								setMiraMute(true);
 
 								audioRef.current?.removeEventListener("play", handlePlay);
 							};
@@ -618,6 +616,12 @@ export default function MorningBrief() {
 			}
 		};
 	}, []);
+	// Auto-start voice on page load unless muted
+	useEffect(() => {
+		if (!isMuted && isListening) {
+			startMiraVoice();
+		}
+	}, [isMuted, isListening]);
 
 	return (
 		<div className="flex flex-col min-h-screen bg-[#F8F8FB] text-gray-800">

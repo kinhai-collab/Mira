@@ -29,6 +29,7 @@ import {
 	CalendarEvent,
 	ScheduleConflictError,
 } from "./utils/calendarApi";
+import { useVoiceNavigation } from "@/utils/voice/navigationHandler";
 
 type Stage =
 	| "loading"

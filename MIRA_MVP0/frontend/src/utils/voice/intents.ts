@@ -7,6 +7,26 @@ export function detectIntent(text: string) {
 		return { intent: "SHOW_CALENDAR" };
 
 	if (t.includes("show me my emails")) return { intent: "SHOW_EMAILS" };
+	// ================== CALENDAR SCHEDULING ==================
+	if (
+		t.includes("schedule a meeting") ||
+		t.includes("book a meeting") ||
+		t.includes("set a meeting") ||
+		t.includes("add an event") ||
+		t.includes("create an event")
+	) {
+		return { intent: "CALENDAR_SCHEDULE" };
+	}
+
+	// ================== RESCHEDULING ==================
+	if (
+		t.includes("reschedule") ||
+		t.includes("move my meeting") ||
+		t.includes("change my meeting") ||
+		t.includes("shift my meeting")
+	) {
+		return { intent: "CALENDAR_RESCHEDULE" };
+	}
 
 	if (
 		t.includes("show me my emails and calendar") ||
@@ -14,7 +34,6 @@ export function detectIntent(text: string) {
 	)
 		return { intent: "SHOW_EMAILS_AND_CALENDAR" };
 
-	// ----------------- MORNING BRIEF -----------------
 	// ----------------- MORNING BRIEF -----------------
 	if (
 		t.includes("morning brief") ||
