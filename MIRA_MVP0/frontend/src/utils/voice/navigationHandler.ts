@@ -51,6 +51,8 @@ export function useVoiceNavigation() {
 		const transcriptHandler = (event: Event) => {
 			const customEvent = event as CustomEvent<{ text: string }>;
 			const text = customEvent.detail?.text;
+			console.log("Event received:", event);
+			console.log("Transcript:", text);
 			if (!text) return;
 
 			// correct
