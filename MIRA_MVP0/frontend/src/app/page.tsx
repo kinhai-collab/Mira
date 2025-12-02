@@ -616,6 +616,25 @@ export default function Home() {
 				console.error("❌ Failed to parse JSON from backend:", err);
 				throw new Error("Invalid JSON in backend response");
 			}
+			// 🚫 Skip GPT hallucinated audio when the user asked for Morning Brief
+			if (
+				queryText.toLowerCase().includes("morning brief") ||
+				queryText.toLowerCase().includes("show me my morning brief") ||
+				queryText.toLowerCase().includes("give me my morning brief") ||
+				data.action === "morning_brief" ||
+				data.action === "SHOW_MORNING_BRIEF"
+			) {
+				console.warn(
+					"Skipping GPT audio — waiting for real Morning Brief backend summary"
+				);
+
+				// DO NOT play data.text here (GPT response)
+				// DO NOT add GPT text to chat
+				// Let the backend morning_brief handler below take over
+
+				// Continue — DO NOT return yet,
+				// because backend morning-brief handling runs later
+			}
 
 			// ✅ Handle navigation actions
 			if (data.action === "navigate" && data.actionTarget) {
@@ -626,7 +645,7 @@ export default function Home() {
 				]);
 				return;
 			}
-			// 🎤 SPECIAL CASE: Morning Brief → Play backend summary, NOT data.text
+			//Morning Brief → Play backend summary, NOT data.text
 			if (
 				data.action === "morning_brief" ||
 				data.action === "SHOW_MORNING_BRIEF" ||
