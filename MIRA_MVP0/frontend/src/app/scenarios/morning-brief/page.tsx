@@ -533,14 +533,42 @@ export default function MorningBrief() {
 
 							// Stop voice handler while brief audio is playing (one-time listener)
 							const handlePlay = () => {
-								setIsListening(false); // UI mic OFF
+								setIsListening(false);
+
+								// temporarily mute during audio
 								setMiraMute(true);
+
+								// force-unmute protection
+								setTimeout(() => {
+									console.log("Force unmute fallback after brief");
+									setMiraMute(false);
+								}, 8000);
 
 								audioRef.current?.removeEventListener("play", handlePlay);
 							};
-							audioRef.current.addEventListener("play", handlePlay, {
+
+							// Try to play automatically
+							// Try to play automatically
+							audioRef.current
+								?.play()
+								?.then(() => console.log("Audio playing"))
+								.catch((err) => console.log("Autoplay blocked:", err));
+
+							// Attach play handler safely
+							audioRef.current?.addEventListener("play", handlePlay, {
 								once: true,
 							});
+
+							// Attach ended handler
+							audioRef.current?.addEventListener(
+								"ended",
+								() => {
+									setMiraMute(false);
+									setIsListening(true);
+									startMiraVoice();
+								},
+								{ once: true }
+							);
 						}
 					}, 100);
 				}
