@@ -49,6 +49,17 @@ export function getWebSocketUrl(
 	// Normalize protocol first
 	wsUrl = normalizeWebSocketUrl(wsUrl);
 	
+	// Check if this is an AWS API Gateway WebSocket URL (Lambda)
+	// API Gateway WebSocket URLs use route-based routing, not path-based
+	// Format: wss://{api-id}.execute-api.{region}.amazonaws.com/{stage}
+	const isApiGatewayWebSocket = /execute-api\.amazonaws\.com/.test(wsUrl);
+	
+	// For API Gateway WebSocket, don't append path - use the URL as-is
+	if (isApiGatewayWebSocket) {
+		return wsUrl;
+	}
+	
+	// For local/FastAPI WebSocket, append the endpoint path
 	// If the URL doesn't have a path (just domain), append the WebSocket endpoint
 	// Check if URL is just a domain (no path after the port, or ends with /)
 	try {

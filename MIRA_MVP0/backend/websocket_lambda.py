@@ -12,7 +12,9 @@ from typing import Dict, Any, Optional
 
 # Initialize AWS clients
 dynamodb = boto3.resource('dynamodb')
+s3_client = boto3.client('s3')
 connections_table = dynamodb.Table(os.environ.get('CONNECTIONS_TABLE', 'mira-websocket-connections-dev'))
+S3_BUCKET = os.environ.get('S3_BUCKET', 'mira-data-dev-058057616533')
 
 # Voice pipeline will use simpler direct implementation
 # We don't import the complex voice_generation module to keep Lambda package small
@@ -64,7 +66,8 @@ def connect_handler(event, context):
     user_id = 'anonymous'
     if token and token != 'anonymous':
         try:
-            from settings import get_uid_from_token
+            from auth_utils import get_uid_from_token
+            # Pass token directly (not "Bearer <token>" format)
             user_id = get_uid_from_token(token) or 'anonymous'
         except Exception as e:
             print(f"⚠️ Could not extract user ID from token: {e}")
@@ -148,7 +151,8 @@ def default_handler(event, context):
         token = body.get('token', '')
         if token and token != 'anonymous':
             try:
-                from settings import get_uid_from_token
+                from auth_utils import get_uid_from_token
+                # Pass token directly (not "Bearer <token>" format)
                 user_id = get_uid_from_token(token) or 'anonymous'
                 # Update connection with user ID, token, and clear conversation history for fresh session
                 try:
@@ -204,66 +208,165 @@ def default_handler(event, context):
         audio_chunk = body.get('audio_base_64', body.get('audio', body.get('chunk', '')))
         is_commit = body.get('commit', False)
         
-        if audio_chunk:  # Only store non-empty chunks
-            # Store audio chunk in DynamoDB for accumulation
+        if not audio_chunk:
+            return {'statusCode': 200, 'body': 'Empty audio chunk received'}
+        
+        # ✅ FIX: Use S3 for chunk storage instead of DynamoDB to avoid size limits and throttling
+        # S3 is much better for large data and doesn't have the 400KB item limit
+        s3_key = f"websocket-audio/{connection_id}/chunks.json"
+        
+        try:
+            # Get connection info
+            conn_item = connections_table.get_item(Key={'connectionId': connection_id})
+            item = conn_item.get('Item', {})
+            user_id = item.get('userId', 'anonymous')
+            
+            # Try to get existing chunks from S3
+            existing_chunks = []
+            chunk_count = 0
             try:
-                # Get existing chunks or create new list
-                conn_item = connections_table.get_item(Key={'connectionId': connection_id})
-                item = conn_item.get('Item', {})
-                existing_chunks = item.get('audioChunks', [])
-                
-                # Only append if chunk is not empty
-                if audio_chunk:
-                    existing_chunks.append(audio_chunk)
-                
-                # Update connection with accumulated chunks
-                connections_table.update_item(
-                    Key={'connectionId': connection_id},
-                    UpdateExpression='SET audioChunks = :chunks, commitFlag = :commit',
-                    ExpressionAttributeValues={
-                        ':chunks': existing_chunks,
-                        ':commit': is_commit
-                    }
+                s3_response = s3_client.get_object(Bucket=S3_BUCKET, Key=s3_key)
+                existing_data = json.loads(s3_response['Body'].read().decode('utf-8'))
+                existing_chunks = existing_data.get('chunks', [])
+                chunk_count = len(existing_chunks)
+            except s3_client.exceptions.NoSuchKey:
+                # No existing chunks - start fresh
+                pass
+            except Exception as s3_err:
+                print(f"⚠️ Error reading from S3: {s3_err}")
+            
+            # Add new chunk
+            existing_chunks.append(audio_chunk)
+            chunk_count = len(existing_chunks)
+            
+            # Store updated chunks in S3 (no size limit issues)
+            try:
+                chunks_data = {
+                    'chunks': existing_chunks,
+                    'commit': is_commit,
+                    'updated_at': datetime.now().isoformat()
+                }
+                s3_client.put_object(
+                    Bucket=S3_BUCKET,
+                    Key=s3_key,
+                    Body=json.dumps(chunks_data).encode('utf-8'),
+                    ContentType='application/json'
                 )
-                print(f"📥 Stored audio chunk #{len(existing_chunks)} (commit={is_commit}) from {connection_id}")
-            except Exception as e:
-                print(f"⚠️ Error storing audio chunk: {e}")
-                import traceback
-                traceback.print_exc()
+                total_size = sum(len(c) for c in existing_chunks)
+                print(f"📥 Stored audio chunk #{chunk_count} in S3 (size={total_size}B, commit={is_commit}) from {connection_id}")
+            except Exception as s3_err:
+                print(f"⚠️ Error storing chunk in S3: {s3_err}")
+                # Fallback: if S3 fails, process immediately
+                if existing_chunks:
+                    audio_data = ''.join(existing_chunks)
+                    try:
+                        asyncio.run(process_voice_message_async(
+                            apigw_client,
+                            connection_id,
+                            user_id,
+                            audio_data,
+                            item.get('conversationHistory', [])
+                        ))
+                    except Exception as proc_err:
+                        print(f"⚠️ Error processing after S3 failure: {proc_err}")
+                    existing_chunks = []
+        except Exception as e:
+            print(f"⚠️ Error handling audio chunk: {e}")
+            import traceback
+            traceback.print_exc()
         
         # If commit flag is set, trigger transcription immediately
         if is_commit:
             print(f"🔄 Commit flag received, triggering transcription for {connection_id}")
-            # Get accumulated chunks and process
             try:
                 conn_item = connections_table.get_item(Key={'connectionId': connection_id})
                 item = conn_item.get('Item', {})
                 user_id = item.get('userId', 'anonymous')
-                audio_chunks = item.get('audioChunks', [])
+                
+                # ✅ Prevent duplicate processing with a lock flag in DynamoDB
+                # Check if already processing
+                processing_flag = item.get('processing', False)
+                if processing_flag:
+                    print(f"⚠️ Already processing transcription for {connection_id}, skipping duplicate")
+                    return {'statusCode': 200, 'body': 'Already processing'}
+                
+                # Set processing flag
+                try:
+                    connections_table.update_item(
+                        Key={'connectionId': connection_id},
+                        UpdateExpression='SET #proc = :true',
+                        ExpressionAttributeNames={'#proc': 'processing'},
+                        ExpressionAttributeValues={':true': True}
+                    )
+                except Exception:
+                    pass  # Continue even if flag set fails
+                
+                # Read chunks from S3
+                s3_key = f"websocket-audio/{connection_id}/chunks.json"
+                audio_chunks = []
+                try:
+                    s3_response = s3_client.get_object(Bucket=S3_BUCKET, Key=s3_key)
+                    chunks_data = json.loads(s3_response['Body'].read().decode('utf-8'))
+                    audio_chunks = chunks_data.get('chunks', [])
+                except s3_client.exceptions.NoSuchKey:
+                    print(f"⚠️ No audio chunks found in S3 for commit")
+                except Exception as s3_err:
+                    print(f"⚠️ Error reading chunks from S3: {s3_err}")
                 
                 if audio_chunks:
                     # Combine all chunks
                     audio_data = ''.join(audio_chunks)
-                    print(f"📦 Combining {len(audio_chunks)} chunks for transcription")
+                    print(f"📦 Combining {len(audio_chunks)} chunks from S3 for transcription")
                     
-                    # Clear chunks
-                    connections_table.update_item(
-                        Key={'connectionId': connection_id},
-                        UpdateExpression='REMOVE audioChunks, commitFlag'
-                    )
+                    # Delete chunks from S3 after reading (prevent reprocessing)
+                    try:
+                        s3_client.delete_object(Bucket=S3_BUCKET, Key=s3_key)
+                    except Exception:
+                        pass  # Ignore errors deleting
                     
                     # Process transcription
-                    asyncio.run(process_voice_message_async(
-                        apigw_client,
-                        connection_id,
-                        user_id,
-                        audio_data,
-                        []
-                    ))
+                    try:
+                        asyncio.run(process_voice_message_async(
+                            apigw_client,
+                            connection_id,
+                            user_id,
+                            audio_data,
+                            item.get('conversationHistory', [])
+                        ))
+                    finally:
+                        # Clear processing flag
+                        try:
+                            connections_table.update_item(
+                                Key={'connectionId': connection_id},
+                                UpdateExpression='REMOVE #proc',
+                                ExpressionAttributeNames={'#proc': 'processing'}
+                            )
+                        except Exception:
+                            pass
+                else:
+                    print(f"⚠️ No audio chunks found for commit")
+                    # Clear processing flag
+                    try:
+                        connections_table.update_item(
+                            Key={'connectionId': connection_id},
+                            UpdateExpression='REMOVE #proc',
+                            ExpressionAttributeNames={'#proc': 'processing'}
+                        )
+                    except Exception:
+                        pass
             except Exception as e:
                 print(f"⚠️ Error processing commit: {e}")
                 import traceback
                 traceback.print_exc()
+                # Clear processing flag on error
+                try:
+                    connections_table.update_item(
+                        Key={'connectionId': connection_id},
+                        UpdateExpression='REMOVE #proc',
+                        ExpressionAttributeNames={'#proc': 'processing'}
+                    )
+                except Exception:
+                    pass
         
         return {'statusCode': 200, 'body': 'Audio chunk received'}
     
@@ -278,29 +381,68 @@ def default_handler(event, context):
             ))
             return {'statusCode': 200, 'body': 'Voice not available'}
         
-        # Get user ID, accumulated audio chunks, and conversation history from connection
+        # Get user ID and conversation history from connection
         try:
             conn_item = connections_table.get_item(Key={'connectionId': connection_id})
             item = conn_item.get('Item', {})
             user_id = item.get('userId', 'anonymous')
-            audio_chunks = item.get('audioChunks', [])
             conversation_history = item.get('conversationHistory', [])
+            
+            # ✅ Prevent duplicate processing with a lock flag
+            processing_flag = item.get('processing', False)
+            if processing_flag:
+                print(f"⚠️ Already processing transcription for {connection_id}, skipping duplicate")
+                asyncio.run(send_message_to_connection(
+                    apigw_client,
+                    connection_id,
+                    {'message_type': 'error', 'error': 'Already processing previous request'}
+                ))
+                return {'statusCode': 200, 'body': 'Already processing'}
+            
+            # Set processing flag
+            try:
+                connections_table.update_item(
+                    Key={'connectionId': connection_id},
+                    UpdateExpression='SET #proc = :true',
+                    ExpressionAttributeNames={'#proc': 'processing'},
+                    ExpressionAttributeValues={':true': True}
+                )
+            except Exception:
+                pass  # Continue even if flag set fails
         except Exception as e:
-            print(f"⚠️ Could not get user ID/chunks/history: {e}")
+            print(f"⚠️ Could not get user ID/history: {e}")
             user_id = 'anonymous'
-            audio_chunks = []
             conversation_history = []
         
-        # Try to get audio from message body first, then from accumulated chunks
+        # Try to get audio from message body first, then from S3
         audio_data = body.get('audio_base_64', body.get('audio', body.get('audio_data', body.get('audio_base64', ''))))
         
-        if not audio_data and audio_chunks:
-            # Combine all accumulated chunks
-            audio_data = ''.join(audio_chunks)
-            print(f"📦 Combined {len(audio_chunks)} audio chunks from storage")
+        if not audio_data:
+            # Try to read from S3
+            s3_key = f"websocket-audio/{connection_id}/chunks.json"
+            try:
+                s3_response = s3_client.get_object(Bucket=S3_BUCKET, Key=s3_key)
+                chunks_data = json.loads(s3_response['Body'].read().decode('utf-8'))
+                audio_chunks = chunks_data.get('chunks', [])
+                if audio_chunks:
+                    audio_data = ''.join(audio_chunks)
+                    print(f"📦 Combined {len(audio_chunks)} audio chunks from S3")
+            except s3_client.exceptions.NoSuchKey:
+                pass
+            except Exception as s3_err:
+                print(f"⚠️ Error reading from S3: {s3_err}")
         
         if not audio_data:
-            print(f"⚠️ No audio data available for transcription (chunks: {len(audio_chunks)})")
+            print(f"⚠️ No audio data available for transcription")
+            # Clear processing flag
+            try:
+                connections_table.update_item(
+                    Key={'connectionId': connection_id},
+                    UpdateExpression='REMOVE #proc',
+                    ExpressionAttributeNames={'#proc': 'processing'}
+                )
+            except Exception:
+                pass
             asyncio.run(send_message_to_connection(
                 apigw_client,
                 connection_id,
@@ -311,24 +453,27 @@ def default_handler(event, context):
         print(f"🎤 Processing transcription with {len(audio_data)} chars of audio data, history: {len(conversation_history)} messages")
         
         # Process the voice message (transcribe + generate response + TTS)
-        # Clear chunks only AFTER successful processing
-        asyncio.run(process_voice_message_async(
-            apigw_client,
-            connection_id,
-            user_id,
-            audio_data,
-            conversation_history  # Use stored history instead of body.get('history', [])
-        ))
-        
-        # Clear audio chunks after processing completes
         try:
-            connections_table.update_item(
-                Key={'connectionId': connection_id},
-                UpdateExpression='REMOVE audioChunks, commitFlag'
-            )
-            print(f"🧹 Cleared audio chunks for {connection_id}")
-        except Exception as e:
-            print(f"⚠️ Could not clear chunks: {e}")
+            asyncio.run(process_voice_message_async(
+                apigw_client,
+                connection_id,
+                user_id,
+                audio_data,
+                conversation_history
+            ))
+        finally:
+            # Clear processing flag and audio chunks from S3 after processing completes
+            try:
+                connections_table.update_item(
+                    Key={'connectionId': connection_id},
+                    UpdateExpression='REMOVE #proc',
+                    ExpressionAttributeNames={'#proc': 'processing'}
+                )
+                s3_key = f"websocket-audio/{connection_id}/chunks.json"
+                s3_client.delete_object(Bucket=S3_BUCKET, Key=s3_key)
+                print(f"🧹 Cleared audio chunks from S3 and processing flag for {connection_id}")
+            except Exception as e:
+                print(f"⚠️ Could not clear chunks/flag: {e}")
         
         return {'statusCode': 200, 'body': 'Processing transcription'}
     
