@@ -626,6 +626,31 @@ export default function Home() {
 				]);
 				return;
 			}
+			// 🎤 SPECIAL CASE: Morning Brief → Play backend summary, NOT data.text
+			if (
+				data.action === "morning_brief" ||
+				data.action === "SHOW_MORNING_BRIEF" ||
+				data.morning_brief ||
+				data.brief_summary
+			) {
+				const briefText =
+					data.brief_summary ||
+					data.morning_brief_text ||
+					data.summary_text ||
+					data.greeting ||
+					data.text ||
+					"Here’s your morning brief.";
+
+				setTextMessages((prev) => [
+					...prev,
+					{ role: "assistant", content: briefText },
+				]);
+
+				playVoice(briefText).catch(() => {});
+				router.push("/scenarios/morning-brief");
+				return;
+			}
+
 			if (data.action === "calendar_flow") {
 				router.push("/scenarios/smart-scheduling");
 				return;
