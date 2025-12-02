@@ -2532,6 +2532,9 @@ async def ws_voice_stt(websocket: WebSocket, language_code: str = "en"):
     _last_processing_start_time = 0.0  # Timestamp of when last processing started
     _processing_cooldown_seconds = 2.0  # Reject new transcripts within 2s of starting processing
     
+    # Track active processing tasks to keep WebSocket alive
+    _active_processing_tasks = set()
+    
     async def process_transcription(text: str, user_id: str):
         """Process transcription with OpenAI streaming response and generate TTS"""
         import time
@@ -2620,13 +2623,25 @@ async def ws_voice_stt(websocket: WebSocket, language_code: str = "en"):
                     logging.info(f"📅 Calendar action detected: {cal_action_data.get('action')}")
                     
                     # Send action response first (without audio - we'll stream it)
-                    await websocket.send_json({
-                        "message_type": "response",
-                        "text": cal_action_data.get("text", ""),
-                        "userText": text,
-                        "action": cal_action_data.get("action", ""),
-                        "actionResult": cal_action_data.get("actionResult"),
-                    })
+                    # Check if WebSocket is still open before sending
+                    try:
+                        # Check connection state before sending
+                        if hasattr(websocket, 'client_state') and websocket.client_state.name != "CONNECTED":
+                            logging.warning("📅 Calendar action completed but WebSocket already closed, skipping response")
+                            return
+                        
+                        await websocket.send_json({
+                            "message_type": "response",
+                            "text": cal_action_data.get("text", ""),
+                            "userText": text,
+                            "action": cal_action_data.get("action", ""),
+                            "actionResult": cal_action_data.get("actionResult"),
+                        })
+                    except RuntimeError as e:
+                        if "close message has been sent" in str(e):
+                            logging.warning("📅 Calendar action completed but WebSocket already closed")
+                            return
+                        raise
                     
                     # Generate TTS audio for calendar action using streaming WebSocket for smooth playback
                     voice_id = os.getenv("ELEVENLABS_VOICE_ID")
@@ -2640,7 +2655,7 @@ async def ws_voice_stt(websocket: WebSocket, language_code: str = "en"):
                             
                             async def generate_and_send_audio():
                                 try:
-                                    async with _wslib.connect(tts_ws_url, additional_headers=tts_headers) as tts_ws:
+                                    async with _wslib.connect(tts_ws_url, extra_headers=tts_headers) as tts_ws:
                                         # Send TTS config
                                         await tts_ws.send(json.dumps({
                                             "text": " ",
@@ -2669,26 +2684,56 @@ async def ws_voice_stt(websocket: WebSocket, language_code: str = "en"):
                                             if isinstance(msg, bytes):
                                                 audio_chunk_count += 1
                                                 audio_b64 = base64.b64encode(msg).decode("ascii")
-                                                await websocket.send_json({
-                                                    "message_type": "audio_chunk",
-                                                    "audio": audio_b64
-                                                })
+                                                try:
+                                                    # Check connection state before sending
+                                                    if hasattr(websocket, 'client_state') and websocket.client_state.name != "CONNECTED":
+                                                        logging.warning("TTS streaming: WebSocket closed, stopping audio chunks")
+                                                        break
+                                                    await websocket.send_json({
+                                                        "message_type": "audio_chunk",
+                                                        "audio": audio_b64
+                                                    })
+                                                except RuntimeError as e:
+                                                    if "close message has been sent" in str(e):
+                                                        logging.warning("TTS streaming: WebSocket closed during audio chunk send")
+                                                        break
+                                                    raise
                                             else:
                                                 try:
                                                     text_msg = msg if isinstance(msg, str) else msg.decode("utf-8", errors="ignore")
                                                     msg_json = json.loads(text_msg)
                                                     if "audio" in msg_json:
                                                         audio_chunk_count += 1
-                                                        await websocket.send_json({
-                                                            "message_type": "audio_chunk",
-                                                            "audio": msg_json["audio"]
-                                                        })
+                                                        try:
+                                                            # Check connection state before sending
+                                                            if hasattr(websocket, 'client_state') and websocket.client_state.name != "CONNECTED":
+                                                                logging.warning("TTS streaming: WebSocket closed, stopping audio chunks")
+                                                                break
+                                                            await websocket.send_json({
+                                                                "message_type": "audio_chunk",
+                                                                "audio": msg_json["audio"]
+                                                            })
+                                                        except RuntimeError as e:
+                                                            if "close message has been sent" in str(e):
+                                                                logging.warning("TTS streaming: WebSocket closed during audio chunk send")
+                                                                break
+                                                            raise
                                                 except (json.JSONDecodeError, KeyError, TypeError):
                                                     pass
                                         
                                         # Send audio_final
-                                        await websocket.send_json({"message_type": "audio_final"})
-                                        logging.info(f"✅ Sent calendar action audio ({audio_chunk_count} chunks) via streaming")
+                                        try:
+                                            # Check connection state before sending
+                                            if hasattr(websocket, 'client_state') and websocket.client_state.name != "CONNECTED":
+                                                logging.warning("TTS streaming: WebSocket closed, skipping audio_final")
+                                            else:
+                                                await websocket.send_json({"message_type": "audio_final"})
+                                                logging.info(f"✅ Sent calendar action audio ({audio_chunk_count} chunks) via streaming")
+                                        except RuntimeError as e:
+                                            if "close message has been sent" in str(e):
+                                                logging.warning("TTS streaming: WebSocket closed before audio_final")
+                                            else:
+                                                raise
                                 except Exception as e:
                                     logging.exception(f"Error streaming calendar action audio: {e}")
                                     # Send audio_final even on error
@@ -3031,7 +3076,7 @@ Mischievous: "Oh, I see what you did there… clever move!"""
             
             try:
                 # Connect to TTS in parallel with OpenAI (TTS is faster, will be ready first)
-                async with _wslib.connect(tts_ws_url, additional_headers=tts_headers) as tts_upstream:
+                async with _wslib.connect(tts_ws_url, extra_headers=tts_headers) as tts_upstream:
                     # Send BOS immediately while OpenAI is still connecting
                     bos_msg = {
                         "text": " ",
@@ -3283,7 +3328,17 @@ Mischievous: "Oh, I see what you did there… clever move!"""
                     if hasattr(event.choices[0].delta, 'content') and event.choices[0].delta.content:
                         delta = event.choices[0].delta.content
                         response_text += delta
-                        await websocket.send_json({"message_type": "partial_response", "text": response_text})
+                        try:
+                            # Check connection state before sending
+                            if hasattr(websocket, 'client_state') and websocket.client_state.name != "CONNECTED":
+                                logging.warning("OpenAI streaming: WebSocket already closed, stopping")
+                                break
+                            await websocket.send_json({"message_type": "partial_response", "text": response_text})
+                        except RuntimeError as e:
+                            if "close message has been sent" in str(e):
+                                logging.warning("OpenAI streaming: WebSocket already closed")
+                                break
+                            raise
                         
             except Exception as e:
                 logging.exception(f"OpenAI streaming failed: {e}")
@@ -3334,7 +3389,9 @@ Mischievous: "Oh, I see what you did there… clever move!"""
                 logging.debug("🧠 Intelligent learner: disabled via ENABLE_INTELLIGENT_LEARNER env var")
 
     try:
-        async with _wslib.connect(ws_url, additional_headers=headers) as upstream:
+        # Connect to ElevenLabs WebSocket with authentication headers
+        # Use extra_headers parameter (supported in websockets 13.x)
+        async with _wslib.connect(ws_url, extra_headers=headers) as upstream:
             logging.info("ws_voice_stt: connected to ElevenLabs")
 
             async def forward_upstream_to_client():
@@ -3362,7 +3419,11 @@ Mischievous: "Oh, I see what you did there… clever move!"""
                                     # Only process non-empty transcripts with meaningful content
                                     if transcript_text and len(transcript_text) > 0:
                                         logging.info(f"📝 Processing committed transcript: {transcript_text}")
-                                        asyncio.create_task(process_transcription(transcript_text, user_id))
+                                        # Track task to keep WebSocket alive during processing
+                                        task = asyncio.create_task(process_transcription(transcript_text, user_id))
+                                        _active_processing_tasks.add(task)
+                                        # Remove task when done (using callback)
+                                        task.add_done_callback(lambda t: _active_processing_tasks.discard(t))
                                     else:
                                         logging.debug(f"⏭️ Skipping empty/null committed transcript")
                             except (json.JSONDecodeError, KeyError, TypeError):
@@ -3506,6 +3567,40 @@ Mischievous: "Oh, I see what you did there… clever move!"""
             )
             for p in pending:
                 p.cancel()
+            
+            # Wait for active processing tasks to complete before closing
+            if _active_processing_tasks:
+                logging.info(f"⏳ Waiting for {len(_active_processing_tasks)} active processing task(s) to complete...")
+                try:
+                    # Wait up to 30 seconds for tasks to complete (calendar actions can take time)
+                    await asyncio.wait_for(
+                        asyncio.gather(*_active_processing_tasks, return_exceptions=True),
+                        timeout=30.0
+                    )
+                    logging.info("✅ All processing tasks completed")
+                except asyncio.TimeoutError:
+                    logging.warning("⏰ Processing tasks timed out after 30s, closing connection anyway")
+                except Exception as e:
+                    logging.warning(f"⚠️ Error waiting for processing tasks: {e}")
+
+    except TypeError as e:
+            if "unexpected keyword argument" in str(e) and ("extra_headers" in str(e) or "additional_headers" in str(e)):
+                # Legacy websockets API doesn't support extra_headers
+                error_msg = (
+                    "WebSocket connection failed: Your websockets library version doesn't support the 'extra_headers' parameter. "
+                    "Please upgrade websockets: pip install --upgrade websockets>=13.0"
+                )
+                logging.error(f"ws_voice_stt: {error_msg}")
+                try:
+                    await websocket.send_json({
+                        "message_type": "error",
+                        "error": error_msg
+                    })
+                except Exception:
+                    pass
+                return
+            else:
+                raise
 
     except Exception as e:
         logging.exception(f"ws_voice_stt: connection failed: {e}")
