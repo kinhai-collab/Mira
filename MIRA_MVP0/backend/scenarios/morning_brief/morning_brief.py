@@ -141,7 +141,7 @@ def run_morning_brief(user_id: str, user_name: str, tz: str):
     # 9️⃣ Combine into single brief text
     brief_parts = [
         greeting_text,
-        f"Your day looks {busy_level_desc}.",
+        # f"Your day looks {busy_level_desc}.",
         weather_summary,
         commute_summary,
         event_summary,

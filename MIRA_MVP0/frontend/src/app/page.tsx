@@ -521,6 +521,15 @@ export default function Home() {
 	const handleTextSubmit = async (text?: string) => {
 		const queryText = text || input.trim();
 		if (!queryText) return;
+		// 🔍 Direct voice navigation for morning brief
+		if (
+			queryText.toLowerCase().includes("morning brief") ||
+			queryText.toLowerCase().includes("show me my morning brief") ||
+			queryText.toLowerCase().includes("give me my morning brief")
+		) {
+			router.push("/scenarios/morning-brief");
+			return;
+		}
 
 		// Add user message to conversation
 		setTextMessages((prev) => [...prev, { role: "user", content: queryText }]);
@@ -607,6 +616,25 @@ export default function Home() {
 				console.error("❌ Failed to parse JSON from backend:", err);
 				throw new Error("Invalid JSON in backend response");
 			}
+			// 🚫 Skip GPT hallucinated audio when the user asked for Morning Brief
+			if (
+				queryText.toLowerCase().includes("morning brief") ||
+				queryText.toLowerCase().includes("show me my morning brief") ||
+				queryText.toLowerCase().includes("give me my morning brief") ||
+				data.action === "morning_brief" ||
+				data.action === "SHOW_MORNING_BRIEF"
+			) {
+				console.warn(
+					"Skipping GPT audio — waiting for real Morning Brief backend summary"
+				);
+
+				// DO NOT play data.text here (GPT response)
+				// DO NOT add GPT text to chat
+				// Let the backend morning_brief handler below take over
+
+				// Continue — DO NOT return yet,
+				// because backend morning-brief handling runs later
+			}
 
 			// ✅ Handle navigation actions
 			if (data.action === "navigate" && data.actionTarget) {
@@ -617,6 +645,31 @@ export default function Home() {
 				]);
 				return;
 			}
+			//Morning Brief → Play backend summary, NOT data.text
+			if (
+				data.action === "morning_brief" ||
+				data.action === "SHOW_MORNING_BRIEF" ||
+				data.morning_brief ||
+				data.brief_summary
+			) {
+				const briefText =
+					data.brief_summary ||
+					data.morning_brief_text ||
+					data.summary_text ||
+					data.greeting ||
+					data.text ||
+					"Here’s your morning brief.";
+
+				setTextMessages((prev) => [
+					...prev,
+					{ role: "assistant", content: briefText },
+				]);
+
+				playVoice(briefText).catch(() => {});
+				router.push("/scenarios/morning-brief");
+				return;
+			}
+
 			if (data.action === "calendar_flow") {
 				router.push("/scenarios/smart-scheduling");
 				return;
@@ -664,7 +717,10 @@ export default function Home() {
 
 				const isScheduleAction = data.action === "calendar_schedule";
 
-				if (isScheduleAction && (hasStructuredConflict || looksLikeConflictText)) {
+				if (
+					isScheduleAction &&
+					(hasStructuredConflict || looksLikeConflictText)
+				) {
 					// Conflict detected (via structured data or natural_response)
 					if (typeof window !== "undefined") {
 						sessionStorage.setItem(
@@ -728,6 +784,7 @@ export default function Home() {
 					...prev,
 					{ role: "assistant", content: data.text },
 				]);
+				playVoice(data.text).catch(() => {});
 			} else {
 				console.warn("⚠️ No text returned from backend:", data);
 			}

@@ -31,27 +31,27 @@ class AudioManager {
 		this.playNext = this.playNext.bind(this);
 	}
 
-	enqueue(base64: string, mimeType = 'audio/mpeg') {
+	enqueue(base64: string, mimeType = "audio/mpeg") {
 		if (isMiraMuted || this.interrupted) return;
-		
+
 		try {
-			const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+			const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
 			const blob = new Blob([bytes], { type: mimeType });
 			const url = URL.createObjectURL(blob);
 			const audio = new Audio(url);
-			audio.preload = 'auto';
+			audio.preload = "auto";
 			audio.volume = 1.0;
-			
+
 			// Pre-load immediately
 			audio.load();
-			
+
 			this.queue.push(audio);
-			
+
 			if (!this.isPlaying) {
 				this.playNext();
 			}
 		} catch (e) {
-			console.error('[AudioManager] Failed to enqueue audio:', e);
+			console.error("[AudioManager] Failed to enqueue audio:", e);
 		}
 	}
 
@@ -69,7 +69,9 @@ class AudioManager {
 		const cleanup = () => {
 			try {
 				URL.revokeObjectURL(audio.src);
-			} catch { /* ignore */ }
+			} catch {
+				/* ignore */
+			}
 			this.currentAudio = null;
 			if (!this.interrupted) {
 				this.playNext();
@@ -78,28 +80,30 @@ class AudioManager {
 
 		audio.onended = cleanup;
 		audio.onerror = () => {
-			console.error('[AudioManager] Audio playback error');
+			console.error("[AudioManager] Audio playback error");
 			cleanup();
 		};
 
 		audio.play().catch((err) => {
-			console.error('[AudioManager] Play failed:', err);
+			console.error("[AudioManager] Play failed:", err);
 			cleanup();
 		});
 	}
 
 	stop() {
 		this.interrupted = true;
-		
+
 		// Stop current audio immediately
 		if (this.currentAudio) {
 			try {
 				this.currentAudio.volume = 0;
 				this.currentAudio.muted = true;
 				this.currentAudio.pause();
-				this.currentAudio.src = '';
+				this.currentAudio.src = "";
 				URL.revokeObjectURL(this.currentAudio.src);
-			} catch { /* ignore */ }
+			} catch {
+				/* ignore */
+			}
 			this.currentAudio = null;
 		}
 
@@ -107,9 +111,11 @@ class AudioManager {
 		for (const audio of this.queue) {
 			try {
 				audio.pause();
-				audio.src = '';
+				audio.src = "";
 				URL.revokeObjectURL(audio.src);
-			} catch { /* ignore */ }
+			} catch {
+				/* ignore */
+			}
 		}
 		this.queue = [];
 		this.isPlaying = false;
@@ -129,27 +135,35 @@ const audioManager = new AudioManager();
 
 function stopAllAudio() {
 	audioManager.stop();
-	
+
 	// Legacy cleanup
 	if (currentAudio) {
 		try {
 			currentAudio.pause();
 			currentAudio.currentTime = 0;
-		} catch { /* ignore */ }
+		} catch {
+			/* ignore */
+		}
 		currentAudio = null;
 	}
-	
+
 	if (currentPlayingAudio) {
 		try {
 			currentPlayingAudio.pause();
 			URL.revokeObjectURL(currentPlayingAudio.src);
-		} catch { /* ignore */ }
+		} catch {
+			/* ignore */
+		}
 		currentPlayingAudio = null;
 	}
-	
+
 	// Clear legacy queue
 	audioQueue.forEach((audio) => {
-		try { URL.revokeObjectURL(audio.src); } catch { /* ignore */ }
+		try {
+			URL.revokeObjectURL(audio.src);
+		} catch {
+			/* ignore */
+		}
 	});
 	audioQueue = [];
 	isPlayingQueue = false;
@@ -307,12 +321,11 @@ function handleAudioChunk(base64: string) {
 		}
 
 		// Use the unified AudioManager
-		audioManager.enqueue(base64, 'audio/mpeg');
+		audioManager.enqueue(base64, "audio/mpeg");
 	} catch (error) {
 		console.error("❌ Failed to handle audio chunk:", error);
 	}
 }
-
 
 function handleAudioFinal() {
 	// Buffer queue will drain naturally
@@ -328,14 +341,16 @@ function stopAudioPlayback() {
 	if (wsController && typeof wsController.send === "function") {
 		try {
 			void wsController.send({ message_type: "stop_audio" });
-		} catch { /* ignore */ }
+		} catch {
+			/* ignore */
+		}
 	}
 }
 
 function resetAudioState() {
 	isAudioInterrupted = false;
 	audioManager.reset();
-	
+
 	// Reset legacy state
 	currentPlayingAudio = null;
 	currentAudio = null;
@@ -380,13 +395,13 @@ async function playAudio(base64: string) {
  */
 function playNonStreamingAudio(audioBase64: string) {
 	if (isMiraMuted) return;
-	
+
 	// Stop any current audio first
 	audioManager.reset();
 	stopAllAudio();
-	
+
 	// Use the AudioManager to play this audio
-	audioManager.enqueue(audioBase64, 'audio/mpeg');
+	audioManager.enqueue(audioBase64, "audio/mpeg");
 }
 
 // Centralized server response processor used by both the realtime WS flow and
@@ -472,6 +487,14 @@ async function processServerResponse(data: any) {
 
 			// Mark as processed
 			recentTranscripts.set(textNormalized, currentTime);
+			// FIRE EVENT FOR NAVIGATION
+			if (typeof window !== "undefined") {
+				window.dispatchEvent(
+					new CustomEvent("miraTranscriptFinal", {
+						detail: { text: data.text },
+					})
+				);
+			}
 
 			// Clean old entries (keep cache size manageable)
 			if (recentTranscripts.size > 50) {
@@ -580,44 +603,44 @@ async function processServerResponse(data: any) {
 			return; // Exit early
 		}
 
-	if (data.action === "email_calendar_summary") {
-		try {
-			if (typeof window !== "undefined") {
-				window.dispatchEvent(
-					new CustomEvent("miraEmailCalendarSummary", {
-						detail: data.actionData ?? {},
-					})
-				);
-				
-				// Store data in sessionStorage for smart-summary page (same as text mode)
-				if (data.actionData) {
-					sessionStorage.setItem(
-						"mira_email_calendar_data",
-						JSON.stringify(data.actionData)
+		if (data.action === "email_calendar_summary") {
+			try {
+				if (typeof window !== "undefined") {
+					window.dispatchEvent(
+						new CustomEvent("miraEmailCalendarSummary", {
+							detail: data.actionData ?? {},
+						})
 					);
-				}
-				
-				// Navigate to smart-summary page (same as text mode)
-				// Small delay to allow audio to start playing
-				setTimeout(() => {
-					if (typeof window !== "undefined") {
-						window.location.href = "/scenarios/smart-summary";
-					}
-				}, 500);
-			}
-		} catch (e) {
-			// Failed to dispatch email/calendar summary event
-		}
 
-		// CRITICAL FIX: Handle audio for calendar/email actions ONLY HERE (not in text processing below)
-		// This prevents duplicate audio playback which causes quality issues
-		const audioField =
-			data.audio || data.audio_base_64 || data.audio_base64 || null;
-		if (audioField && !isMiraMuted && hasUserInteracted) {
-			playNonStreamingAudio(audioField);
+					// Store data in sessionStorage for smart-summary page (same as text mode)
+					if (data.actionData) {
+						sessionStorage.setItem(
+							"mira_email_calendar_data",
+							JSON.stringify(data.actionData)
+						);
+					}
+
+					// Navigate to smart-summary page (same as text mode)
+					// Small delay to allow audio to start playing
+					setTimeout(() => {
+						if (typeof window !== "undefined") {
+							window.location.href = "/scenarios/smart-summary";
+						}
+					}, 500);
+				}
+			} catch (e) {
+				// Failed to dispatch email/calendar summary event
+			}
+
+			// CRITICAL FIX: Handle audio for calendar/email actions ONLY HERE (not in text processing below)
+			// This prevents duplicate audio playback which causes quality issues
+			const audioField =
+				data.audio || data.audio_base_64 || data.audio_base64 || null;
+			if (audioField && !isMiraMuted && hasUserInteracted) {
+				playNonStreamingAudio(audioField);
+			}
+			return; // Exit early - don't process in the text section below
 		}
-		return; // Exit early - don't process in the text section below
-	}
 
 		// Only process if we have meaningful text
 		if (data.text && data.text.trim().length > 0 && !data.error) {
@@ -876,13 +899,13 @@ export async function startMiraVoice() {
 					}
 				},
 				onClose: (ev?: CloseEvent) => {
-			// Reset conversation state if connection closed unexpectedly
-			// Code 1006 means connection failed (no close frame received)
-			if (ev && !ev.wasClean && ev.code === 1006) {
-				isConversationActive = false;
-			}
-		},
-		onStateChange: (state: ConnectionState) => {
+					// Reset conversation state if connection closed unexpectedly
+					// Code 1006 means connection failed (no close frame received)
+					if (ev && !ev.wasClean && ev.code === 1006) {
+						isConversationActive = false;
+					}
+				},
+				onStateChange: (state: ConnectionState) => {
 					// Dispatch event for UI components
 					if (typeof window !== "undefined") {
 						window.dispatchEvent(
@@ -915,7 +938,6 @@ export async function startMiraVoice() {
 				}
 				await new Promise((res) => setTimeout(res, 80)); // Check frequently
 			}
-
 		} catch (err) {
 			logDetailedError("Conversation (realtime) error:", err);
 			isConversationActive = false;
@@ -951,7 +973,7 @@ export function stopMiraVoice(permanent: boolean = false) {
 	// If permanent stop (e.g., switching to text mode), close WebSocket permanently
 	if (permanent && wsController) {
 		const ws = wsController.getWebSocket();
-		if (ws && typeof (ws as any).close === 'function') {
+		if (ws && typeof (ws as any).close === "function") {
 			(ws as any).close(true); // true = permanent close, no reconnect
 		}
 		wsController = null;
@@ -1035,12 +1057,12 @@ async function monitorForInterruption(): Promise<boolean> {
 		}
 
 		navigator.mediaDevices
-			.getUserMedia({ 
-				audio: { 
-					echoCancellation: true, 
+			.getUserMedia({
+				audio: {
+					echoCancellation: true,
 					noiseSuppression: true,
-					autoGainControl: true 
-				} 
+					autoGainControl: true,
+				},
 			})
 			.then((stream) => {
 				const audioContext = new AudioContext();
@@ -1060,7 +1082,11 @@ async function monitorForInterruption(): Promise<boolean> {
 				const checkInterval = setInterval(() => {
 					if (!audioManager.isActive()) {
 						clearInterval(checkInterval);
-						try { audioContext.close(); } catch { /* ignore */ }
+						try {
+							audioContext.close();
+						} catch {
+							/* ignore */
+						}
 						stream.getTracks().forEach((t) => t.stop());
 						resolve(false);
 						return;
@@ -1075,10 +1101,15 @@ async function monitorForInterruption(): Promise<boolean> {
 
 					if (rms > energyThreshold) {
 						highEnergyCount++;
-						if (highEnergyCount >= 2) { // Require 2 frames to avoid false positives
+						if (highEnergyCount >= 2) {
+							// Require 2 frames to avoid false positives
 							stopAudioPlayback();
 							clearInterval(checkInterval);
-							try { audioContext.close(); } catch { /* ignore */ }
+							try {
+								audioContext.close();
+							} catch {
+								/* ignore */
+							}
 							stream.getTracks().forEach((t) => t.stop());
 							resolve(true);
 							return;
@@ -1090,7 +1121,11 @@ async function monitorForInterruption(): Promise<boolean> {
 					checkCount++;
 					if (checkCount >= maxChecks) {
 						clearInterval(checkInterval);
-						try { audioContext.close(); } catch { /* ignore */ }
+						try {
+							audioContext.close();
+						} catch {
+							/* ignore */
+						}
 						stream.getTracks().forEach((t) => t.stop());
 						resolve(false);
 					}
@@ -1108,4 +1143,3 @@ async function monitorForInterruption(): Promise<boolean> {
  * Each chunk is sent as multipart/form-data with field `audio`.
  * By default metadata/history are attached to the first chunk (set sendMetaOnFirstChunk=false to send every chunk).
  */
-

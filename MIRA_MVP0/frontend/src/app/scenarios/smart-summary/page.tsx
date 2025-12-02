@@ -56,6 +56,7 @@ const prepareVoiceSteps = (
 };
 
 export default function Home() {
+	useVoiceNavigation();
 	const router = useRouter();
 	const [input, setInput] = useState("");
 	const [isListening, setIsListening] = useState(true);

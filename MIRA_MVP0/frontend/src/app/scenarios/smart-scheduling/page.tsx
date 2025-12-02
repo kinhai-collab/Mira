@@ -40,6 +40,7 @@ type Stage =
 type ActionType = "rescheduled" | "cancelled" | "scheduled";
 
 export default function SmartSchedulingPage() {
+	useVoiceNavigation();
 	// Track if we've already loaded events to prevent duplicate loads in Strict Mode
 	const hasLoadedRef = useRef(false);
 
