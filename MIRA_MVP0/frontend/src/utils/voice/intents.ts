@@ -14,8 +14,18 @@ export function detectIntent(text: string) {
 	)
 		return { intent: "SHOW_EMAILS_AND_CALENDAR" };
 
-	if (t.includes("show me my morning brief") || t.includes("morning brief"))
+	// ----------------- MORNING BRIEF -----------------
+	// ----------------- MORNING BRIEF -----------------
+	if (
+		t.includes("morning brief") ||
+		t.includes("my morning brief") ||
+		t.includes("show me my morning brief") ||
+		t.includes("give me my morning brief") ||
+		t.includes("today's brief") ||
+		t.includes("how's my morning")
+	) {
 		return { intent: "SHOW_MORNING_BRIEF" };
+	}
 
 	if (t.includes("go to the dashboard") || t.includes("open dashboard"))
 		return { intent: "GO_TO_DASHBOARD" };
