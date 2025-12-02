@@ -82,6 +82,13 @@ export function useVoiceNavigation() {
 				case "GO_HOME":
 					router.push("/");
 					return;
+				case "CALENDAR_SCHEDULE":
+					router.push("/scenarios/smart-scheduling?scheduleMode=new");
+					return;
+
+				case "CALENDAR_RESCHEDULE":
+					router.push("/scenarios/smart-scheduling?scheduleMode=reschedule");
+					return;
 			}
 		};
 

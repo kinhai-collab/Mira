@@ -22,6 +22,7 @@ import HeaderBar from "@/components/HeaderBar";
 import Sidebar from "@/components/Sidebar";
 import FooterBar from "@/components/FooterBar";
 import Orb from "@/components/Orb";
+import { useVoiceNavigation } from "@/utils/voice/navigationHandler";
 
 const DEFAULT_SUMMARY_STEPS = [
 	{ id: "emails", label: "Checking your inbox for priority emails..." },
