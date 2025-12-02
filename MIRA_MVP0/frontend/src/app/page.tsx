@@ -521,6 +521,15 @@ export default function Home() {
 	const handleTextSubmit = async (text?: string) => {
 		const queryText = text || input.trim();
 		if (!queryText) return;
+		// 🔍 Direct voice navigation for morning brief
+		if (
+			queryText.toLowerCase().includes("morning brief") ||
+			queryText.toLowerCase().includes("show me my morning brief") ||
+			queryText.toLowerCase().includes("give me my morning brief")
+		) {
+			router.push("/scenarios/morning-brief");
+			return;
+		}
 
 		// Add user message to conversation
 		setTextMessages((prev) => [...prev, { role: "user", content: queryText }]);
@@ -664,7 +673,10 @@ export default function Home() {
 
 				const isScheduleAction = data.action === "calendar_schedule";
 
-				if (isScheduleAction && (hasStructuredConflict || looksLikeConflictText)) {
+				if (
+					isScheduleAction &&
+					(hasStructuredConflict || looksLikeConflictText)
+				) {
 					// Conflict detected (via structured data or natural_response)
 					if (typeof window !== "undefined") {
 						sessionStorage.setItem(
@@ -728,6 +740,7 @@ export default function Home() {
 					...prev,
 					{ role: "assistant", content: data.text },
 				]);
+				playVoice(data.text).catch(() => {});
 			} else {
 				console.warn("⚠️ No text returned from backend:", data);
 			}
