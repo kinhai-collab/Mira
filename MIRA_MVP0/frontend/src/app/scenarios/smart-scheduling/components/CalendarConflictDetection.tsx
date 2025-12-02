@@ -44,6 +44,7 @@ interface Props {
 	onReschedule: (conflict: ConflictInfo, eventToReschedule: EventItem) => void;
 	onCancel: (event: EventItem) => void;
 	isLoading?: boolean;
+	externalConflictMessage?: string | null;
 }
 
 /* ------------------------------------------
@@ -59,6 +60,7 @@ export default function CalendarConflictDetection({
 	onReschedule,
 	onCancel,
 	isLoading = false,
+	externalConflictMessage,
 }: Props) {
 	const hasConflict = conflicts.length > 0;
 
@@ -269,6 +271,13 @@ export default function CalendarConflictDetection({
 						</p>
 					</div>
 				</div>
+
+				{/* External conflict message */}
+				{externalConflictMessage && (
+					<div className="pl-[24px] mt-2">
+						<p className="text-[14px] text-[#6B6B6B]">{externalConflictMessage}</p>
+					</div>
+				)}
 
 			{/* Action buttons */}
 			<div className="pl-[24px] pt-4 flex gap-3">
