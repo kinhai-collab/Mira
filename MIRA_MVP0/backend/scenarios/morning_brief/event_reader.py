@@ -402,15 +402,21 @@ def read_events(events: list):
     """
     Create conversational schedule narration.
     Follows FR-1.4.5 – 1.4.15 (sorting, templates, conflict detection).
+    Shortened format: After first Microsoft Teams/Meet meeting, groups remaining meetings.
     """
     if not events:
-        return "You don’t have any events scheduled today."
+        return "You don't have any events scheduled today."
 
     # 1️⃣ Sort by start time
     events = sorted(events, key=lambda e: e["start_dt"])
 
     text_lines = []
     conflicts = []
+    
+    # Track if we've found the first Microsoft Teams/Meet meeting
+    first_microsoft_meeting_found = False
+    remaining_meetings = []
+    remaining_events = []
 
     for i, ev in enumerate(events):
         title = ev.get("summary") or "Private event"
@@ -421,18 +427,48 @@ def read_events(events: list):
         desc = ev.get("description", "")
 
         platform, link = _detect_conference_platform(location + " " + desc)
+        
+        # Check if this is a Microsoft Teams/Meet meeting
+        provider = ev.get("provider", "").lower() if ev.get("provider") else ""
+        is_microsoft_meeting = (
+            provider in ["microsoft-teams", "microsoft teams"] or
+            platform == "Microsoft Teams" or
+            (link and ("teams.microsoft.com" in link.lower() or "teams.live.com" in link.lower()))
+        )
+        
+        # Check if this is any meeting (has platform/provider)
+        is_meeting = bool(platform or provider or ev.get("meetingLink"))
 
-        # 2️⃣ Template selection
-        if ev.get("all_day"):
-            line = f"All-day: {title}."
-        elif platform:
-            line = f"At {start_str} for {duration}: {title} on {platform}. I can text you the join link."
-        elif location:
-            line = f"At {start_str} for {duration}: {title}, at {location}."
+        # 2️⃣ Template selection - handle first Microsoft meeting specially
+        if not first_microsoft_meeting_found and is_microsoft_meeting:
+            # This is the first Microsoft Teams/Meet meeting - read it out fully
+            first_microsoft_meeting_found = True
+            if ev.get("all_day"):
+                line = f"All-day: {title}."
+            elif platform:
+                line = f"At {start_str} for {duration}: {title} on {platform}. I can text you the join link."
+            elif location:
+                line = f"At {start_str} for {duration}: {title}, at {location}."
+            else:
+                line = f"At {start_str} for {duration}: {title}."
+            text_lines.append(line)
+        elif first_microsoft_meeting_found and is_meeting:
+            # After first Microsoft meeting, collect remaining meetings
+            remaining_meetings.append(ev)
+        elif first_microsoft_meeting_found:
+            # After first Microsoft meeting, collect non-meeting events
+            remaining_events.append(ev)
         else:
-            line = f"At {start_str} for {duration}: {title}."
-
-        text_lines.append(line)
+            # Before first Microsoft meeting, read out normally
+            if ev.get("all_day"):
+                line = f"All-day: {title}."
+            elif platform:
+                line = f"At {start_str} for {duration}: {title} on {platform}. I can text you the join link."
+            elif location:
+                line = f"At {start_str} for {duration}: {title}, at {location}."
+            else:
+                line = f"At {start_str} for {duration}: {title}."
+            text_lines.append(line)
 
         # 3️⃣ Conflict detection
         if i < len(events) - 1:
@@ -445,7 +481,19 @@ def read_events(events: list):
                     f"to {_format_time(min(end, next_event['end_dt']))}."
                 )
 
-    # 4️⃣ Assemble output
+    # 4️⃣ Add shortened summary for remaining meetings and events
+    if first_microsoft_meeting_found:
+        if remaining_meetings:
+            meeting_count = len(remaining_meetings)
+            if meeting_count == 1:
+                text_lines.append("Other than this, you have 1 meet.")
+            else:
+                text_lines.append(f"Other than this, you have {meeting_count} meets.")
+        
+        if remaining_events:
+            text_lines.append("And the rest of the day.")
+
+    # 5️⃣ Assemble output
     result = " ".join(text_lines)
     if conflicts:
         result += " " + " ".join(conflicts)

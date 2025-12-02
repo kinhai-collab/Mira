@@ -138,7 +138,36 @@ def run_morning_brief(user_id: str, user_name: str, tz: str):
     # 8️⃣ Emotional closure
     closing_phrase = get_closing_phrase(user_name, mood)
 
-    # 9️⃣ Combine into single brief text
+    # 9️⃣ Optional upbeat email closer using counts
+    email_closer = ""
+    try:
+        total_unread = email_counts.get("total_unread", 0)
+        important_unread = email_counts.get("important_count", 0)
+
+        # Only add if we have any email data at all
+        if total_unread or important_unread:
+            if total_unread == 0:
+                email_closer = (
+                    "And you're totally caught up on emails, "
+                    "so go ahead and start the day with a blast."
+                )
+            else:
+                # Build a compact line about counts, then the upbeat closer
+                parts = [f"In total you have {total_unread} unread emails"]
+                if important_unread:
+                    parts.append(
+                        f"{important_unread} of them are marked as important"
+                    )
+
+                counts_text = ", and ".join(parts) + "."
+                email_closer = (
+                    f"{counts_text} Go ahead and take on the rest of your day with a blast."
+                )
+    except Exception:
+        # Fail quietly if anything goes wrong with counts
+        email_closer = ""
+
+    # 🔟 Combine into single brief text
     brief_parts = [
         greeting_text,
         # f"Your day looks {busy_level_desc}.",
@@ -146,10 +175,13 @@ def run_morning_brief(user_id: str, user_name: str, tz: str):
         commute_summary,
         event_summary,
     ]
-    
+
     if email_summary:
         brief_parts.append(email_summary)
-    
+
+    if email_closer:
+        brief_parts.append(email_closer)
+
     brief_parts.append(closing_phrase)
     
     brief = "\n\n".join(filter(None, brief_parts))
