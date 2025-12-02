@@ -18,6 +18,8 @@ import { getWeather } from "@/utils/weather";
 import HeaderBar from "@/components/HeaderBar";
 import Sidebar from "@/components/Sidebar";
 import FooterBar from "@/components/FooterBar";
+import { detectIntent } from "@/utils/voice/intents";
+import { useVoiceNavigation } from "@/utils/voice/navigationHandler";
 
 interface MorningBriefData {
 	text: string;
@@ -47,6 +49,8 @@ interface MorningBriefData {
 }
 
 export default function MorningBrief() {
+	useVoiceNavigation();
+
 	const router = useRouter();
 	const [stage, setStage] = useState<
 		"thinking" | "recommendation" | "confirmation"
@@ -106,6 +110,73 @@ export default function MorningBrief() {
 			setIsLoadingResponse(false);
 		}, 1200);
 	};
+	const handleVoiceCommand = (text: string) => {
+		const parsed = detectIntent(text.toLowerCase());
+
+		switch (parsed.intent) {
+			case "SHOW_CALENDAR":
+				router.push("/scenarios/smart-summary");
+				return;
+
+			case "SHOW_EMAILS":
+				router.push("/scenarios/smart-summary?focus=emails");
+				return;
+
+			case "SHOW_EMAILS_AND_CALENDAR":
+				router.push("/scenarios/smart-summary");
+				return;
+
+			case "SHOW_MORNING_BRIEF":
+				router.push("/scenarios/morning-brief");
+				return;
+
+			case "GO_TO_DASHBOARD":
+				router.push("/dashboard");
+				return;
+
+			case "GO_HOME":
+				router.push("/");
+				return;
+		}
+	};
+	useEffect(() => {
+		const listener = (e: any) => {
+			const transcript = e.detail?.text;
+			if (!transcript) return;
+			handleVoiceCommand(transcript);
+		};
+
+		window.addEventListener("miraTranscriptFinal", listener);
+		return () => window.removeEventListener("miraTranscriptFinal", listener);
+	}, []);
+
+	const parsed = detectIntent(input?.trim() || "");
+
+	switch (parsed.intent) {
+		case "SHOW_CALENDAR":
+			router.push("/scenarios/smart-summary");
+			return;
+
+		case "SHOW_EMAILS":
+			router.push("/scenarios/smart-summary?focus=emails");
+			return;
+
+		case "SHOW_EMAILS_AND_CALENDAR":
+			router.push("/scenarios/smart-summary");
+			return;
+
+		case "SHOW_MORNING_BRIEF":
+			router.push("/scenarios/morning-brief");
+			return;
+
+		case "GO_TO_DASHBOARD":
+			router.push("/dashboard");
+			return;
+
+		case "GO_HOME":
+			router.push("/");
+			return;
+	}
 
 	const speakMorningBrief = (text: string) => {
 		if (!text) return;
