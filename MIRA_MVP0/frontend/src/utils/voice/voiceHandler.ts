@@ -580,28 +580,44 @@ async function processServerResponse(data: any) {
 			return; // Exit early
 		}
 
-		if (data.action === "email_calendar_summary") {
-			try {
-				if (typeof window !== "undefined") {
-					window.dispatchEvent(
-						new CustomEvent("miraEmailCalendarSummary", {
-							detail: data.actionData ?? {},
-						})
+	if (data.action === "email_calendar_summary") {
+		try {
+			if (typeof window !== "undefined") {
+				window.dispatchEvent(
+					new CustomEvent("miraEmailCalendarSummary", {
+						detail: data.actionData ?? {},
+					})
+				);
+				
+				// Store data in sessionStorage for smart-summary page (same as text mode)
+				if (data.actionData) {
+					sessionStorage.setItem(
+						"mira_email_calendar_data",
+						JSON.stringify(data.actionData)
 					);
 				}
-			} catch (e) {
-				// Failed to dispatch email/calendar summary event
+				
+				// Navigate to smart-summary page (same as text mode)
+				// Small delay to allow audio to start playing
+				setTimeout(() => {
+					if (typeof window !== "undefined") {
+						window.location.href = "/scenarios/smart-summary";
+					}
+				}, 500);
 			}
-
-			// CRITICAL FIX: Handle audio for calendar/email actions ONLY HERE (not in text processing below)
-			// This prevents duplicate audio playback which causes quality issues
-			const audioField =
-				data.audio || data.audio_base_64 || data.audio_base64 || null;
-			if (audioField && !isMiraMuted && hasUserInteracted) {
-				playNonStreamingAudio(audioField);
-			}
-			return; // Exit early - don't process in the text section below
+		} catch (e) {
+			// Failed to dispatch email/calendar summary event
 		}
+
+		// CRITICAL FIX: Handle audio for calendar/email actions ONLY HERE (not in text processing below)
+		// This prevents duplicate audio playback which causes quality issues
+		const audioField =
+			data.audio || data.audio_base_64 || data.audio_base64 || null;
+		if (audioField && !isMiraMuted && hasUserInteracted) {
+			playNonStreamingAudio(audioField);
+		}
+		return; // Exit early - don't process in the text section below
+	}
 
 		// Only process if we have meaningful text
 		if (data.text && data.text.trim().length > 0 && !data.error) {

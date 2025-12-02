@@ -2767,17 +2767,19 @@ async def ws_voice_stt(websocket: WebSocket, language_code: str = "en"):
             "dashboard": re.compile(r"(go to|open|show|back to|return to|navigate to).*(dashboard|main)", re.I),
         }
         
+        # ⚠️ DASHBOARD NAVIGATION DISABLED - conflicts with email/calendar summary
         # Check for navigation intent (check homepage before dashboard since it's more specific)
         nav_destination = None
-        for destination in ["homepage", "emails", "calendar", "settings", "reminders", "profile", "dashboard"]:
-            pattern = nav_patterns.get(destination)
-            if pattern and pattern.search(text):
-                nav_destination = destination
-                logging.info(f"🧭 Navigation command detected: {destination}")
-                break
+        # DISABLED: Navigation patterns now handled by email/calendar summary flow
+        # for destination in ["homepage", "emails", "calendar", "settings", "reminders", "profile", "dashboard"]:
+        #     pattern = nav_patterns.get(destination)
+        #     if pattern and pattern.search(text):
+        #         nav_destination = destination
+        #         logging.info(f"🧭 Navigation command detected: {destination}")
+        #         break
         
         # If navigation command detected, send navigation action
-        if nav_destination:
+        if False and nav_destination:  # DISABLED
             try:
                 # Map destination to route
                 route_map = {
