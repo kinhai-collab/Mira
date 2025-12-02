@@ -76,12 +76,13 @@ def connect_handler(event, context):
             Item={
                 'connectionId': connection_id,
                 'userId': user_id,
+                'token': token if token != 'anonymous' else None,  # Store token for API calls
                 'connectedAt': datetime.now().isoformat(),
                 'conversationHistory': [],  # Initialize with empty history
                 'ttl': ttl
             }
         )
-        print(f"✅ Connection stored: {connection_id} (user: {user_id}) with fresh history")
+        print(f"✅ Connection stored: {connection_id} (user: {user_id}) with fresh history and token")
     except Exception as e:
         print(f"❌ Error storing connection: {e}")
         return {
@@ -149,17 +150,21 @@ def default_handler(event, context):
             try:
                 from settings import get_uid_from_token
                 user_id = get_uid_from_token(token) or 'anonymous'
-                # Update connection with user ID and clear conversation history for fresh session
+                # Update connection with user ID, token, and clear conversation history for fresh session
                 try:
                     connections_table.update_item(
                         Key={'connectionId': connection_id},
-                        UpdateExpression='SET userId = :uid, conversationHistory = :history',
+                        UpdateExpression='SET userId = :uid, #token = :token, conversationHistory = :history',
+                        ExpressionAttributeNames={
+                            '#token': 'token'  # 'token' is a reserved word in DynamoDB
+                        },
                         ExpressionAttributeValues={
                             ':uid': user_id,
+                            ':token': token,
                             ':history': []  # Clear history on new authorization
                         }
                     )
-                    print(f"✅ Updated connection {connection_id} with user ID: {user_id} and cleared history")
+                    print(f"✅ Updated connection {connection_id} with user ID: {user_id}, token, and cleared history")
                 except Exception as e:
                     print(f"⚠️ Could not update user ID: {e}")
             except Exception:
@@ -471,6 +476,106 @@ async def process_voice_message_async(apigw_client, connection_id: str, user_id:
                 'text': transcript,
                 'userText': transcript
             })
+            
+            # ✅ CHECK FOR CALENDAR ACTIONS FIRST (schedule/cancel/reschedule)
+            try:
+                from voice_processor_shared import check_calendar_action, generate_tts_audio
+                
+                # Get user token from connection
+                conn_item = connections_table.get_item(Key={'connectionId': connection_id})
+                item = conn_item.get('Item', {})
+                # Note: You'll need to store token in DynamoDB during connection
+                # For now, we'll skip calendar actions if token not available
+                user_token = item.get('token')
+                
+                if user_token:
+                    cal_action_result = await check_calendar_action(
+                        transcript,
+                        user_token,
+                        user_timezone="UTC"  # TODO: Get from user profile
+                    )
+                    
+                    if cal_action_result:
+                        print(f"📅 Calendar action detected: {cal_action_result.get('action')}")
+                        
+                        # Generate TTS for calendar action response
+                        audio_b64 = await generate_tts_audio(cal_action_result.get('text', ''))
+                        
+                        # Send calendar action response
+                        await send_message_to_connection(apigw_client, connection_id, {
+                            'message_type': 'response',
+                            'type': 'response',
+                            'text': cal_action_result.get('text', ''),
+                            'action': cal_action_result.get('action'),
+                            'actionData': cal_action_result.get('actionData', {}),
+                            'audio': audio_b64,
+                            'audio_base_64': audio_b64,
+                            'userText': transcript
+                        })
+                        
+                        return  # Exit early - calendar action handled
+            except Exception as e:
+                print(f"⚠️ Error checking calendar action: {e}")
+                import traceback
+                traceback.print_exc()
+            
+            # ✅ CHECK FOR EMAIL/CALENDAR SUMMARY COMMANDS
+            try:
+                from voice_processor_shared import (
+                    detect_email_calendar_intent,
+                    fetch_email_calendar_data,
+                    build_email_calendar_summary_response,
+                    generate_tts_audio
+                )
+                
+                has_email_intent, has_calendar_intent = await detect_email_calendar_intent(transcript)
+                
+                if has_email_intent or has_calendar_intent:
+                    print(f"📧 Email/Calendar command detected (email={has_email_intent}, calendar={has_calendar_intent})")
+                    
+                    # Get user token
+                    conn_item = connections_table.get_item(Key={'connectionId': connection_id})
+                    item = conn_item.get('Item', {})
+                    user_token = item.get('token')
+                    
+                    if user_token:
+                        # Fetch data
+                        emails, calendar_events = await fetch_email_calendar_data(
+                            user_token,
+                            has_email_intent,
+                            has_calendar_intent,
+                            user_timezone="UTC"  # TODO: Get from user profile
+                        )
+                        
+                        # Build response
+                        response_data = build_email_calendar_summary_response(
+                            emails,
+                            calendar_events,
+                            has_email_intent,
+                            has_calendar_intent
+                        )
+                        
+                        # Generate TTS
+                        audio_b64 = await generate_tts_audio(response_data['text'])
+                        
+                        # Add fields for frontend
+                        response_data.update({
+                            'type': 'response',
+                            'audio': audio_b64,
+                            'audio_base_64': audio_b64,
+                            'userText': transcript
+                        })
+                        
+                        # Send response
+                        await send_message_to_connection(apigw_client, connection_id, response_data)
+                        
+                        print(f"✅ Sent email/calendar summary: {len(emails)} emails, {len(calendar_events)} events")
+                        
+                        return  # Exit early - summary handled
+            except Exception as e:
+                print(f"⚠️ Error handling email/calendar summary: {e}")
+                import traceback
+                traceback.print_exc()
             
             # Build conversation for AI response
             messages = [

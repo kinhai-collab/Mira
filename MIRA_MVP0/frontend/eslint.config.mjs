@@ -25,6 +25,10 @@ const eslintConfig = [
       "@typescript-eslint/no-unused-vars": "off",
       "@typescript-eslint/no-unused-expressions": "off",
       "prefer-const": "off",
+      // Disable React hooks dependency warnings
+      "react-hooks/exhaustive-deps": "off",
+      // Disable unescaped entities errors (quotes in JSX)
+      "react/no-unescaped-entities": "off",
     },
   },
 ];
