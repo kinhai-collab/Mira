@@ -1,4 +1,7 @@
-﻿import os
+
+
+
+import os
 import re
 import asyncio
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Request, WebSocket, WebSocketDisconnect
@@ -859,6 +862,9 @@ async def fetch_dashboard_data(user_token: str, has_email: bool, has_calendar: b
         print(f"⚠️ Not caching data due to fetch failures")
     
     return emails, calendar_events
+
+
+
 @router.post("/text-query")
 async def text_query_pipeline(request: Request):
     request_data = await request.json()
@@ -2065,11 +2071,31 @@ async def voice_pipeline(
         morning_brief_keywords = re.compile(r"(morning|daily|today).*(brief|summary|update)", re.I)
         show_brief_keywords = re.compile(r"(show|give|tell|read).*(brief|summary|morning|daily)", re.I)
         if morning_brief_keywords.search(user_input) or show_brief_keywords.search(user_input):
-            # Don't generate audio here - let the morning brief page generate its own audio
-            # This prevents two audio files from playing simultaneously
+            # Generate short TTS prompt for navigation (best-effort)
+            audio_base64: Optional[str] = None
+            try:
+                el = get_elevenlabs_client()
+                voice_id = os.getenv("ELEVENLABS_VOICE_ID")
+                if voice_id:
+                    stream = el.text_to_speech.convert(
+                        voice_id=voice_id,
+                        model_id="eleven_turbo_v2",
+                        text=f'<speak><break time="300ms"/>Opening your morning brief now.</speak>',
+                        output_format="mp3_44100_128",
+                    )
+                    try:
+                        mp3_bytes = _stream_to_bytes(stream)
+                        logging.debug(f"morning-brief mp3_bytes length: {len(mp3_bytes)}")
+                        if mp3_bytes:
+                            audio_base64 = base64.b64encode(mp3_bytes).decode("ascii")
+                    except Exception as e:
+                        logging.exception(f"morning brief TTS failed to normalize stream: {e}")
+            except Exception:
+                audio_base64 = None
+
             return JSONResponse({
                 "text": "Opening your morning brief now.",
-                "audio": None,
+                "audio": audio_base64,
                 "userText": user_input,
                 "action": "navigate",
                 "actionTarget": "/scenarios/morning-brief",
@@ -2087,7 +2113,7 @@ async def voice_pipeline(
 
 
             if not user_token:
-                print("âš ï¸ No token found in request or env; using mock local token.")
+                print("âš ï¸ No token found in request or env; using mock local token.")
                 user_token = "local-dev-token"
             else:
                 print("âœ… Using user_token from frontend (truncated):", user_token[:12], "...")
@@ -2158,7 +2184,7 @@ async def voice_pipeline(
                 memory_context = ""
                 personalization_context = ""
 
- # 3) Build chat message array
+        # 3) Build chat message array
         system_prompt = """You are Mira, a warm and expressive voice-first AI assistant. Speak naturally, like a real human, with emotions coming through your words, tone, and rhythm â€” warm, caring, curious, or confident depending on the situation.
 
 Guidelines:
@@ -2306,123 +2332,44 @@ Mischievous: "Oh, I see what you did thereâ€¦ clever move!"""
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Voice pipeline failed: {e}")
 
-def generate_voice(text: str, voice_settings: Optional[Dict[str, Any]] = None) -> tuple[str, str]:
+def generate_voice(text: str) -> tuple[str, str]:
     """
     Generates audio from text and returns both base64 data and a filename.
     Returns (audio_base64, filename) tuple.
     This is a synchronous utility function for use in non-async contexts.
-    Uses the same TTS streaming approach as the WebSocket voice pipeline for consistency.
-    
-    Args:
-        text: The text to convert to speech
-        voice_settings: Optional voice customization (stability, similarity_boost, style, use_speaker_boost)
-    
-    Returns:
-        Tuple of (audio_base64, filename) or ("", "") on failure
+    In Lambda, we return base64 instead of saving to disk (filesystem is read-only).
     """
-    logging.info(f"🎙️ Generating voice for text (length: {len(text)} chars): {text[:100]}...")
-    
     try:
-        # Preprocess text for TTS (remove parentheticals, clean whitespace)
+        # Preprocess text for TTS
         processed_text = preprocess_text_for_tts(text)
-        logging.info(f"📝 Preprocessed text: {processed_text[:100]}...")
-        
-        # Get voice ID from environment
-        voice_id = os.getenv("ELEVENLABS_VOICE_ID")
-        if not voice_id:
-            logging.error("❌ ELEVENLABS_VOICE_ID not set, cannot generate audio")
-            return "", ""
-
-        # Check TTS cache first (1-hour TTL to save API calls)
-        cache_key_params = {"voice_id": voice_id, "model": "eleven_flash_v2_5"}
-        if voice_settings:
-            cache_key_params.update(voice_settings)
-        
-        cached_audio_b64 = get_cached_tts_audio(processed_text, **cache_key_params)
-        if cached_audio_b64:
-            logging.info(f"✅ TTS cache HIT - returning cached audio ({len(cached_audio_b64)} chars base64)")
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"morning_brief_{timestamp}.mp3"
-            return cached_audio_b64, filename
-
-        logging.info("💾 TTS cache MISS - generating new audio from ElevenLabs")
         
         # Get the ElevenLabs client (with lazy import)
         elevenlabs_client = get_elevenlabs_client()
 
-        # Prepare voice settings (use defaults if not provided)
-        if voice_settings is None:
-            voice_settings = {
-                "stability": 0.5,
-                "similarity_boost": 0.75,
-                "style": 0.0,
-                "use_speaker_boost": True
-            }
-        
-        logging.info(f"🎛️ Voice settings: {voice_settings}")
+        voice_id = os.getenv("ELEVENLABS_VOICE_ID")
+        if not voice_id:
+            print("Warning: ELEVENLABS_VOICE_ID not set, skipping audio generation")
+            return "", ""
 
-        # Request the audio stream using the same model as WebSocket pipeline
-        logging.info(f"🔊 Calling ElevenLabs TTS API (voice_id: {voice_id}, model: eleven_flash_v2_5)...")
+        # Request the audio stream
         audio_stream = elevenlabs_client.text_to_speech.convert(
             voice_id=voice_id,
-            model_id="eleven_flash_v2_5",  # Same as WebSocket pipeline
-            text=processed_text,
+            model_id="eleven_turbo_v2",
+            text=f'<speak><break time="300ms"/>{processed_text}</speak>',
             output_format="mp3_44100_128",
-            voice_settings=voice_settings
         )
 
-        # Collect audio chunks from stream
-        logging.info("📦 Collecting audio chunks from stream...")
-        audio_chunks = []
-        chunk_count = 0
-        total_bytes = 0
-        
+        # Combine all chunks into one binary MP3 blob
         try:
-            for chunk in audio_stream:
-                if isinstance(chunk, bytes):
-                    audio_chunks.append(chunk)
-                    chunk_count += 1
-                    total_bytes += len(chunk)
-                elif isinstance(chunk, str):
-                    # Handle base64-encoded chunks
-                    try:
-                        decoded = base64.b64decode(chunk)
-                        audio_chunks.append(decoded)
-                        chunk_count += 1
-                        total_bytes += len(decoded)
-                    except Exception as decode_err:
-                        logging.warning(f"⚠️ Failed to decode string chunk as base64: {decode_err}")
-                else:
-                    logging.warning(f"⚠️ Unexpected chunk type: {type(chunk)}")
-            
-            logging.info(f"✅ Collected {chunk_count} chunks, total {total_bytes} bytes")
-            
-        except Exception as stream_err:
-            logging.error(f"❌ Error collecting audio stream: {stream_err}")
-            import traceback
-            traceback.print_exc()
-            audio_chunks = []
+            audio_bytes = _stream_to_bytes(audio_stream)
+        except Exception as e:
+            logging.exception(f"Failed to normalize audio stream: {e}")
+            audio_bytes = b""
+        audio_bytes = b"".join(list(audio_stream))
 
-        # Combine chunks into single audio blob
-        audio_bytes = b"".join(audio_chunks)
-        
-        if not audio_bytes or len(audio_bytes) == 0:
-            logging.error("❌ No audio data received from ElevenLabs (empty stream)")
-            logging.error(f"   Chunk count: {chunk_count}, Total bytes: {total_bytes}")
+        if not audio_bytes:
+            logging.warning("No audio data received from ElevenLabs")
             return "", ""
-        
-        logging.info(f"🎵 Audio generated successfully: {len(audio_bytes)} bytes")
-
-        # Validate MP3 format (check for MP3 sync word or ID3 tag)
-        if len(audio_bytes) >= 3:
-            is_mp3 = (
-                (audio_bytes[0] == 0xFF and (audio_bytes[1] & 0xE0) == 0xE0) or  # MP3 sync word
-                (audio_bytes[0] == 0x49 and audio_bytes[1] == 0x44 and audio_bytes[2] == 0x33)  # ID3 tag
-            )
-            if is_mp3:
-                logging.info("✅ Audio data validated as MP3 format")
-            else:
-                logging.warning(f"⚠️ Audio data may not be valid MP3 (first bytes: {audio_bytes[:16].hex()})")
 
         # Generate filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -2434,23 +2381,19 @@ def generate_voice(text: str, voice_settings: Optional[Dict[str, Any]] = None) -
             tmp_path = os.path.join("/tmp/speech", filename)
             with open(tmp_path, "wb") as f:
                 f.write(audio_bytes)
-            logging.info(f"💾 Audio saved to: {tmp_path}")
+            print(f"Audio saved to: {tmp_path}")
         except Exception as save_err:
-            logging.debug(f"Could not save audio file (Lambda read-only filesystem): {save_err}")
+            print(f"Could not save audio file (Lambda read-only filesystem): {save_err}")
             # Continue - we'll return base64 instead
 
         # Encode to base64 for direct use
+        import base64
         audio_base64 = base64.b64encode(audio_bytes).decode("ascii")
-        logging.info(f"✅ Audio encoded to base64 ({len(audio_base64)} chars)")
-        
-        # Cache the generated audio (1-hour TTL)
-        cache_tts_audio(processed_text, audio_base64, **cache_key_params)
-        logging.info("💾 Audio cached for future requests")
 
         return audio_base64, filename
 
     except Exception as e:
-        logging.error(f"❌ Error generating voice: {e}")
+        print(f"Error generating voice: {e}")
         import traceback
         traceback.print_exc()
         return "", ""
@@ -2815,37 +2758,6 @@ async def ws_voice_stt(websocket: WebSocket, language_code: str = "en"):
                 logging.exception(f"Error handling calendar action: {e}")
                 # Continue with regular flow if calendar action fails
         
-        # ✅ CHECK FOR MORNING BRIEF INTENT (BEFORE other processing)
-        morning_brief_keywords = re.compile(r"(morning|daily|today).*(brief|summary|update)", re.I)
-        show_brief_keywords = re.compile(r"(show|give|tell|read).*(brief|summary|morning|daily)", re.I)
-        if morning_brief_keywords.search(text) or show_brief_keywords.search(text):
-            logging.info(f"📋 Morning brief command detected")
-            # Don't generate audio here - let the morning brief page generate its own audio
-            # This prevents two audio files from playing simultaneously
-            try:
-                # Check connection state before sending
-                if hasattr(websocket, 'client_state') and websocket.client_state.name != "CONNECTED":
-                    logging.warning("Morning brief: WebSocket already closed, skipping response")
-                    return
-                
-                await websocket.send_json({
-                    "message_type": "response",
-                    "text": "Opening your morning brief now.",
-                    "userText": text,
-                    "action": "navigate",
-                    "actionTarget": "/scenarios/morning-brief",
-                })
-                logging.info(f"✅ Sent morning brief navigation (no audio)")
-                return  # Exit early - navigation handled
-            except RuntimeError as e:
-                if "close message has been sent" in str(e):
-                    logging.warning("Morning brief: WebSocket closed before response")
-                    return
-                raise
-            except Exception as e:
-                logging.error(f"Failed to send morning brief navigation: {e}")
-                # Continue with regular flow if send fails
-        
         # ✅ CHECK FOR DASHBOARD NAVIGATION COMMANDS (BEFORE viewing/streaming)
         # Match voice commands like "show mail list", "open settings", "go to calendar"
         nav_patterns = {
@@ -3057,6 +2969,7 @@ async def ws_voice_stt(websocket: WebSocket, language_code: str = "en"):
             except Exception as e:
                 logging.debug(f"Error retrieving memories: {e}")
             return ""
+        
         # Build base system prompt (will add memory context later if available)
         system_prompt = """You are Mira, a warm and expressive voice-first AI assistant. Speak naturally, like a real human, with emotions coming through your words, tone, and rhythm — warm, caring, curious, or confident depending on the situation.
 

@@ -1,4 +1,3 @@
-# backend/scenarios/morning_brief/daily_summary.py
 import requests
 from datetime import datetime
 import os
@@ -7,13 +6,12 @@ WEATHERAPI_KEY = os.getenv("WEATHERAPI_KEY")
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
 
 
-def get_weather_and_commute(user_id: str, events, lat=None, lon=None):
-
+def get_weather_and_commute(user_id: str, events: list):
     """
     Returns (weather_summary, commute_summary).
     FR-1.5.1 – FR-1.5.9 compliant.
     """
-    weather_summary = _get_weather_summary(lat=lat, lon=lon)
+    weather_summary = _get_weather_summary()
     commute_summary = _get_commute_summary(events)
     return weather_summary, commute_summary
 
@@ -21,20 +19,47 @@ def get_weather_and_commute(user_id: str, events, lat=None, lon=None):
 # Weather
 # --------------------------------------------------------------------------- #
 
+def _get_user_location() -> tuple[float, float]:
+    """
+    Get user's real-time location using IP-based geolocation.
+    Returns (latitude, longitude) tuple.
+    """
+    # Use IP-based geolocation for real-time location
+    try:
+        print("🌐 Attempting IP-based geolocation...")
+        response = requests.get("http://ip-api.com/json/", timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("status") == "success":
+                lat = data.get("lat")
+                lon = data.get("lon")
+                city = data.get("city", "Unknown")
+                print(f"🌍 Using IP-based location: {city} ({lat}, {lon})")
+                return (float(lat), float(lon))
+    except Exception as e:
+        print(f"⚠️ IP-based geolocation failed: {e}")
+    
+    # Final fallback to Pittsburgh
+    print("⚠️ Using fallback location: Pittsburgh")
+    return (40.4406, -79.9959)
+
 def _get_weather_summary(lat=None, lon=None):
+    # Get real-time location if coordinates not provided
     if lat is None or lon is None:
-        lat, lon = 40.4406, -79.9959
+        lat, lon = _get_user_location()
 
     try:
         url = (
             f"https://api.open-meteo.com/v1/forecast?"
             f"latitude={lat}&longitude={lon}&current_weather=true&temperature_unit=celsius"
         )
+
         res = requests.get(url, timeout=5)
         data = res.json()
 
         temp_raw = data["current_weather"]["temperature"]
-        temp = round(temp_raw)
+        temp = round(temp_raw)  # removes decimals → 6 instead of 6.1
+
         code = int(data["current_weather"]["weathercode"])
 
         # SAME mapping as dashboard
@@ -59,11 +84,11 @@ def _get_weather_summary(lat=None, lon=None):
 
         condition = desc(code)
 
-        return f"It’s {temp}°C with {condition.lower()} right now."
+        return f"It's {temp}°C with {condition.lower()} right now."
 
     except Exception as e:
         print("Weather error:", e)
-        return "Couldn’t fetch the weather right now."
+        return "Couldn't fetch the weather right now."
 
 # --------------------------------------------------------------------------- #
 # Commute
