@@ -18,6 +18,8 @@ import { getWeather } from "@/utils/weather";
 import HeaderBar from "@/components/HeaderBar";
 import Sidebar from "@/components/Sidebar";
 import FooterBar from "@/components/FooterBar";
+import { detectIntent } from "@/utils/voice/intents";
+import { useVoiceNavigation } from "@/utils/voice/navigationHandler";
 
 interface MorningBriefData {
 	text: string;
@@ -47,6 +49,7 @@ interface MorningBriefData {
 }
 
 export default function MorningBrief() {
+	useVoiceNavigation();
 	const router = useRouter();
 	const [stage, setStage] = useState<
 		"thinking" | "recommendation" | "confirmation"
@@ -106,6 +109,73 @@ export default function MorningBrief() {
 			setIsLoadingResponse(false);
 		}, 1200);
 	};
+	const handleVoiceCommand = (text: string) => {
+		const parsed = detectIntent(text.toLowerCase());
+
+		switch (parsed.intent) {
+			case "SHOW_CALENDAR":
+				router.push("/scenarios/smart-summary");
+				return;
+
+			case "SHOW_EMAILS":
+				router.push("/scenarios/smart-summary?focus=emails");
+				return;
+
+			case "SHOW_EMAILS_AND_CALENDAR":
+				router.push("/scenarios/smart-summary");
+				return;
+
+			case "SHOW_MORNING_BRIEF":
+				router.push("/scenarios/morning-brief");
+				return;
+
+			case "GO_TO_DASHBOARD":
+				router.push("/dashboard");
+				return;
+
+			case "GO_HOME":
+				router.push("/");
+				return;
+		}
+	};
+	useEffect(() => {
+		const listener = (e: any) => {
+			const transcript = e.detail?.text;
+			if (!transcript) return;
+			handleVoiceCommand(transcript);
+		};
+
+		window.addEventListener("miraTranscriptFinal", listener);
+		return () => window.removeEventListener("miraTranscriptFinal", listener);
+	}, []);
+
+	const parsed = detectIntent(input?.trim() || "");
+
+	switch (parsed.intent) {
+		case "SHOW_CALENDAR":
+			router.push("/scenarios/smart-summary");
+			return;
+
+		case "SHOW_EMAILS":
+			router.push("/scenarios/smart-summary?focus=emails");
+			return;
+
+		case "SHOW_EMAILS_AND_CALENDAR":
+			router.push("/scenarios/smart-summary");
+			return;
+
+		case "SHOW_MORNING_BRIEF":
+			router.push("/scenarios/morning-brief");
+			return;
+
+		case "GO_TO_DASHBOARD":
+			router.push("/dashboard");
+			return;
+
+		case "GO_HOME":
+			router.push("/");
+			return;
+	}
 
 	const speakMorningBrief = (text: string) => {
 		if (!text) return;
@@ -315,12 +385,12 @@ export default function MorningBrief() {
 	}, [router]);
 
 	// Stop any active voice when entering morning brief page
-	useEffect(() => {
-		// Stop voice handler on mount to avoid conflicts with brief audio
-		stopMiraVoice();
-		setIsMuted(false);
-		setMiraMute(false);
-	}, []);
+	// useEffect(() => {
+	// Stop voice handler on mount to avoid conflicts with brief audio
+	// 	stopMiraVoice();
+	// 	setIsMuted(false);
+	// 	setMiraMute(false);
+	// }, []);
 
 	// Fetch morning brief data on mount
 	useEffect(() => {
@@ -423,7 +493,9 @@ export default function MorningBrief() {
 									audioRef.current.addEventListener(
 										"ended",
 										() => {
-											URL.revokeObjectURL(url);
+											setMiraMute(false);
+											setIsListening(true); // Re-enable mic
+											startMiraVoice();
 										},
 										{ once: true }
 									);
@@ -461,7 +533,8 @@ export default function MorningBrief() {
 
 							// Stop voice handler while brief audio is playing (one-time listener)
 							const handlePlay = () => {
-								stopMiraVoice();
+								setIsListening(false); // UI mic OFF
+								setMiraMute(true);
 
 								audioRef.current?.removeEventListener("play", handlePlay);
 							};
@@ -543,6 +616,12 @@ export default function MorningBrief() {
 			}
 		};
 	}, []);
+	// Auto-start voice on page load unless muted
+	useEffect(() => {
+		if (!isMuted && isListening) {
+			startMiraVoice();
+		}
+	}, [isMuted, isListening]);
 
 	return (
 		<div className="flex flex-col min-h-screen bg-[#F8F8FB] text-gray-800">

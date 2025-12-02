@@ -29,6 +29,7 @@ import {
 	CalendarEvent,
 	ScheduleConflictError,
 } from "./utils/calendarApi";
+import { useVoiceNavigation } from "@/utils/voice/navigationHandler";
 
 type Stage =
 	| "loading"
@@ -40,6 +41,7 @@ type Stage =
 type ActionType = "rescheduled" | "cancelled" | "scheduled";
 
 export default function SmartSchedulingPage() {
+	useVoiceNavigation();
 	// Track if we've already loaded events to prevent duplicate loads in Strict Mode
 	const hasLoadedRef = useRef(false);
 
