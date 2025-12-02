@@ -524,10 +524,12 @@ function SummaryCard({
 						No priority items found
 					</p>
 					<p className="text-xs text-[#5a5c61] mb-3">
-						This could mean there are no recent emails or upcoming events, or there was an issue fetching your data.
+						This could mean there are no recent emails or upcoming events, or
+						there was an issue fetching your data.
 					</p>
 					<p className="text-xs text-[#5a5c61]">
-						Try refreshing the page or asking again: &quot;Show me my emails and calendar&quot;
+						Try refreshing the page or asking again: &quot;Show me my emails and
+						calendar&quot;
 					</p>
 				</div>
 			)}
@@ -605,17 +607,17 @@ function SummaryCard({
 					<div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
 						{calendarEvents?.map((event) => {
 							const provider = resolveCalendarEventProvider(event);
-							
+
 							// ✅ Strip HTML tags from note field
 							const cleanNote = event.note
 								? event.note
-										.replace(/<[^>]*>/g, '') // Remove all HTML tags
-										.replace(/&nbsp;/g, ' ') // Replace &nbsp; with space
-										.replace(/\s+/g, ' ') // Collapse multiple spaces
+										.replace(/<[^>]*>/g, "") // Remove all HTML tags
+										.replace(/&nbsp;/g, " ") // Replace &nbsp; with space
+										.replace(/\s+/g, " ") // Collapse multiple spaces
 										.trim()
-										.substring(0, 150) + (event.note.length > 150 ? '...' : '') // Limit length
-								: '';
-							
+										.substring(0, 150) + (event.note.length > 150 ? "..." : "") // Limit length
+								: "";
+
 							const detailSegments = [
 								event.timeRange,
 								cleanNote, // Use cleaned note
@@ -648,20 +650,6 @@ function SummaryCard({
 													<p className="font-['Outfit',sans-serif] text-[14px] font-medium text-[#272829] line-clamp-2 leading-tight">
 														{event.title}
 													</p>
-													{/* Calendar Provider Badge */}
-													{event.calendar_provider && (
-														<span
-															className={`text-[11px] px-2 py-0.5 rounded-full font-medium shrink-0 inline-flex self-start ${
-																event.calendar_provider === "google"
-																	? "bg-blue-100 text-blue-700"
-																	: "bg-purple-100 text-purple-700"
-															}`}
-														>
-															{event.calendar_provider === "google"
-																? "Google Calendar"
-																: "Outlook Calendar"}
-														</span>
-													)}
 												</div>
 											</div>
 											{/* Join Button - properly positioned */}
@@ -877,7 +865,7 @@ export function EmailCalendarOverlay({
 									const idVal = backend.id ?? "";
 									const senderEmailVal = backend.sender_email ?? "";
 									const summaryVal = backend.snippet ?? backend.body ?? "";
-									const providerVal = backend.provider; // ✅ Preserve provider field
+									const providerVal = backend.provider;
 									return {
 										id: idVal,
 										from: String(fromVal),
@@ -885,7 +873,7 @@ export function EmailCalendarOverlay({
 										subject: String(subjectVal),
 										receivedAt: String(receivedAtVal),
 										summary: String(summaryVal),
-										provider: providerVal, // ✅ Include provider field
+										provider: providerVal,
 									} as VoiceSummaryEmail;
 							  })
 							: [];
