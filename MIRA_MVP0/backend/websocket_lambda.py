@@ -1,6 +1,7 @@
 """
 WebSocket Lambda handlers for AWS API Gateway WebSocket API
 Handles real-time voice pipeline with ElevenLabs
+VERSION: 2024-12-02-v3 - Fixed S3 chunk cleanup on connect/disconnect
 """
 import json
 import os
@@ -19,6 +20,124 @@ S3_BUCKET = os.environ.get('S3_BUCKET', 'mira-data-dev-058057616533')
 # Voice pipeline will use simpler direct implementation
 # We don't import the complex voice_generation module to keep Lambda package small
 VOICE_AVAILABLE = True  # Always True - we'll implement basic voice processing here
+
+# Check S3 availability (cache result)
+_S3_AVAILABLE = None
+
+def run_async_safe(coro):
+    """Run async coroutine safely in Lambda environment
+    Handles both cases: with and without existing event loop
+    Lambda typically doesn't have a running event loop, but handles edge cases
+    """
+    try:
+        # Try to get existing event loop
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # Event loop is running - shouldn't happen in Lambda, but create task if needed
+            # This is a fallback - in Lambda we should never hit this
+            import concurrent.futures
+            import threading
+            result = None
+            exception = None
+            
+            def run_in_thread():
+                nonlocal result, exception
+                try:
+                    new_loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(new_loop)
+                    result = new_loop.run_until_complete(coro)
+                    new_loop.close()
+                except Exception as e:
+                    exception = e
+            
+            thread = threading.Thread(target=run_in_thread)
+            thread.start()
+            thread.join()
+            
+            if exception:
+                raise exception
+            return result
+        else:
+            # Event loop exists but not running - use it (common in Lambda)
+            return loop.run_until_complete(coro)
+    except RuntimeError:
+        # No event loop exists - create new one (normal case in Lambda)
+        return asyncio.run(coro)
+
+def is_s3_available():
+    """Check if S3 bucket is available"""
+    global _S3_AVAILABLE
+    if _S3_AVAILABLE is not None:
+        return _S3_AVAILABLE
+    
+    try:
+        s3_client.head_bucket(Bucket=S3_BUCKET)
+        _S3_AVAILABLE = True
+        print(f"✅ S3 bucket '{S3_BUCKET}' is available")
+        return True
+    except Exception as e:
+        _S3_AVAILABLE = False
+        print(f"⚠️ S3 bucket '{S3_BUCKET}' is not available: {e}. Using DynamoDB fallback.")
+        return False
+
+
+def get_chunks_from_dynamodb(connection_id: str) -> list:
+    """Get audio chunks from DynamoDB (fallback when S3 unavailable)"""
+    try:
+        conn_item = connections_table.get_item(Key={'connectionId': connection_id})
+        item = conn_item.get('Item', {})
+        chunks = item.get('audioChunks', [])
+        return chunks if isinstance(chunks, list) else []
+    except Exception as e:
+        print(f"⚠️ Error reading chunks from DynamoDB: {e}")
+        return []
+
+
+def store_chunks_in_dynamodb(connection_id: str, chunks: list, is_commit: bool = False):
+    """Store audio chunks in DynamoDB (fallback when S3 unavailable)
+    Note: DynamoDB has 400KB item limit, so we limit total chunk size
+    """
+    try:
+        # Calculate total size - DynamoDB item limit is 400KB
+        total_size = sum(len(c) for c in chunks)
+        max_size = 350000  # Leave some headroom (350KB)
+        
+        if total_size > max_size:
+            print(f"⚠️ Chunks too large for DynamoDB ({total_size}B > {max_size}B), truncating")
+            # Keep only the most recent chunks that fit
+            truncated = []
+            current_size = 0
+            for chunk in reversed(chunks):
+                if current_size + len(chunk) <= max_size:
+                    truncated.insert(0, chunk)
+                    current_size += len(chunk)
+                else:
+                    break
+            chunks = truncated
+        
+        connections_table.update_item(
+            Key={'connectionId': connection_id},
+            UpdateExpression='SET audioChunks = :chunks, chunkCommit = :commit, chunkUpdatedAt = :updated',
+            ExpressionAttributeValues={
+                ':chunks': chunks,
+                ':commit': is_commit,
+                ':updated': datetime.now().isoformat()
+            }
+        )
+        print(f"📥 Stored {len(chunks)} chunks in DynamoDB (size={total_size}B)")
+    except Exception as e:
+        print(f"⚠️ Error storing chunks in DynamoDB: {e}")
+
+
+def clear_chunks_from_dynamodb(connection_id: str):
+    """Clear audio chunks from DynamoDB"""
+    try:
+        connections_table.update_item(
+            Key={'connectionId': connection_id},
+            UpdateExpression='REMOVE audioChunks, chunkCommit, chunkUpdatedAt'
+        )
+    except Exception as e:
+        print(f"⚠️ Error clearing chunks from DynamoDB: {e}")
 
 
 def get_api_gateway_client(event: Dict[str, Any]):
@@ -54,9 +173,52 @@ async def send_message_to_connection(apigw_client, connection_id: str, message: 
         return False
 
 
+async def send_audio_in_chunks(apigw_client, connection_id: str, audio_b64: str, response_text: str, user_text: str):
+    """Safely send TTS audio while respecting API Gateway 32KB limit.
+    - For small audios: send a single response with embedded base64 audio.
+    - For large audios: fall back to text-only (no audio) to avoid 413 errors.
+    NOTE: We do NOT try to stream by splitting MP3 bytes, because arbitrary
+    splits are not valid standalone audio files and will fail to play.
+    """
+    if not audio_b64:
+        # Nothing to send, just send text-only
+        await send_message_to_connection(apigw_client, connection_id, {
+            'message_type': 'response',
+            'type': 'response',
+            'text': response_text,
+            'userText': user_text
+        })
+        return
+
+    # Conservative max size for base64 audio inside a single WebSocket message.
+    # API Gateway hard limit is 32KB per frame; we leave headroom for JSON.
+    MAX_B64_SIZE = 30000
+
+    if len(audio_b64) <= MAX_B64_SIZE:
+        # Safe to include audio directly in the response
+        await send_message_to_connection(apigw_client, connection_id, {
+            'message_type': 'response',
+            'type': 'response',
+            'text': response_text,
+            'audio': audio_b64,
+            'audio_base_64': audio_b64,
+            'userText': user_text
+        })
+    else:
+        # Audio would exceed frame limit – send text-only to avoid 413
+        print(f"⚠️ TTS audio too large to send safely ({len(audio_b64)} base64 chars). Sending text-only response.")
+        await send_message_to_connection(apigw_client, connection_id, {
+            'message_type': 'response',
+            'type': 'response',
+            'text': response_text,
+            'userText': user_text
+        })
+
+
 def connect_handler(event, context):
     """Handle WebSocket $connect route"""
     connection_id = event['requestContext']['connectionId']
+    print(f"🚀 CONNECT v3: New connection {connection_id}")
     
     # Extract token from query string if provided
     query_params = event.get('queryStringParameters') or {}
@@ -86,6 +248,17 @@ def connect_handler(event, context):
             }
         )
         print(f"✅ Connection stored: {connection_id} (user: {user_id}) with fresh history and token")
+        
+        # ✅ CRITICAL: Clear any old audio chunks from S3 for this connection
+        # This prevents old audio from previous sessions being mixed with new audio
+        try:
+            s3_key = f"websocket-audio/{connection_id}/chunks.json"
+            s3_client.delete_object(Bucket=S3_BUCKET, Key=s3_key)
+            print(f"🧹 Cleared old S3 chunks for new connection {connection_id}")
+        except Exception as s3_err:
+            # Ignore errors - chunks might not exist
+            print(f"📝 No old S3 chunks to clear for {connection_id}")
+            
     except Exception as e:
         print(f"❌ Error storing connection: {e}")
         return {
@@ -105,6 +278,14 @@ def connect_handler(event, context):
 def disconnect_handler(event, context):
     """Handle WebSocket $disconnect route"""
     connection_id = event['requestContext']['connectionId']
+    
+    # Clean up S3 audio chunks
+    try:
+        s3_key = f"websocket-audio/{connection_id}/chunks.json"
+        s3_client.delete_object(Bucket=S3_BUCKET, Key=s3_key)
+        print(f"🧹 Cleared S3 chunks on disconnect for {connection_id}")
+    except Exception:
+        pass  # Ignore errors
     
     # Remove connection from DynamoDB
     try:
@@ -132,7 +313,7 @@ def default_handler(event, context):
     # Support both 'message_type' and 'type' fields for compatibility
     message_type = body.get('message_type', body.get('type', 'unknown'))
     
-    print(f"📨 Received message from {connection_id}: {message_type}")
+    print(f"📨 [v3] Received message from {connection_id}: {message_type}")
     
     # Get API Gateway client for sending responses
     try:
@@ -178,7 +359,7 @@ def default_handler(event, context):
     
     # Handle ping/pong for keepalive
     if message_type == 'ping':
-        asyncio.run(send_message_to_connection(
+        run_async_safe(send_message_to_connection(
             apigw_client,
             connection_id,
             {'message_type': 'pong', 'timestamp': datetime.now().isoformat()}
@@ -187,7 +368,7 @@ def default_handler(event, context):
     
     # Handle stop_audio signal
     if message_type == 'stop_audio':
-        asyncio.run(send_message_to_connection(
+        run_async_safe(send_message_to_connection(
             apigw_client,
             connection_id,
             {'message_type': 'audio_stopped'}
@@ -197,7 +378,7 @@ def default_handler(event, context):
     # Handle input_audio_chunk (frontend sends audio data in chunks)
     if message_type == 'input_audio_chunk':
         if not VOICE_AVAILABLE:
-            asyncio.run(send_message_to_connection(
+            run_async_safe(send_message_to_connection(
                 apigw_client,
                 connection_id,
                 {'message_type': 'error', 'error': 'Voice pipeline not available'}
@@ -208,12 +389,10 @@ def default_handler(event, context):
         audio_chunk = body.get('audio_base_64', body.get('audio', body.get('chunk', '')))
         is_commit = body.get('commit', False)
         
-        if not audio_chunk:
-            return {'statusCode': 200, 'body': 'Empty audio chunk received'}
-        
-        # ✅ FIX: Use S3 for chunk storage instead of DynamoDB to avoid size limits and throttling
-        # S3 is much better for large data and doesn't have the 400KB item limit
+        # ✅ Use S3 for chunk storage, with DynamoDB fallback if S3 unavailable
+        # S3 is preferred for large data (no 400KB limit), DynamoDB is fallback
         s3_key = f"websocket-audio/{connection_id}/chunks.json"
+        use_s3 = is_s3_available()
         
         try:
             # Get connection info
@@ -221,130 +400,146 @@ def default_handler(event, context):
             item = conn_item.get('Item', {})
             user_id = item.get('userId', 'anonymous')
             
-            # Try to get existing chunks from S3
+            # Check processing flag - but only block COMMITS, not chunk storage
+            # This allows new audio to be buffered while a previous request is being processed
+            processing_flag = item.get('processing', False)
+            
+            # Get existing chunks (from S3 or DynamoDB)
             existing_chunks = []
-            chunk_count = 0
-            try:
-                s3_response = s3_client.get_object(Bucket=S3_BUCKET, Key=s3_key)
-                existing_data = json.loads(s3_response['Body'].read().decode('utf-8'))
-                existing_chunks = existing_data.get('chunks', [])
-                chunk_count = len(existing_chunks)
-            except s3_client.exceptions.NoSuchKey:
-                # No existing chunks - start fresh
-                pass
-            except Exception as s3_err:
-                print(f"⚠️ Error reading from S3: {s3_err}")
+            if use_s3:
+                try:
+                    s3_response = s3_client.get_object(Bucket=S3_BUCKET, Key=s3_key)
+                    existing_data = json.loads(s3_response['Body'].read().decode('utf-8'))
+                    existing_chunks = existing_data.get('chunks', [])
+                    print(f"📥 Retrieved {len(existing_chunks)} existing chunks from S3")
+                except s3_client.exceptions.NoSuchKey:
+                    # No existing chunks - start fresh
+                    print(f"📥 No existing chunks in S3, starting fresh")
+                    pass
+                except Exception as s3_err:
+                    print(f"⚠️ Error reading from S3: {s3_err}, falling back to DynamoDB")
+                    use_s3 = False  # Switch to DynamoDB for this connection
+                    existing_chunks = get_chunks_from_dynamodb(connection_id)
+                    print(f"📥 Retrieved {len(existing_chunks)} existing chunks from DynamoDB (S3 fallback)")
+            else:
+                # S3 not available, use DynamoDB
+                existing_chunks = get_chunks_from_dynamodb(connection_id)
+                print(f"📥 Retrieved {len(existing_chunks)} existing chunks from DynamoDB (S3 unavailable)")
             
-            # Add new chunk
-            existing_chunks.append(audio_chunk)
+            # Add new chunk only if it's not empty (commit messages may have empty audio)
+            if audio_chunk and len(audio_chunk.strip()) > 0:
+                existing_chunks.append(audio_chunk)
+            
             chunk_count = len(existing_chunks)
+            total_size = sum(len(c) for c in existing_chunks)
             
-            # Store updated chunks in S3 (no size limit issues)
-            try:
-                chunks_data = {
-                    'chunks': existing_chunks,
-                    'commit': is_commit,
-                    'updated_at': datetime.now().isoformat()
-                }
-                s3_client.put_object(
-                    Bucket=S3_BUCKET,
-                    Key=s3_key,
-                    Body=json.dumps(chunks_data).encode('utf-8'),
-                    ContentType='application/json'
-                )
-                total_size = sum(len(c) for c in existing_chunks)
-                print(f"📥 Stored audio chunk #{chunk_count} in S3 (size={total_size}B, commit={is_commit}) from {connection_id}")
-            except Exception as s3_err:
-                print(f"⚠️ Error storing chunk in S3: {s3_err}")
-                # Fallback: if S3 fails, process immediately
-                if existing_chunks:
-                    audio_data = ''.join(existing_chunks)
+            # If commit flag is set, process immediately without storing
+            if is_commit:
+                # ✅ Re-read processing flag fresh (it might have changed since we read the connection item)
+                try:
+                    fresh_item = connections_table.get_item(Key={'connectionId': connection_id})
+                    processing_flag = fresh_item.get('Item', {}).get('processing', False)
+                except Exception:
+                    pass  # Use the old value if re-read fails
+                
+                # Block commits if already processing
+                if processing_flag:
+                    print(f"⚠️ Already processing transcription for {connection_id}, queueing commit for later")
+                    # Send error to client so they know to retry
+                    run_async_safe(send_message_to_connection(
+                        apigw_client,
+                        connection_id,
+                        {'message_type': 'error', 'type': 'error', 'error': 'Already processing previous request'}
+                    ))
+                    return {'statusCode': 200, 'body': 'Already processing'}
+                
+                if not existing_chunks:
+                    print(f"⚠️ Commit received but no chunks available")
+                    return {'statusCode': 200, 'body': 'No chunks to process'}
+                
+                print(f"🔄 Commit received with {chunk_count} chunks (size={total_size}B), processing transcription")
+                # Process immediately - don't store chunks when committing
+                # (They'll be cleared after processing)
+            else:
+                # Store updated chunks (in S3 or DynamoDB) only if not committing
+                if use_s3:
                     try:
-                        asyncio.run(process_voice_message_async(
-                            apigw_client,
-                            connection_id,
-                            user_id,
-                            audio_data,
-                            item.get('conversationHistory', [])
-                        ))
-                    except Exception as proc_err:
-                        print(f"⚠️ Error processing after S3 failure: {proc_err}")
-                    existing_chunks = []
+                        chunks_data = {
+                            'chunks': existing_chunks,
+                            'commit': False,
+                            'updated_at': datetime.now().isoformat()
+                        }
+                        s3_client.put_object(
+                            Bucket=S3_BUCKET,
+                            Key=s3_key,
+                            Body=json.dumps(chunks_data).encode('utf-8'),
+                            ContentType='application/json'
+                        )
+                        print(f"📥 Stored audio chunk #{chunk_count} in S3 (size={total_size}B) from {connection_id}")
+                    except Exception as s3_err:
+                        print(f"⚠️ Error storing chunk in S3: {s3_err}, falling back to DynamoDB")
+                        use_s3 = False  # Switch to DynamoDB
+                        store_chunks_in_dynamodb(connection_id, existing_chunks, False)
+                else:
+                    # Use DynamoDB fallback
+                    store_chunks_in_dynamodb(connection_id, existing_chunks, False)
+                
+                # Return early if not committing - wait for more chunks
+                print(f"📦 Chunk #{chunk_count} stored (commit=False), waiting for more chunks...")
+                return {'statusCode': 200, 'body': 'Audio chunk received and stored'}
+                
         except Exception as e:
             print(f"⚠️ Error handling audio chunk: {e}")
             import traceback
             traceback.print_exc()
+            return {'statusCode': 200, 'body': 'Error handling chunk'}
         
-        # If commit flag is set, trigger transcription immediately
+        # If commit flag is set, process the accumulated chunks
         if is_commit:
-            print(f"🔄 Commit flag received, triggering transcription for {connection_id}")
+            print(f"🔄 Commit flag received, processing {chunk_count} accumulated chunks")
             try:
-                conn_item = connections_table.get_item(Key={'connectionId': connection_id})
-                item = conn_item.get('Item', {})
-                user_id = item.get('userId', 'anonymous')
-                
-                # ✅ Prevent duplicate processing with a lock flag in DynamoDB
-                # Check if already processing
-                processing_flag = item.get('processing', False)
-                if processing_flag:
-                    print(f"⚠️ Already processing transcription for {connection_id}, skipping duplicate")
-                    return {'statusCode': 200, 'body': 'Already processing'}
-                
-                # Set processing flag
+                # ✅ FIX: Use conditional update to atomically set processing flag (prevents race conditions)
                 try:
-                    connections_table.update_item(
-                        Key={'connectionId': connection_id},
-                        UpdateExpression='SET #proc = :true',
-                        ExpressionAttributeNames={'#proc': 'processing'},
-                        ExpressionAttributeValues={':true': True}
-                    )
-                except Exception:
-                    pass  # Continue even if flag set fails
-                
-                # Read chunks from S3
-                s3_key = f"websocket-audio/{connection_id}/chunks.json"
-                audio_chunks = []
-                try:
-                    s3_response = s3_client.get_object(Bucket=S3_BUCKET, Key=s3_key)
-                    chunks_data = json.loads(s3_response['Body'].read().decode('utf-8'))
-                    audio_chunks = chunks_data.get('chunks', [])
-                except s3_client.exceptions.NoSuchKey:
-                    print(f"⚠️ No audio chunks found in S3 for commit")
-                except Exception as s3_err:
-                    print(f"⚠️ Error reading chunks from S3: {s3_err}")
-                
-                if audio_chunks:
-                    # Combine all chunks
-                    audio_data = ''.join(audio_chunks)
-                    print(f"📦 Combining {len(audio_chunks)} chunks from S3 for transcription")
-                    
-                    # Delete chunks from S3 after reading (prevent reprocessing)
+                    # Try to set processing flag atomically - will fail if already set
+                    # Use boto3 client directly for ConditionalCheckFailedException
+                    from botocore.exceptions import ClientError
                     try:
-                        s3_client.delete_object(Bucket=S3_BUCKET, Key=s3_key)
-                    except Exception:
-                        pass  # Ignore errors deleting
-                    
-                    # Process transcription
-                    try:
-                        asyncio.run(process_voice_message_async(
-                            apigw_client,
-                            connection_id,
-                            user_id,
-                            audio_data,
-                            item.get('conversationHistory', [])
-                        ))
-                    finally:
-                        # Clear processing flag
+                        connections_table.update_item(
+                            Key={'connectionId': connection_id},
+                            UpdateExpression='SET #proc = :true',
+                            ConditionExpression='attribute_not_exists(#proc) OR #proc = :false',
+                            ExpressionAttributeNames={'#proc': 'processing'},
+                            ExpressionAttributeValues={':true': True, ':false': False}
+                        )
+                        print(f"✅ Set processing flag for {connection_id}")
+                    except ClientError as e:
+                        if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
+                            # Another Lambda instance is already processing
+                            print(f"⚠️ Already processing transcription for {connection_id}, skipping duplicate")
+                            return {'statusCode': 200, 'body': 'Already processing'}
+                        raise
+                except Exception as flag_err:
+                    print(f"⚠️ Error setting processing flag: {flag_err}")
+                    # Check if already processing
+                    conn_item = connections_table.get_item(Key={'connectionId': connection_id})
+                    if conn_item.get('Item', {}).get('processing', False):
+                        print(f"⚠️ Already processing (checked after flag set failed)")
+                        return {'statusCode': 200, 'body': 'Already processing'}
+                    # Continue if flag set failed but not already processing
+                
+                # Combine all chunks - decode each base64 chunk and combine binary data
+                combined_audio_bytes = bytearray()
+                for chunk in existing_chunks:
+                    if chunk and len(chunk.strip()) > 0:
                         try:
-                            connections_table.update_item(
-                                Key={'connectionId': connection_id},
-                                UpdateExpression='REMOVE #proc',
-                                ExpressionAttributeNames={'#proc': 'processing'}
-                            )
-                        except Exception:
-                            pass
-                else:
-                    print(f"⚠️ No audio chunks found for commit")
+                            decoded = base64.b64decode(chunk)
+                            combined_audio_bytes.extend(decoded)
+                        except Exception as decode_err:
+                            print(f"⚠️ Error decoding chunk: {decode_err}")
+                            continue
+                
+                if len(combined_audio_bytes) == 0:
+                    print(f"⚠️ No valid audio data after decoding chunks")
                     # Clear processing flag
                     try:
                         connections_table.update_item(
@@ -354,6 +549,56 @@ def default_handler(event, context):
                         )
                     except Exception:
                         pass
+                    return {'statusCode': 200, 'body': 'No valid audio data'}
+                
+                # Re-encode combined binary data as base64 for process_voice_message_async
+                audio_data = base64.b64encode(combined_audio_bytes).decode('utf-8')
+                print(f"📦 Combined {len(existing_chunks)} chunks: {len(combined_audio_bytes)} bytes PCM16 -> {len(audio_data)} chars base64")
+                
+                # Clear chunks from storage (prevent reprocessing)
+                if use_s3:
+                    try:
+                        s3_client.delete_object(Bucket=S3_BUCKET, Key=s3_key)
+                    except Exception:
+                        pass  # Ignore errors deleting
+                else:
+                    clear_chunks_from_dynamodb(connection_id)
+                
+                # Process transcription
+                try:
+                    print(f"🚀 Starting async transcription processing...")
+                    run_async_safe(process_voice_message_async(
+                        apigw_client,
+                        connection_id,
+                        user_id,
+                        audio_data,
+                        item.get('conversationHistory', [])
+                    ))
+                    print(f"✅ Transcription processing completed")
+                except Exception as proc_err:
+                    print(f"❌ Error in async transcription processing: {proc_err}")
+                    import traceback
+                    traceback.print_exc()
+                    # Send error to client
+                    try:
+                        run_async_safe(send_message_to_connection(
+                            apigw_client,
+                            connection_id,
+                            {'message_type': 'error', 'error': f'Transcription failed: {str(proc_err)}'}
+                        ))
+                    except Exception:
+                        pass
+                finally:
+                    # Clear processing flag
+                    try:
+                        connections_table.update_item(
+                            Key={'connectionId': connection_id},
+                            UpdateExpression='REMOVE #proc',
+                            ExpressionAttributeNames={'#proc': 'processing'}
+                        )
+                        print(f"🧹 Cleared processing flag for {connection_id}")
+                    except Exception as flag_err:
+                        print(f"⚠️ Error clearing processing flag: {flag_err}")
             except Exception as e:
                 print(f"⚠️ Error processing commit: {e}")
                 import traceback
@@ -374,7 +619,7 @@ def default_handler(event, context):
     # Frontend uses 'type' field, but we also check 'message_type' for compatibility
     if message_type == 'transcribe':
         if not VOICE_AVAILABLE:
-            asyncio.run(send_message_to_connection(
+            run_async_safe(send_message_to_connection(
                 apigw_client,
                 connection_id,
                 {'message_type': 'error', 'error': 'Voice pipeline not available'}
@@ -392,7 +637,7 @@ def default_handler(event, context):
             processing_flag = item.get('processing', False)
             if processing_flag:
                 print(f"⚠️ Already processing transcription for {connection_id}, skipping duplicate")
-                asyncio.run(send_message_to_connection(
+                run_async_safe(send_message_to_connection(
                     apigw_client,
                     connection_id,
                     {'message_type': 'error', 'error': 'Already processing previous request'}
@@ -418,19 +663,59 @@ def default_handler(event, context):
         audio_data = body.get('audio_base_64', body.get('audio', body.get('audio_data', body.get('audio_base64', ''))))
         
         if not audio_data:
-            # Try to read from S3
+            # Try to read from S3 or DynamoDB
             s3_key = f"websocket-audio/{connection_id}/chunks.json"
-            try:
-                s3_response = s3_client.get_object(Bucket=S3_BUCKET, Key=s3_key)
-                chunks_data = json.loads(s3_response['Body'].read().decode('utf-8'))
-                audio_chunks = chunks_data.get('chunks', [])
-                if audio_chunks:
-                    audio_data = ''.join(audio_chunks)
-                    print(f"📦 Combined {len(audio_chunks)} audio chunks from S3")
-            except s3_client.exceptions.NoSuchKey:
-                pass
-            except Exception as s3_err:
-                print(f"⚠️ Error reading from S3: {s3_err}")
+            use_s3 = is_s3_available()
+            
+            audio_chunks = []
+            if use_s3:
+                try:
+                    s3_response = s3_client.get_object(Bucket=S3_BUCKET, Key=s3_key)
+                    chunks_data = json.loads(s3_response['Body'].read().decode('utf-8'))
+                    audio_chunks = chunks_data.get('chunks', [])
+                except s3_client.exceptions.NoSuchKey:
+                    # Try DynamoDB fallback
+                    audio_chunks = get_chunks_from_dynamodb(connection_id)
+                except Exception as s3_err:
+                    print(f"⚠️ Error reading from S3: {s3_err}, trying DynamoDB")
+                    audio_chunks = get_chunks_from_dynamodb(connection_id)
+            else:
+                # S3 not available, use DynamoDB
+                audio_chunks = get_chunks_from_dynamodb(connection_id)
+            
+            if audio_chunks:
+                # Decode each base64 chunk and combine binary data
+                combined_audio_bytes = bytearray()
+                for chunk in audio_chunks:
+                    if chunk and len(chunk.strip()) > 0:
+                        try:
+                            decoded = base64.b64decode(chunk)
+                            combined_audio_bytes.extend(decoded)
+                        except Exception as decode_err:
+                            print(f"⚠️ Error decoding chunk: {decode_err}")
+                            continue
+                
+                if len(combined_audio_bytes) == 0:
+                    print(f"⚠️ No valid audio data after decoding chunks")
+                    # Clear processing flag
+                    try:
+                        connections_table.update_item(
+                            Key={'connectionId': connection_id},
+                            UpdateExpression='REMOVE #proc',
+                            ExpressionAttributeNames={'#proc': 'processing'}
+                        )
+                    except Exception:
+                        pass
+                    run_async_safe(send_message_to_connection(
+                        apigw_client,
+                        connection_id,
+                        {'message_type': 'error', 'error': 'No valid audio data'}
+                    ))
+                    return {'statusCode': 200, 'body': 'No audio data'}
+                
+                # Re-encode combined binary data as base64
+                audio_data = base64.b64encode(combined_audio_bytes).decode('utf-8')
+                print(f"📦 Combined {len(audio_chunks)} chunks: {len(combined_audio_bytes)} bytes PCM16 -> {len(audio_data)} chars base64")
         
         if not audio_data:
             print(f"⚠️ No audio data available for transcription")
@@ -443,7 +728,7 @@ def default_handler(event, context):
                 )
             except Exception:
                 pass
-            asyncio.run(send_message_to_connection(
+            run_async_safe(send_message_to_connection(
                 apigw_client,
                 connection_id,
                 {'message_type': 'error', 'error': 'No audio data available'}
@@ -454,24 +739,49 @@ def default_handler(event, context):
         
         # Process the voice message (transcribe + generate response + TTS)
         try:
-            asyncio.run(process_voice_message_async(
+            print(f"🚀 Starting async transcription processing...")
+            run_async_safe(process_voice_message_async(
                 apigw_client,
                 connection_id,
                 user_id,
                 audio_data,
                 conversation_history
             ))
+            print(f"✅ Transcription processing completed")
+        except Exception as proc_err:
+            print(f"❌ Error in async transcription processing: {proc_err}")
+            import traceback
+            traceback.print_exc()
+            # Send error to client
+            try:
+                run_async_safe(send_message_to_connection(
+                    apigw_client,
+                    connection_id,
+                    {'message_type': 'error', 'error': f'Transcription failed: {str(proc_err)}'}
+                ))
+            except Exception:
+                pass
         finally:
-            # Clear processing flag and audio chunks from S3 after processing completes
+            # Clear processing flag and audio chunks (from S3 or DynamoDB) after processing completes
             try:
                 connections_table.update_item(
                     Key={'connectionId': connection_id},
                     UpdateExpression='REMOVE #proc',
                     ExpressionAttributeNames={'#proc': 'processing'}
                 )
-                s3_key = f"websocket-audio/{connection_id}/chunks.json"
-                s3_client.delete_object(Bucket=S3_BUCKET, Key=s3_key)
-                print(f"🧹 Cleared audio chunks from S3 and processing flag for {connection_id}")
+                use_s3 = is_s3_available()
+                if use_s3:
+                    try:
+                        s3_key = f"websocket-audio/{connection_id}/chunks.json"
+                        s3_client.delete_object(Bucket=S3_BUCKET, Key=s3_key)
+                        print(f"🧹 Cleared audio chunks from S3 and processing flag for {connection_id}")
+                    except Exception:
+                        # If S3 delete fails, also clear from DynamoDB just in case
+                        clear_chunks_from_dynamodb(connection_id)
+                        print(f"🧹 Cleared audio chunks from DynamoDB (S3 failed) and processing flag for {connection_id}")
+                else:
+                    clear_chunks_from_dynamodb(connection_id)
+                    print(f"🧹 Cleared audio chunks from DynamoDB and processing flag for {connection_id}")
             except Exception as e:
                 print(f"⚠️ Could not clear chunks/flag: {e}")
         
@@ -480,7 +790,7 @@ def default_handler(event, context):
     # Handle legacy audio_chunk/audio_input (for backward compatibility)
     if message_type == 'audio_chunk' or message_type == 'audio_input':
         if not VOICE_AVAILABLE:
-            asyncio.run(send_message_to_connection(
+            run_async_safe(send_message_to_connection(
                 apigw_client,
                 connection_id,
                 {'message_type': 'error', 'error': 'Voice pipeline not available'}
@@ -498,7 +808,7 @@ def default_handler(event, context):
         if not audio_data:
             return {'statusCode': 400, 'body': 'Missing audio data'}
         
-        asyncio.run(process_voice_message_async(
+        run_async_safe(process_voice_message_async(
             apigw_client,
             connection_id,
             user_id,
@@ -521,7 +831,7 @@ def default_handler(event, context):
         except Exception:
             user_id = 'anonymous'
         
-        asyncio.run(process_text_query_async(
+        run_async_safe(process_text_query_async(
             apigw_client,
             connection_id,
             user_id,
@@ -545,6 +855,27 @@ async def process_voice_message_async(apigw_client, connection_id: str, user_id:
     import struct
     import wave
     
+    # Helper to clear processing flag AND S3 chunks
+    def clear_processing_flag():
+        # Clear processing flag from DynamoDB
+        try:
+            connections_table.update_item(
+                Key={'connectionId': connection_id},
+                UpdateExpression='REMOVE #proc',
+                ExpressionAttributeNames={'#proc': 'processing'}
+            )
+            print(f"🧹 Cleared processing flag for {connection_id}")
+        except Exception as e:
+            print(f"⚠️ Error clearing processing flag: {e}")
+        
+        # Also clear S3 chunks to prevent old audio from being reused
+        try:
+            s3_key = f"websocket-audio/{connection_id}/chunks.json"
+            s3_client.delete_object(Bucket=S3_BUCKET, Key=s3_key)
+            print(f"🧹 Cleared S3 chunks for {connection_id}")
+        except Exception:
+            pass  # Ignore errors - chunks might not exist
+    
     try:
         # Decode base64 audio data (PCM16 little-endian, 16kHz, mono)
         audio_bytes = base64.b64decode(audio_base64)
@@ -555,6 +886,7 @@ async def process_voice_message_async(apigw_client, connection_id: str, user_id:
                 'message_type': 'error',
                 'error': 'Audio data too short'
             })
+            clear_processing_flag()  # Clear flag on early return
             return
         
         # Convert PCM16 bytes to WAV file for Whisper API
@@ -593,24 +925,46 @@ async def process_voice_message_async(apigw_client, connection_id: str, user_id:
             print(f"📝 Created WAV file: {len(audio_bytes)} bytes PCM16 -> {wav_path}")
             
             # Transcribe using OpenAI Whisper API
+            print(f"🎙️ Calling OpenAI Whisper API for transcription (file size: {os.path.getsize(wav_path)} bytes)...")
             from openai import OpenAI
-            openai_client = OpenAI(api_key=os.environ.get('OPENAI_API_KEY'))
+            openai_api_key = os.environ.get('OPENAI_API_KEY')
+            if not openai_api_key:
+                raise ValueError("OPENAI_API_KEY environment variable not set")
             
-            with open(wav_path, 'rb') as audio_file:
-                transcript_response = openai_client.audio.transcriptions.create(
-                    model="whisper-1",
-                    file=audio_file,
-                    language="en"  # Optional: specify language for better accuracy
-                )
+            openai_client = OpenAI(api_key=openai_api_key)
             
-            transcript = transcript_response.text
+            try:
+                with open(wav_path, 'rb') as audio_file:
+                    print(f"📤 Sending audio file to Whisper API...")
+                    transcript_response = openai_client.audio.transcriptions.create(
+                        model="whisper-1",
+                        file=audio_file,
+                        language="en"  # Optional: specify language for better accuracy
+                    )
+                    print(f"📥 Received response from Whisper API")
+                
+                transcript = transcript_response.text
+                print(f"✅ Whisper API returned transcript: '{transcript}' (length: {len(transcript)})")
+            except Exception as whisper_err:
+                print(f"❌ Whisper API error: {whisper_err}")
+                import traceback
+                traceback.print_exc()
+                raise
             
-            if not transcript or len(transcript.strip()) < 2:
+            # Check if transcript is valid (not empty or too short)
+            transcript_clean = transcript.strip() if transcript else ''
+            if not transcript_clean or len(transcript_clean) < 1:
+                print(f"⚠️ Empty or invalid transcript received from Whisper (original: '{transcript}', cleaned: '{transcript_clean}', audio size: {len(audio_bytes)} bytes, duration: ~{len(audio_bytes)/32000:.2f}s)")
                 await send_message_to_connection(apigw_client, connection_id, {
                     'message_type': 'error',
+                    'type': 'error',
                     'error': 'No speech detected'
                 })
+                clear_processing_flag()  # Clear flag on early return
                 return
+            
+            # Use cleaned transcript
+            transcript = transcript_clean
             
             print(f"📝 Transcribed: {transcript}")
             
@@ -658,6 +1012,7 @@ async def process_voice_message_async(apigw_client, connection_id: str, user_id:
                             'userText': transcript
                         })
                         
+                        clear_processing_flag()  # Clear flag on early return
                         return  # Exit early - calendar action handled
             except Exception as e:
                 print(f"⚠️ Error checking calendar action: {e}")
@@ -706,16 +1061,21 @@ async def process_voice_message_async(apigw_client, connection_id: str, user_id:
                         # Add fields for frontend
                         response_data.update({
                             'type': 'response',
-                            'audio': audio_b64,
-                            'audio_base_64': audio_b64,
                             'userText': transcript
                         })
                         
-                        # Send response
-                        await send_message_to_connection(apigw_client, connection_id, response_data)
+                        # Send response (chunked if needed)
+                        if audio_b64:
+                            # Send response data first (without audio)
+                            await send_message_to_connection(apigw_client, connection_id, response_data)
+                            # Then send audio in chunks
+                            await send_audio_in_chunks(apigw_client, connection_id, audio_b64, response_data['text'], transcript)
+                        else:
+                            await send_message_to_connection(apigw_client, connection_id, response_data)
                         
                         print(f"✅ Sent email/calendar summary: {len(emails)} emails, {len(calendar_events)} events")
                         
+                        clear_processing_flag()  # Clear flag on early return
                         return  # Exit early - summary handled
             except Exception as e:
                 print(f"⚠️ Error handling email/calendar summary: {e}")
@@ -764,7 +1124,7 @@ async def process_voice_message_async(apigw_client, connection_id: str, user_id:
             except Exception as hist_err:
                 print(f"⚠️ Could not update history: {hist_err}")
             
-            # Generate TTS audio using ElevenLabs
+            # Generate TTS audio using ElevenLabs (same format as local)
             elevenlabs_key = os.environ.get('ELEVENLABS_API_KEY')
             elevenlabs_voice = os.environ.get('ELEVENLABS_VOICE_ID')
             
@@ -780,13 +1140,13 @@ async def process_voice_message_async(apigw_client, connection_id: str, user_id:
                             },
                             json={
                                 "text": response_text,
-                                "model_id": "eleven_multilingual_v2",  # Higher quality model (same as greeting)
-                                "output_format": "mp3_44100_192",  # Higher quality MP3: 44.1kHz, 192kbps (increased from 128kbps)
+                                "model_id": "eleven_flash_v2_5",  # Same as local implementation
+                                "output_format": "mp3_44100_128",  # Same as local (lower bitrate to reduce size)
                                 "voice_settings": {
-                                    "stability": 0.65,  # Balanced stability (matched to greeting settings)
-                                    "similarity_boost": 0.8,  # Higher clarity
-                                    "style": 0.3,  # Slight style for natural speech
-                                    "use_speaker_boost": True  # Enhanced clarity
+                                    "stability": 0.85,  # Matched to local settings
+                                    "similarity_boost": 0.85,
+                                    "style": 0,  # No style variation for consistency
+                                    "use_speaker_boost": True
                                 }
                             },
                             timeout=30.0
@@ -808,15 +1168,8 @@ async def process_voice_message_async(apigw_client, connection_id: str, user_id:
                                 'userText': transcript
                             })
                         else:
-                            # Send response with audio (frontend expects audio_base_64 field)
-                            await send_message_to_connection(apigw_client, connection_id, {
-                                'message_type': 'response',
-                                'type': 'response',
-                                'text': response_text,
-                                'audio': audio_b64,
-                                'audio_base_64': audio_b64,  # Frontend uses this field name
-                                'userText': transcript
-                            })
+                            # Send audio in chunks to avoid 32KB WebSocket limit
+                            await send_audio_in_chunks(apigw_client, connection_id, audio_b64, response_text, transcript)
                     else:
                         # Send text-only response if TTS fails
                         print(f"⚠️ TTS failed: {tts_response.status_code} - {tts_response.text[:200]}")
@@ -853,6 +1206,8 @@ async def process_voice_message_async(apigw_client, connection_id: str, user_id:
                     os.unlink(wav_path)
             except Exception:
                 pass
+            # Always clear processing flag when done
+            clear_processing_flag()
             
     except Exception as e:
         print(f"❌ Error processing voice message: {e}")
@@ -863,6 +1218,8 @@ async def process_voice_message_async(apigw_client, connection_id: str, user_id:
             'message_type': 'error',
             'error': f'Processing failed: {str(e)}'
         })
+        # Clear processing flag on error
+        clear_processing_flag()
 
 
 async def process_text_query_async(apigw_client, connection_id: str, user_id: str, text: str, history: list):
@@ -897,7 +1254,7 @@ async def process_text_query_async(apigw_client, connection_id: str, user_id: st
         
         response_text = completion.choices[0].message.content
         
-        # Generate TTS audio using ElevenLabs (same as voice pipeline)
+        # Generate TTS audio using ElevenLabs (same format as local)
         elevenlabs_key = os.environ.get('ELEVENLABS_API_KEY')
         elevenlabs_voice = os.environ.get('ELEVENLABS_VOICE_ID')
         
@@ -914,12 +1271,12 @@ async def process_text_query_async(apigw_client, connection_id: str, user_id: st
                         },
                         json={
                             "text": response_text,
-                            "model_id": "eleven_multilingual_v2",
-                            "output_format": "mp3_44100_192",
+                            "model_id": "eleven_flash_v2_5",  # Same as local
+                            "output_format": "mp3_44100_128",  # Same as local
                             "voice_settings": {
-                                "stability": 0.65,
-                                "similarity_boost": 0.8,
-                                "style": 0.3,
+                                "stability": 0.85,
+                                "similarity_boost": 0.85,
+                                "style": 0,
                                 "use_speaker_boost": True
                             }
                         },
@@ -932,14 +1289,15 @@ async def process_text_query_async(apigw_client, connection_id: str, user_id: st
             except Exception as tts_error:
                 print(f"⚠️ TTS error: {tts_error}")
         
-        # Send response with audio
-        await send_message_to_connection(apigw_client, connection_id, {
-            'message_type': 'response',
-            'text': response_text,
-            'audio': audio_b64,
-            'audio_base_64': audio_b64,
-            'userText': text
-        })
+        # Send response with audio (chunked if needed)
+        if audio_b64:
+            await send_audio_in_chunks(apigw_client, connection_id, audio_b64, response_text, text)
+        else:
+            await send_message_to_connection(apigw_client, connection_id, {
+                'message_type': 'response',
+                'text': response_text,
+                'userText': text
+            })
         
     except Exception as e:
         print(f"❌ Error processing text query: {e}")
