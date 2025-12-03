@@ -14,8 +14,6 @@ export default function LandingPage() {
 				background: "linear-gradient(180deg, #D0C7FA 0%, #FBDBED 100%)",
 			}}
 		>
-
-
 			{/* ===================== LEFT ORB ===================== */}
 			<div
 				style={{
@@ -416,7 +414,7 @@ export default function LandingPage() {
 				}
 					
 			`}</style>
-			<div className="mt-12 flex justify-center relative z-[50]">
+			{/* <div className="mt-12 flex justify-center relative z-[50]">
 				<Link href="/login">
 					<button
 						className="bg-black text-white py-3 px-10 rounded-full text-lg font-medium shadow-lg
@@ -426,7 +424,7 @@ export default function LandingPage() {
 						Get Started
 					</button>
 				</Link>
-			</div>
+			</div> */}
 			{/* ===================== SECTION 2 (FEATURES) ===================== */}
 			<div className="relative w-full mt-32 px-6 md:px-16 lg:px-24 z-[10] flex justify-center">
 				{/* STAR FLOW BACKGROUND */}
@@ -549,7 +547,8 @@ export default function LandingPage() {
 							style={{
 								width: "500px",
 								height: "316px",
-								background: "url('/Icons/LandingIcons/Home_ Add_New_Event.png')",
+								background:
+									"url('/Icons/LandingIcons/Home_ Add_New_Event.png')",
 								backgroundSize: "cover",
 								backgroundPosition: "center",
 								filter: "drop-shadow(0px 4px 24px rgba(0, 0, 0, 0.2))",
