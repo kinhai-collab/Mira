@@ -258,6 +258,19 @@ def connect_handler(event, context):
         except Exception as s3_err:
             # Ignore errors - chunks might not exist
             print(f"📝 No old S3 chunks to clear for {connection_id}")
+        
+        # ✅ CRITICAL: Explicitly clear processing flag on new connection
+        # Even though put_item should overwrite, explicitly remove it to be safe
+        try:
+            connections_table.update_item(
+                Key={'connectionId': connection_id},
+                UpdateExpression='REMOVE #proc',
+                ExpressionAttributeNames={'#proc': 'processing'}
+            )
+            print(f"🧹 Cleared processing flag for new connection {connection_id}")
+        except Exception as flag_err:
+            # Ignore errors - flag might not exist
+            print(f"📝 No processing flag to clear for {connection_id}")
             
     except Exception as e:
         print(f"❌ Error storing connection: {e}")
@@ -633,27 +646,42 @@ def default_handler(event, context):
             user_id = item.get('userId', 'anonymous')
             conversation_history = item.get('conversationHistory', [])
             
-            # ✅ Prevent duplicate processing with a lock flag
-            processing_flag = item.get('processing', False)
-            if processing_flag:
-                print(f"⚠️ Already processing transcription for {connection_id}, skipping duplicate")
-                run_async_safe(send_message_to_connection(
-                    apigw_client,
-                    connection_id,
-                    {'message_type': 'error', 'error': 'Already processing previous request'}
-                ))
-                return {'statusCode': 200, 'body': 'Already processing'}
-            
-            # Set processing flag
+            # ✅ Prevent duplicate processing with atomic conditional update
+            from botocore.exceptions import ClientError
             try:
+                # Try to set processing flag atomically - will fail if already set
                 connections_table.update_item(
                     Key={'connectionId': connection_id},
                     UpdateExpression='SET #proc = :true',
+                    ConditionExpression='attribute_not_exists(#proc) OR #proc = :false',
                     ExpressionAttributeNames={'#proc': 'processing'},
-                    ExpressionAttributeValues={':true': True}
+                    ExpressionAttributeValues={':true': True, ':false': False}
                 )
-            except Exception:
-                pass  # Continue even if flag set fails
+                print(f"✅ Set processing flag for {connection_id} (transcribe)")
+            except ClientError as e:
+                if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
+                    # Another request is already processing
+                    print(f"⚠️ Already processing transcription for {connection_id}, skipping duplicate")
+                    run_async_safe(send_message_to_connection(
+                        apigw_client,
+                        connection_id,
+                        {'message_type': 'error', 'error': 'Already processing previous request'}
+                    ))
+                    return {'statusCode': 200, 'body': 'Already processing'}
+                raise
+            except Exception as flag_err:
+                print(f"⚠️ Error setting processing flag: {flag_err}")
+                # Check if already processing as fallback
+                fresh_item = connections_table.get_item(Key={'connectionId': connection_id})
+                if fresh_item.get('Item', {}).get('processing', False):
+                    print(f"⚠️ Already processing (checked after flag set failed)")
+                    run_async_safe(send_message_to_connection(
+                        apigw_client,
+                        connection_id,
+                        {'message_type': 'error', 'error': 'Already processing previous request'}
+                    ))
+                    return {'statusCode': 200, 'body': 'Already processing'}
+                # Continue if flag set failed but not already processing
         except Exception as e:
             print(f"⚠️ Could not get user ID/history: {e}")
             user_id = 'anonymous'
